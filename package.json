@@ -1,0 +1,18 @@
+{
+  "name": "@paradoxum-games/mix",
+  "version": "0.1.0",
+  "description": "A DataStoreService wrapper",
+  "scripts": {
+    "test": "exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/paradoxum-games/mix.git"
+  },
+  "author": "nomer888",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/paradoxum-games/mix/issues"
+  },
+  "homepage": "https://github.com/paradoxum-games/mix#readme"
+}

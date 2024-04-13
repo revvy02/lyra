@@ -1,0 +1,23 @@
+{
+	"name": "mix",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"Packages": {
+				"$path": "Packages",
+				"Mix": {
+					"$path": "src"
+				}
+			},
+			"DevPackages": {
+				"$path": "DevPackages"
+			}
+		},
+		"ServerScriptService": {
+			"Test": {
+				"$path": "test"
+			}
+		}
+	}
+}

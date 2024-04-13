@@ -1,0 +1,3 @@
+local DataStoreServiceInterface = {}
+
+return DataStoreServiceInterface
