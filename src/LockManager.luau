@@ -3,6 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LOCK_DURATION_SECONDS = 2 * 60
 
+local Constants = require(script.Parent.Constants)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 local Sift = require(ReplicatedStorage.Packages.Sift)
 local Types = require(script.Parent.Types)
@@ -20,7 +21,7 @@ end
 
 function LockManager:lock(key: string): Promise.Promise
 	return self._dataStoreInterface
-		:update(key, function(value)
+		:update(Constants.DATA_SCOPE, key, function(value)
 			value = Sift.Dictionary.mergeDeep({ _metadata = {} }, value)
 
 			local meta = value._metadata
@@ -29,7 +30,7 @@ function LockManager:lock(key: string): Promise.Promise
 			end
 
 			meta.lock_id = self._lockId
-			self:refreshLockExpiry(value)
+			value = self:refreshLockExpiry(value)
 
 			return value
 		end)
@@ -42,7 +43,7 @@ function LockManager:lock(key: string): Promise.Promise
 end
 
 function LockManager:unlock(key: string): Promise.Promise
-	return self._dataStoreInterface:update(key, function(value)
+	return self._dataStoreInterface:update(Constants.DATA_SCOPE, key, function(value)
 		local meta = value._metadata
 		if meta.lock_id == self._lockId then
 			meta.lock_id = nil
