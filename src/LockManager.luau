@@ -21,7 +21,7 @@ end
 
 function LockManager:lock(key: string): Promise.Promise
 	return self._dataStoreInterface
-		:update(Constants.DATA_SCOPE, key, function(value)
+		:update(Constants.RECORD_SCOPE, key, function(value)
 			value = Sift.Dictionary.mergeDeep({ _metadata = {} }, value)
 
 			local meta = value._metadata
@@ -43,7 +43,7 @@ function LockManager:lock(key: string): Promise.Promise
 end
 
 function LockManager:unlock(key: string): Promise.Promise
-	return self._dataStoreInterface:update(Constants.DATA_SCOPE, key, function(value)
+	return self._dataStoreInterface:update(Constants.RECORD_SCOPE, key, function(value)
 		local meta = value._metadata
 		if meta.lock_id == self._lockId then
 			meta.lock_id = nil
