@@ -5,6 +5,7 @@ local Promise = require(ReplicatedStorage.Packages.Promise)
 local Sift = require(ReplicatedStorage.Packages.Sift)
 local Constants = require(script.Parent.Constants)
 local Types = require(script.Parent.Types)
+local splitUtf8String = require(script.Parent.splitUtf8String)
 
 local LargeFileManager = {}
 LargeFileManager.__index = LargeFileManager
@@ -15,9 +16,6 @@ function LargeFileManager.new(dataStoreInterface: Types.DataStoreInterface)
 	}, LargeFileManager)
 	return self
 end
-
--- TODO: implement this function
-local function splitUtf8(str: string, maxSize: number) end
 
 function LargeFileManager:read(dataChunk: Types.DataChunk): Promise.TypedPromise<any>
 	local shardId = dataChunk.shard
@@ -38,7 +36,7 @@ end
 
 function LargeFileManager:write(dataChunk: Types.DataChunk): Promise.TypedPromise<(string, number)>
 	local shardId = HttpService:GenerateGUID(false)
-	local shards = splitUtf8(dataChunk.data, Constants.MAX_CHUNK_SIZE)
+	local shards = splitUtf8String(dataChunk.data, Constants.MAX_CHUNK_SIZE)
 
 	local promises = Sift.Array.map(shards, function(shard, index)
 		-- TODO: attach metadata so it can be cleaned up
