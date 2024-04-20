@@ -34,9 +34,14 @@ function LargeFileManager:read(dataChunk: Types.DataChunk): Promise.TypedPromise
 	end)
 end
 
-function LargeFileManager:write(dataChunk: Types.DataChunk): Promise.TypedPromise<(string, number)>
+function LargeFileManager:write(data): Promise.TypedPromise<(string, number)> | Promise.Promise
+	local str = HttpService:JSONEncode(data)
+	if #str <= Constants.MAX_CHUNK_SIZE then
+		return Promise.resolve()
+	end
+
 	local shardId = HttpService:GenerateGUID(false)
-	local shards = splitUtf8String(dataChunk.data, Constants.MAX_CHUNK_SIZE)
+	local shards = splitUtf8String(data.data, Constants.MAX_CHUNK_SIZE)
 
 	local promises = Sift.Array.map(shards, function(shard, index)
 		-- TODO: attach metadata so it can be cleaned up

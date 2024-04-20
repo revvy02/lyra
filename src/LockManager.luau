@@ -47,6 +47,7 @@ function LockManager:unlock(key: string): Promise.Promise
 		local meta = value._metadata
 		if meta.lock_id == self._lockId then
 			meta.lock_id = nil
+			meta.lock_expiry = nil
 		end
 		return value
 	end)
