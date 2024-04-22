@@ -134,7 +134,6 @@ function Store:save(key: string)
 	-- determine when every mutation that's taken place as of this function call
 	-- has been saved.
 
-	-- Exit early if data isn't dirty
 	local saveState = self._saveState[key]
 	if Sift.Set.count(saveState.unsavedMutations) == 0 then
 		return saveState.savePromise or Promise.resolve()
@@ -146,18 +145,13 @@ function Store:save(key: string)
 	local snapshot = Sift.Set.copy(saveState.unsavedMutations)
 
 	return Promise.resolve(saveState.savePromise):andThen(function()
-		-- If all the mutations in our snapshot have saved, then the count of
-		-- `intersection` will be 0, and we can exit early.
 		local intersection = Sift.Set.intersection(snapshot, saveState.unsavedMutations)
 		if Sift.Set.count(intersection) == 0 then
 			return
 		end
 
-		-- There may have been more mutations since we last took the snapshot,
-		-- so we'll take another.
 		snapshot = Sift.Set.copy(saveState.unsavedMutations)
 
-		-- Exit early if data isn't dirty
 		if Sift.Set.count(snapshot) == 0 then
 			return
 		end
@@ -166,7 +160,6 @@ function Store:save(key: string)
 			local record = self:_serialize(key):expect()
 			self._dataStoreInterface:set(Constants.RECORD_SCOPE, key, record):expect()
 
-			-- Remove saved mutations from the list
 			saveState.unsavedMutations = Sift.Array.difference(saveState.unsavedMutations, snapshot)
 			saveState.savePromise = nil
 			resolve()
