@@ -21,27 +21,27 @@ export type DataStoreInterface = {
 	remove: (self: any, storeName: string, key: string) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
 }
 
-export type DataChunk = {
+export type TxInfo = {
+	committedData: any,
+	txId: string?,
+	txData: any?,
+}
+
+export type File = {
 	data: any,
 } & {
 	shard: string,
 	count: number,
 }
 
-export type DataSection = {
-	committed_data: DataChunk,
-	tx_data: DataChunk?,
-}
-
-export type MetadataSection = {
-	lock_id: string?,
-	lock_expiry: number?,
-	tx_id: string?,
+export type Lock = {
+	id: string?,
+	expiry: number?,
 }
 
 export type DataStoreRecord = {
-	_metadata: MetadataSection,
-	data: DataSection,
+	lock: Lock,
+	file: File,
 }
 
 return nil

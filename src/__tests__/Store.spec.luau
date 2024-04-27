@@ -51,5 +51,5 @@ it("update", function()
 	end)
 	store:save("123"):expect()
 	local record = mockInterface._store[Constants.RECORD_SCOPE]["123"]
-	expect(record.data.foo).toBe("baz")
+	expect(record.data.committed_data.data.foo).toBe("baz")
 end)
