@@ -18,6 +18,15 @@ export type StoreConfig = {
 	dataStoreInterface: Types.DataStoreInterface?,
 }
 
+local function awaitIfExists(promise: Promise.Promise?): Promise.Promise
+	return Promise.new(function(resolve)
+		if promise ~= nil then
+			promise:await()
+		end
+		resolve()
+	end)
+end
+
 local Store = {}
 
 local function createStore(config: StoreConfig)
@@ -153,8 +162,7 @@ function Store:unlock(key: string): Promise.Promise
 	local data = Sift.Dictionary.copyDeep(self._cache[key])
 	local txInfo = { committedData = data }
 
-	-- TODO: verify that this continues even if the lock promise rejects
-	return Promise.resolve(self._txLockPromises[key])
+	return awaitIfExists(self._txLockPromises[key])
 		:andThen(function()
 			return self:_writeLargeFile(txInfo)
 		end)
@@ -190,8 +198,7 @@ function Store:unlock(key: string): Promise.Promise
 end
 
 function Store:update(key: string, transformFunction: (data: any) -> any): Promise.Promise
-	-- TODO: verify that this continues even if the lock promise rejects
-	return Promise.resolve(self._txLockPromises[key]):andThen(function()
+	return awaitIfExists(self._txLockPromises[key]):andThen(function()
 		local currentData = self._cache[key]
 		local nextData = Sift.Dictionary.copyDeep(currentData)
 		-- TODO: make it impossible for transformFunction to yield
@@ -260,6 +267,9 @@ function Store:tx(
 	local txId = HttpService:GenerateGUID(false)
 	-- local mutationId = HttpService:GenerateGUID(false)
 
+	-- TODO: check if no keys changed, if so, return early
+	-- TODO: check if only one key changed, treat it as just an :update
+
 	local promises = Sift.Array.map(keys, function(key)
 		local committedData = currentState[key]
 		local txData = nextState[key]
@@ -299,18 +309,21 @@ function Store:tx(
 			-- them here like Store:save
 			for _, key in keys do
 				-- self._saveState[key].unsavedMutations = Sift.Set.add(self._saveState[key].unsavedMutations, mutationId)
+
+				-- TODO: take a snapshot of unsavedMutations before and after,
+				-- compare, and error if they're different. :update should never
+				-- run during a tx
+
 				self._cache[key] = nextState[key]
 			end
 
 			-- TODO: kick off cleanup process
 		end)
-
-	-- TODO: I'm pretty sure chained promises execute in order, but double check
-	commitPromise:finally(function()
-		for _, key in keys do
-			self._txLockPromises[key] = nil
-		end
-	end)
+		:finally(function()
+			for _, key in keys do
+				self._txLockPromises[key] = nil
+			end
+		end)
 
 	for _, key in keys do
 		self._txLockPromises[key] = commitPromise
@@ -337,16 +350,20 @@ function Store:save(key: string): Promise.Promise
 	-- 2. If a save is in progress, check if we need even need to save again
 	local snapshot = Sift.Set.copy(saveState.unsavedMutations)
 
-	return Promise.resolve(saveState.savePromise):andThen(function()
+	return Promise.new(function(resolve)
+		while saveState.savePromise ~= nil do
+			saveState.savePromise:await()
+		end
+
 		local intersection = Sift.Set.intersection(snapshot, saveState.unsavedMutations)
 		if Sift.Set.count(intersection) == 0 then
-			return
+			return resolve()
 		end
 
 		snapshot = Sift.Set.copy(saveState.unsavedMutations)
 
 		if Sift.Set.count(snapshot) == 0 then
-			return
+			return resolve()
 		end
 
 		local data = Sift.Dictionary.copyDeep(self._cache[key])
@@ -363,12 +380,14 @@ function Store:save(key: string): Promise.Promise
 			end)
 			:andThen(function()
 				saveState.unsavedMutations = Sift.Set.difference(saveState.unsavedMutations, snapshot)
+			end)
+			:finally(function()
 				saveState.savePromise = nil
 			end)
 
 		saveState.savePromise = savePromise
 
-		return savePromise
+		return resolve(savePromise)
 	end)
 end
 
