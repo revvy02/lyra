@@ -41,7 +41,8 @@ local function createStore(config: StoreConfig)
 		_lockId = HttpService:GenerateGUID(false),
 		_cache = {},
 		_txLockPromises = {},
-		_saveState = {},
+		_savePromises = {},
+		_unsavedMutations = {},
 	}, { __index = Store })
 
 	local ok, err = self._schema(self._template)
@@ -149,10 +150,8 @@ function Store:lock(key: string): Promise.Promise
 			end
 
 			self._cache[key] = data
-			self._saveState[key] = {
-				unsavedMutations = {},
-				savePromise = nil,
-			}
+			self._unsavedMutations[key] = {}
+			self._savePromises[key] = nil
 
 			return data
 		end)
@@ -187,7 +186,8 @@ function Store:unlock(key: string): Promise.Promise
 		end)
 		:andThen(function(latestValue)
 			self._cache[key] = nil
-			self._saveState[key] = nil
+			self._unsavedMutations[key] = nil
+			self._savePromises[key] = nil
 
 			if latestValue.lock.id ~= nil then
 				return Promise.reject("Failed to release lock")
@@ -223,7 +223,7 @@ function Store:update(key: string, transformFunction: (data: any) -> any): Promi
 
 		local mutationId = HttpService:GenerateGUID(false)
 
-		self._saveState[key].unsavedMutations = Sift.Set.add(self._saveState[key].unsavedMutations, mutationId)
+		self._unsavedMutations[key] = Sift.Set.add(self._unsavedMutations[key], mutationId)
 		self._cache[key] = nextData
 	end)
 end
@@ -308,8 +308,6 @@ function Store:tx(
 			-- should snapshot the mutations at the start of the tx and flush
 			-- them here like Store:save
 			for _, key in keys do
-				-- self._saveState[key].unsavedMutations = Sift.Set.add(self._saveState[key].unsavedMutations, mutationId)
-
 				-- TODO: take a snapshot of unsavedMutations before and after,
 				-- compare, and error if they're different. :update should never
 				-- run during a tx
@@ -340,27 +338,26 @@ function Store:save(key: string): Promise.Promise
 	-- TODO: should we wait for tx lock here before saving since tx counts as a
 	-- save?
 
-	local saveState = self._saveState[key]
-	if Sift.Set.count(saveState.unsavedMutations) == 0 then
+	if Sift.Set.count(self._unsavedMutations[key]) == 0 then
 		return Promise.resolve()
 	end
 
 	-- We take a snapshot of unsaved mutations to:
 	-- 1. Remove them from the list when our save finishes
 	-- 2. If a save is in progress, check if we need even need to save again
-	local snapshot = Sift.Set.copy(saveState.unsavedMutations)
+	local snapshot = Sift.Set.copy(self._unsavedMutations[key])
 
 	return Promise.new(function(resolve)
-		while saveState.savePromise ~= nil do
-			saveState.savePromise:await()
+		while self._savePromises[key] ~= nil do
+			self._savePromises[key]:await()
 		end
 
-		local intersection = Sift.Set.intersection(snapshot, saveState.unsavedMutations)
+		local intersection = Sift.Set.intersection(snapshot, self._unsavedMutations[key])
 		if Sift.Set.count(intersection) == 0 then
 			return resolve()
 		end
 
-		snapshot = Sift.Set.copy(saveState.unsavedMutations)
+		snapshot = Sift.Set.copy(self._unsavedMutations[key])
 
 		if Sift.Set.count(snapshot) == 0 then
 			return resolve()
@@ -379,13 +376,13 @@ function Store:save(key: string): Promise.Promise
 				return self._dataStoreInterface:set(Constants.RECORD_SCOPE, key, record)
 			end)
 			:andThen(function()
-				saveState.unsavedMutations = Sift.Set.difference(saveState.unsavedMutations, snapshot)
+				self._unsavedMutations[key] = Sift.Set.difference(self._unsavedMutations[key], snapshot)
 			end)
 			:finally(function()
-				saveState.savePromise = nil
+				self._savePromises[key] = nil
 			end)
 
-		saveState.savePromise = savePromise
+		self._savePromises[key] = savePromise
 
 		return resolve(savePromise)
 	end)
