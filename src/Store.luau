@@ -444,8 +444,7 @@ function Store:save(key: string): Promise.Promise
 		local data = Sift.Dictionary.copyDeep(self._cache[key])
 		local txInfo = { committedData = data }
 
-		return self._largeFileManager
-			:write(txInfo)
+		return self:_writeLargeFile(txInfo)
 			:andThen(function(file)
 				local record = {
 					lock = self:_getLock(),
