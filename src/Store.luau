@@ -238,6 +238,7 @@ function Store:lock(key: string): Promise.Promise
 end
 
 function Store:unlock(key: string): Promise.Promise
+	-- TODO: forbid any other mutations to the key from here on out
 	return self:_enqueueKeyOperation(key, function()
 		local data = Sift.Dictionary.copyDeep(self._cache[key])
 		local txInfo = { committedData = data }
