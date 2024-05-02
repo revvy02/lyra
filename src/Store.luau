@@ -444,7 +444,7 @@ function Store:save(key: string): Promise.Promise
 		local data = Sift.Dictionary.copyDeep(self._cache[key])
 		local txInfo = { committedData = data }
 
-		local savePromise = self._largeFileManager
+		return self._largeFileManager
 			:write(txInfo)
 			:andThen(function(file)
 				local record = {
@@ -456,8 +456,6 @@ function Store:save(key: string): Promise.Promise
 			:andThen(function()
 				self:_commitSnapshot(snapshot, key)
 			end)
-
-		return savePromise
 	end)
 end
 
