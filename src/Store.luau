@@ -9,6 +9,7 @@ local Sift = require(ReplicatedStorage.Packages.Sift)
 local DataStoreInterface = require(script.Parent.DataStoreInterface)
 local Types = require(script.Parent.Types)
 local splitUtf8String = require(script.Parent.splitUtf8String)
+local noYield = require(script.Parent.noYield)
 
 export type StoreConfig = {
 	name: string,
@@ -291,8 +292,7 @@ function Store:update(key: string, transformFunction: (data: any) -> any): Promi
 
 		local currentData = self._cache[key]
 		local nextData = Sift.Dictionary.copyDeep(currentData)
-		-- TODO: make it impossible for transformFunction to yield
-		local transformOk, result = pcall(transformFunction, nextData)
+		local transformOk, result = pcall(noYield, transformFunction, nextData)
 		if not transformOk then
 			return reject(`Store:update transformFunction failed: {result}`)
 		end
@@ -334,8 +334,7 @@ function Store:tx(
 		end
 
 		local nextState = Sift.Dictionary.copyDeep(currentState)
-		-- TODO: make it impossible for transformFunction to yield
-		local transformOk, result = pcall(transformFunction, nextState)
+		local transformOk, result = pcall(noYield, transformFunction, nextState)
 		if not transformOk then
 			error(`Store:tx transformFunction failed: {result}`)
 		end
