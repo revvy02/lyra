@@ -3,6 +3,11 @@
 registry = "test"
 
 [[package]]
+name = "corecii/greentea"
+version = "0.4.6"
+dependencies = []
+
+[[package]]
 name = "csqrl/sift"
 version = "0.0.8"
 dependencies = []
@@ -260,4 +265,4 @@ dependencies = []
 [[package]]
 name = "private/private"
 version = "0.1.0"
-dependencies = [["Promise", "lukadev-0/typed-promise@4.0.2"], ["Sift", "csqrl/sift@0.0.8"], ["Jest", "jsdotlua/jest@3.6.1-rc.2"], ["JestGlobals", "jsdotlua/jest-globals@3.6.1-rc.2"], ["t", "osyrisrblx/t@3.1.1"]]
+dependencies = [["GreenTea", "corecii/greentea@0.4.6"], ["Promise", "lukadev-0/typed-promise@4.0.2"], ["Sift", "csqrl/sift@0.0.8"], ["Jest", "jsdotlua/jest@3.6.1-rc.2"], ["JestGlobals", "jsdotlua/jest-globals@3.6.1-rc.2"], ["t", "osyrisrblx/t@3.1.1"]]
