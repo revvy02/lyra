@@ -43,18 +43,18 @@ local function callableCheck(value: any): (boolean, string?)
 		return true
 	end
 
-	local ok, err = t.table(value)
+	local ok = t.table(value)
 	if not ok then
-		return false, err
+		return false, `expected a mock object, got {typeof(value)}`
 	end
 
 	local mt = getmetatable(value)
 	if mt == nil then
-		return false, "expected a mock object"
+		return false, `expected a mock object, got uncallable table`
 	end
 
 	if mt.__call == nil then
-		return false, "expected a mock object"
+		return false, `expected a mock object, got uncallable table`
 	end
 
 	return true
