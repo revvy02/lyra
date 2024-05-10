@@ -213,7 +213,7 @@ function Store:lock(key: string): Promise.Promise
 
 			local file = record.file
 			if file == nil then
-				return nil
+				return nil :: any
 			end
 
 			return self:_readLargeFile(file)
@@ -260,7 +260,7 @@ function Store:unlock(key: string): Promise.Promise
 					if value.lock.id == self._lockId then
 						return record
 					else
-						return nil
+						return nil :: any
 					end
 				end
 
@@ -275,7 +275,7 @@ function Store:unlock(key: string): Promise.Promise
 					return Promise.reject("Failed to release lock")
 				end
 
-				return nil
+				return nil :: any
 			end)
 	end)
 end
@@ -388,7 +388,7 @@ function Store:tx(
 
 				return self._dataStoreInterface:update(Constants.RECORD_SCOPE, key, function(oldRecord)
 					if oldRecord.lock.id ~= self._lockId then
-						return nil
+						return nil :: any
 					end
 
 					return record
