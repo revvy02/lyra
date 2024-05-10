@@ -1,3 +1,5 @@
+--!strict
+
 local Store = require(script.Store)
 
 return {

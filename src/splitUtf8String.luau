@@ -1,3 +1,5 @@
+--!strict
+
 local function splitUtf8String(str: string, maxSizeBytes: number): { string }
 	local sections = {}
 	local prevOffset = 1
