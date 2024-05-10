@@ -7,11 +7,13 @@ local function splitUtf8String(str: string, maxSizeBytes: number): { string }
 	while true do
 		-- Get the index of the last codepoint that *starts* within bounds.
 		local index = utf8.len(str, prevOffset, math.min(#str, prevOffset + maxSizeBytes))
+		assert(index ~= nil, "invalid utf8 string")
 
 		-- We don't know if the width of the codepoint at `index` extends beyond
 		-- bounds, so we calculate the width by subtracting 1 from the *next*
 		-- codepoint.
 		local nextCodepointOffset = utf8.offset(str, index + 1, prevOffset)
+		assert(nextCodepointOffset ~= nil, "invalid utf8 string")
 		if nextCodepointOffset - (prevOffset - 1) - 1 > maxSizeBytes then
 			-- The codepoint at `index` is too wide to fit within bounds, so we
 			-- shrink by one codepoint.
@@ -19,6 +21,7 @@ local function splitUtf8String(str: string, maxSizeBytes: number): { string }
 		end
 
 		local offset = utf8.offset(str, index + 1, prevOffset)
+		assert(offset ~= nil, "invalid utf8 string")
 		offset -= 1
 
 		table.insert(sections, string.sub(str, prevOffset, offset))
