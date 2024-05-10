@@ -102,12 +102,10 @@ it("ensures unique values per scope and key", function()
 	local keys = { "key1", "key2" }
 	local value1, value2 = { data = "data1" }, { data = "data2" }
 
-	-- Set value1 in scope1/key1 and value2 in scope2/key2
 	return Promise.new(function(resolve)
 		store:set(scopes[1], keys[1], value1):expect()
 		store:set(scopes[2], keys[2], value2):expect()
 
-		-- Verify that the values are unique and correctly assigned
 		store
 			:get(scopes[1], keys[1])
 			:andThen(function(result)
@@ -122,7 +120,6 @@ it("ensures unique values per scope and key", function()
 			end)
 			:expect()
 
-		-- Verify that changing a value in one scope/key does not affect the other
 		local updatedValue = { data = "updatedData" }
 		store:set(scopes[1], keys[1], updatedValue):expect()
 		store
@@ -200,7 +197,7 @@ it("correctly handles multiple updates to the same key", function()
 			return store:get(scope, key)
 		end)
 		:andThen(function(result)
-			expect(result.count).toEqual(3) -- Initial value of 1, plus two updates
+			expect(result.count).toEqual(3)
 		end)
 end)
 
@@ -210,7 +207,6 @@ it("handles concurrent updates correctly", function()
 	local store = MockInterface.new()
 	local initialValue = { count = 0 }
 
-	-- Create a mock update function
 	local updateFunction = mock().mockImplementation(function(oldValue)
 		return { count = oldValue.count + 1 }
 	end)
@@ -228,16 +224,14 @@ it("handles concurrent updates correctly", function()
 		)
 	end
 
-	-- Verify the final value
 	Promise.all(updates)
 		:andThen(function()
 			return store:get(scope, key)
 		end)
 		:andThen(function(result)
 			expect(result.count).toEqual(updatesCount)
-			-- Verify the mock update function was called the correct number of times
 			expect(#updateFunction.mock.calls).toBe(updatesCount)
-			-- Verify the first call was with the initial value
+
 			expect(updateFunction.mock.calls[1][1].count).toBe(0)
 		end)
 end)
