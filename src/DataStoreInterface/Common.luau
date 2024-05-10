@@ -1,17 +1,50 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local gt = require(ReplicatedStorage.Packages.GreenTea)
 local Promise = require(ReplicatedStorage.Packages.Promise)
+local t = require(ReplicatedStorage.Packages.t)
 
-local stringTypeRaw = gt.string()
-local anyTypeRaw = gt.any({ allowNil = true })
-local userIdsTypeRaw = gt.array(gt.number())
-local metadataTypeRaw = gt.dictionary(gt.string(), anyTypeRaw)
+export type DataStoreInterface = {
+	get: (self: any, storeName: string, key: string) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
+	set: (
+		self: any,
+		storeName: string,
+		key: string,
+		value: any,
+		userIds: { number }?,
+		options: DataStoreSetOptions?
+	) -> Promise.TypedPromise<string>,
+	update: (
+		self: any,
+		storeName: string,
+		key: string,
+		transformFunction: (currentValue: any, keyInfo: DataStoreKeyInfo) -> (any, { number }?, { [string]: any }?)
+	) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
+	remove: (self: any, storeName: string, key: string) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
+}
 
-local promiseTypeRaw = gt.withCustom((nil :: any) :: Promise.Promise, Promise.is, "Promise")
+local metadataCheck = t.map(t.string, t.any)
+local userIdsCheck = t.array(t.number)
 
-local toTypedPromise: <Out...>(Out...) -> Promise.TypedPromise<Out...> = function(...)
-	return ...
+local function callableCheck(value: any): (boolean, string?)
+	if t.callback(value) then
+		return true
+	end
+
+	local ok, err = t.table(value)
+	if not ok then
+		return false, err
+	end
+
+	local mt = getmetatable(value)
+	if mt == nil then
+		return false, "expected a mock object"
+	end
+
+	if mt.__call == nil then
+		return false, "expected a mock object"
+	end
+
+	return true
 end
 
 local function checkDataStoreKeyInfo(keyInfo: any): (boolean, string?)
@@ -28,64 +61,14 @@ local function checkDataStoreKeyInfo(keyInfo: any): (boolean, string?)
 	return true
 end
 
-local dataStoreKeyInfoTypeRaw =
-	gt.withCustom((nil :: any) :: DataStoreKeyInfo, checkDataStoreKeyInfo, "DataStoreKeyInfo")
-
-local selfTypeRaw = gt.any({ allowNil = true })
-
-local getFnTypeRaw = gt.fn(
-	gt.args(selfTypeRaw, stringTypeRaw, stringTypeRaw),
-	gt.returns(toTypedPromise(gt.tuple(anyTypeRaw, gt.optional(dataStoreKeyInfoTypeRaw))))
-)
-
-local setFnTypeRaw = gt.fn(
-	gt.args(
-		selfTypeRaw,
-		stringTypeRaw,
-		stringTypeRaw,
-		anyTypeRaw,
-		gt.optional(userIdsTypeRaw),
-		gt.optional(metadataTypeRaw)
-	),
-	gt.returns(toTypedPromise(stringTypeRaw))
-)
-
-local transformFunctionTypeRaw = gt.fn(
-	gt.args(selfTypeRaw, anyTypeRaw, dataStoreKeyInfoTypeRaw),
-	gt.returns(gt.tuple(anyTypeRaw, gt.optional(userIdsTypeRaw), gt.optional(gt.table({ [gt.string()] = anyTypeRaw }))))
-)
-
-local updateFnTypeRaw = gt.fn(
-	gt.args(selfTypeRaw, stringTypeRaw, stringTypeRaw, transformFunctionTypeRaw),
-	gt.returns(toTypedPromise(gt.tuple(anyTypeRaw, dataStoreKeyInfoTypeRaw)))
-)
-
-local removeFnTypeRaw = gt.fn(
-	gt.args(selfTypeRaw, stringTypeRaw, stringTypeRaw),
-	gt.returns(toTypedPromise(gt.tuple(gt.optional(anyTypeRaw), gt.optional(dataStoreKeyInfoTypeRaw))))
-)
-
-local function wrapPromiseFn<T>(fnType: T, fn: any): T
-	local fnGtType = gt.typecast(fnType)
-	assert(fnGtType.fn ~= nil, "fnType must be a GreenTea function type. Use gt.fn to create a function type")
-
-	return function(...: any)
-		fnGtType.fn.args:assert(...)
-
-		local resultPromise = (fn :: any)(...)
-		promiseTypeRaw:assert(resultPromise)
-
-		return resultPromise:andThen(function(...)
-			fnGtType.fn.returns:assert(...)
-			return ...
-		end)
-	end :: any
+local function getNow()
+	return DateTime.now().UnixTimestampMillis / 1000
 end
 
 return {
-	wrapPromiseFn = wrapPromiseFn,
-	getFnType = getFnTypeRaw,
-	setFnType = setFnTypeRaw,
-	updateFnType = updateFnTypeRaw,
-	removeFnType = removeFnTypeRaw,
+	metadataCheck = metadataCheck,
+	userIdsCheck = userIdsCheck,
+	callableCheck = callableCheck,
+	checkDataStoreKeyInfo = checkDataStoreKeyInfo,
+	getNow = getNow,
 }

@@ -3,33 +3,13 @@
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Common = require(script.Parent.Common)
 local Promise = require(ReplicatedStorage.Packages.Promise)
-
-type DataStoreInterface = {
-	get: (self: any, storeName: string, key: string) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
-	set: (
-		self: any,
-		storeName: string,
-		key: string,
-		value: any,
-		userIds: { number }?,
-		options: DataStoreSetOptions?
-	) -> Promise.TypedPromise<string>,
-	update: (
-		self: any,
-		storeName: string,
-		key: string,
-		transformFunction: (currentValue: any, keyInfo: DataStoreKeyInfo) -> (any, { number }?, { [string]: any }?)
-	) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
-	remove: (self: any, storeName: string, key: string) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
-}
-
-local function getNow()
-	return DateTime.now().UnixTimestampMillis / 1000
-end
+local t = require(ReplicatedStorage.Packages.t)
+local wrapPromiseFunc = require(ReplicatedStorage.Packages.Mix.wrapPromiseFunc)
 
 local function createMockDataStoreKeyInfo()
-	local currentTime = getNow()
+	local currentTime = Common.getNow()
 	local self
 	self = {
 		_metadata = {},
@@ -66,6 +46,7 @@ function MockInterface:_getScope(scope: string)
 
 	return scopeData
 end
+MockInterface._getScope = t.wrap(MockInterface._getScope, t.tuple(t.any, t.string))
 
 function MockInterface:get(scope: string, key: string): Promise.TypedPromise<(any?, DataStoreKeyInfo?)>
 	local info = self:_getScope(scope)[key]
@@ -74,13 +55,18 @@ function MockInterface:get(scope: string, key: string): Promise.TypedPromise<(an
 	end
 	return Promise.resolve(nil)
 end
+MockInterface.get = wrapPromiseFunc(
+	MockInterface.get,
+	t.tuple(t.any, t.string, t.string),
+	t.tuple(t.optional(t.any), t.optional(Common.checkDataStoreKeyInfo))
+)
 
 function MockInterface:set(
 	scope: string,
 	key: string,
 	value: any,
 	userIds: { number }?,
-	options: DataStoreSetOptions?
+	metadata: { [string]: any }?
 ): Promise.TypedPromise<string>
 	local info = self:_getScope(scope)[key]
 	if info == nil then
@@ -90,13 +76,18 @@ function MockInterface:set(
 	end
 
 	info.value = value
-	info.keyInfo.UpdatedTime = getNow()
+	info.keyInfo.UpdatedTime = Common.getNow()
 	info.keyInfo.Version = HttpService:GenerateGUID(false)
 	info.keyInfo._userIds = userIds or {}
-	info.keyInfo._metadata = options and options:GetMetadata() or {}
+	info.keyInfo._metadata = metadata or {}
 
 	return Promise.resolve(info.keyInfo.Version)
 end
+MockInterface.set = wrapPromiseFunc(
+	MockInterface.set,
+	t.tuple(t.any, t.string, t.string, t.any, t.optional(Common.userIdsCheck), t.optional(Common.metadataCheck)),
+	t.tuple(t.string)
+)
 
 function MockInterface:update(
 	scope: string,
@@ -116,13 +107,13 @@ function MockInterface:update(
 		scopeData[key] = info
 	end
 
-	local newValue, newUserIds, newMetadata = transformFunction(info.value, info.keyInfo)
+	local newValue, newUserIds, newMetadata = transformFunction(info.value, info.keyInfo :: any)
 	if newValue == nil then
-		return Promise.resolve(info.value, info.keyInfo)
+		return Promise.resolve(info.value, info.keyInfo :: any)
 	end
 
 	info.value = newValue
-	info.keyInfo.UpdatedTime = getNow()
+	info.keyInfo.UpdatedTime = Common.getNow()
 	info.keyInfo.Version = HttpService:GenerateGUID(false)
 	if newUserIds then
 		info.keyInfo._userIds = newUserIds
@@ -131,8 +122,13 @@ function MockInterface:update(
 		info.keyInfo._metadata = newMetadata
 	end
 
-	return Promise.resolve(newValue, info.keyInfo)
+	return Promise.resolve(newValue, info.keyInfo :: any)
 end
+MockInterface.update = wrapPromiseFunc(
+	MockInterface.update,
+	t.tuple(t.any, t.string, t.string, Common.callableCheck),
+	t.tuple(t.any, Common.checkDataStoreKeyInfo)
+)
 
 function MockInterface:remove(scope: string, key: string): Promise.TypedPromise<(any?, DataStoreKeyInfo?)>
 	local scopeData = self:_getScope(scope)
@@ -146,5 +142,10 @@ function MockInterface:remove(scope: string, key: string): Promise.TypedPromise<
 
 	return Promise.resolve(value, keyInfo)
 end
+MockInterface.remove = wrapPromiseFunc(
+	MockInterface.remove,
+	t.tuple(t.any, t.string, t.string),
+	t.tuple(t.optional(t.any), t.optional(Common.checkDataStoreKeyInfo))
+)
 
-return MockInterface
+return (MockInterface :: any) :: Common.DataStoreInterface
