@@ -3,6 +3,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Promise = require(ReplicatedStorage.Packages.Promise)
+local t = require(ReplicatedStorage.Packages.t)
 
 export type DataStoreInterface = {
 	get: (self: DataStoreInterface, storeName: string, key: string) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
@@ -46,4 +47,13 @@ export type DataStoreRecord = {
 	file: File,
 }
 
-return nil
+local txInfoCheck = t.some(
+	t.strictInterface({ committedData = t.any }),
+	t.strictInterface({ committedData = t.any, txId = t.string, txData = t.any })
+)
+local fileCheck = t.some(t.strictInterface({ data = t.any }), t.strictInterface({ shard = t.string, count = t.number }))
+
+return {
+	txInfoCheck = txInfoCheck,
+	fileCheck = fileCheck,
+}

@@ -8,10 +8,12 @@ local LOCK_DURATION_SECONDS = 2 * 60
 local Constants = require(script.Parent.Constants)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 local Sift = require(ReplicatedStorage.Packages.Sift)
+local t = require(ReplicatedStorage.Packages.t)
 local DataStoreInterface = require(script.Parent.DataStoreInterface)
 local Types = require(script.Parent.Types)
 local splitUtf8String = require(script.Parent.splitUtf8String)
 local noYield = require(script.Parent.noYield)
+local wrapPromiseFunc = require(script.Parent.wrapPromiseFunc)
 
 export type StoreConfig = {
 	name: string,
@@ -20,6 +22,13 @@ export type StoreConfig = {
 	migrations: { [number]: (value: any) -> any }?,
 	dataStoreInterface: Types.DataStoreInterface?,
 }
+local storeConfigCheck = t.strictInterface({
+	name = t.string,
+	template = t.any,
+	schema = t.callback,
+	migrations = t.optional(t.array(t.callback)),
+	dataStoreInterface = t.optional(t.table),
+})
 
 type KeyOperationQueueItem = {
 	resolve: () -> (),
@@ -30,6 +39,7 @@ type KeyOperationQueueItem = {
 type KeyOperationQueue = { KeyOperationQueueItem }
 
 type UnsavedMutationsSnapshot = { [string]: boolean }
+local unsavedMutationsSnapshotCheck = t.map(t.string, t.boolean)
 
 local Store = {}
 
@@ -56,6 +66,7 @@ local function createStore(config: StoreConfig)
 
 	return self
 end
+createStore = t.wrap(createStore, t.tuple(storeConfigCheck))
 
 function Store:_writeLargeFile(data: any): Promise.TypedPromise<Types.File>
 	local str = HttpService:JSONEncode(data)
@@ -73,6 +84,7 @@ function Store:_writeLargeFile(data: any): Promise.TypedPromise<Types.File>
 
 	return Promise.all(promises):andThenReturn({ shard = shardId, count = #shards })
 end
+Store._writeLargeFile = wrapPromiseFunc(Store._writeLargeFile, t.tuple(t.any), Types.fileCheck)
 
 function Store:_readLargeFile(file: Types.File): Promise.TypedPromise<any>
 	local shardId = file.shard
@@ -90,6 +102,7 @@ function Store:_readLargeFile(file: Types.File): Promise.TypedPromise<any>
 		return HttpService:JSONDecode(table.concat(shards))
 	end)
 end
+Store._readLargeFile = wrapPromiseFunc(Store._readLargeFile, Types.fileCheck, t.any)
 
 function Store:_readTx(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 	local txId = txInfo.txId
@@ -105,6 +118,7 @@ function Store:_readTx(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 		end
 	end)
 end
+Store._readTx = wrapPromiseFunc(Store._readTx, Types.txInfoCheck, t.any)
 
 function Store:_enqueueKeyOperation(key: string, operation: () -> Promise.Promise): Promise.Promise
 	local queue = self._keyOperationQueues[key]
@@ -135,6 +149,7 @@ function Store:_enqueueKeyOperation(key: string, operation: () -> Promise.Promis
 
 	return promise
 end
+Store._enqueueKeyOperation = wrapPromiseFunc(Store._enqueueKeyOperation, t.tuple(t.string, t.callback), t.tuple(t.none))
 
 function Store:_enqueueMultiKeyOperation(keys: { string }, operation: () -> Promise.Promise): Promise.Promise
 	local resolve
@@ -156,6 +171,8 @@ function Store:_enqueueMultiKeyOperation(keys: { string }, operation: () -> Prom
 
 	return Promise.all(promises)
 end
+Store._enqueueMultiKeyOperation =
+	wrapPromiseFunc(Store._enqueueMultiKeyOperation, t.tuple(t.array(t.string), t.callback), t.tuple(t.none))
 
 function Store:_processKeyOperationQueue(queue: KeyOperationQueue): ()
 	while #queue > 0 do
@@ -176,19 +193,23 @@ end
 function Store:_getSnapshot(key: string): UnsavedMutationsSnapshot
 	return Sift.Set.copy(self._unsavedMutations[key])
 end
+Store._getSnapshot = t.wrap(Store._getSnapshot, t.tuple(t.string))
 
 function Store:_isSnapshotCommitted(snapshot: UnsavedMutationsSnapshot, key: string): boolean
 	local intersection = Sift.Set.intersection(snapshot, self._unsavedMutations[key])
 	return Sift.Set.count(intersection) == 0
 end
+Store._isSnapshotCommitted = t.wrap(Store._isSnapshotCommitted, t.tuple(unsavedMutationsSnapshotCheck, t.string))
 
 function Store:_commitSnapshot(snapshot: UnsavedMutationsSnapshot, key: string): ()
 	self._unsavedMutations[key] = Sift.Set.difference(self._unsavedMutations[key], snapshot)
 end
+Store._commitSnapshot = t.wrap(Store._commitSnapshot, t.tuple(unsavedMutationsSnapshotCheck, t.string))
 
 function Store:_isSaved(key: string): boolean
 	return Sift.Set.count(self._unsavedMutations[key]) == 0
 end
+Store._isSaved = t.wrap(Store._isSaved, t.tuple(t.string))
 
 function Store:lock(key: string): Promise.Promise
 	local function transformFunction(value)
@@ -239,6 +260,7 @@ function Store:lock(key: string): Promise.Promise
 			return data
 		end)
 end
+Store.lock = wrapPromiseFunc(Store.lock, t.tuple(t.string), t.tuple(t.any))
 
 function Store:unlock(key: string): Promise.Promise
 	-- TODO: forbid any other mutations to the key from here on out
@@ -279,12 +301,14 @@ function Store:unlock(key: string): Promise.Promise
 			end)
 	end)
 end
+Store.unlock = wrapPromiseFunc(Store.unlock, t.tuple(t.string), t.tuple(t.none))
 
 function Store:_mutateKey(key: string, newData: any): ()
 	local mutationId = HttpService:GenerateGUID(false)
 	self._unsavedMutations[key] = Sift.Set.add(self._unsavedMutations[key], mutationId)
 	self._cache[key] = newData
 end
+Store._mutateKey = t.wrap(Store._mutateKey, t.tuple(t.string, t.any))
 
 function Store:update(key: string, transformFunction: (data: any) -> any): Promise.Promise
 	return Promise.new(function(resolve, reject)
@@ -318,6 +342,7 @@ function Store:update(key: string, transformFunction: (data: any) -> any): Promi
 		return resolve()
 	end)
 end
+Store.update = wrapPromiseFunc(Store.update, t.tuple(t.string, t.callback), t.tuple(t.none))
 
 function Store:tx(
 	keys: { string },
@@ -425,6 +450,7 @@ function Store:tx(
 		txLockResolve()
 	end)
 end
+Store.tx = wrapPromiseFunc(Store.tx, t.tuple(t.array(t.string), t.callback), t.tuple(t.none))
 
 function Store:save(key: string): Promise.Promise
 	if self:_isSaved(key) then
@@ -459,6 +485,7 @@ function Store:save(key: string): Promise.Promise
 			end)
 	end)
 end
+Store.save = wrapPromiseFunc(Store.save, t.tuple(t.string), t.tuple(t.none))
 
 return {
 	createStore = createStore,
