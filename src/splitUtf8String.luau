@@ -1,6 +1,14 @@
 --!strict
 
 local function splitUtf8String(str: string, maxSizeBytes: number): { string }
+	if str == "" then
+		return {}
+	end
+
+	if maxSizeBytes <= 0 then
+		error("maxSizeBytes must be greater than 0")
+	end
+
 	local sections = {}
 	local prevOffset = 1
 
