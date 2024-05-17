@@ -10,13 +10,22 @@ local function wrapPromiseFunc<T>(
 	returnsCheck: (...any) -> (boolean, string?)
 ): T
 	return function(...)
-		assert(argsCheck(...))
+		local traceback = debug.traceback()
+		local argsOk, argsErr = argsCheck(...)
+		assert(argsOk, `wrapPromiseFunc expected args to pass check, got: {argsErr}: {...}\ntrace: {traceback}`)
 
 		local p = (func :: any)(...)
-		assert(Promise.is(p), "expected a Promise")
+		assert(Promise.is(p), `wrapPromiseFunc expected a Promise, got {typeof(p)}: {...}\ntrace: {traceback}`)
 
 		return p:andThen(function(...)
-			assert(returnsCheck(...))
+			local returnsOk, returnsErr = returnsCheck(...)
+			if returnsErr then
+				print(...)
+			end
+			assert(
+				returnsOk,
+				`wrapPromiseFunc expected returns to pass check, got: {returnsErr}: {...}\ntrace: {traceback}`
+			)
 			return ...
 		end)
 	end :: any

@@ -9,7 +9,6 @@ local Constants = require(script.Parent.Constants)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 local Sift = require(ReplicatedStorage.Packages.Sift)
 local t = require(ReplicatedStorage.Packages.t)
-local DataStoreInterface = require(script.Parent.DataStoreInterface)
 local Types = require(script.Parent.Types)
 local splitUtf8String = require(script.Parent.splitUtf8String)
 local noYield = require(script.Parent.noYield)
@@ -44,7 +43,8 @@ local unsavedMutationsSnapshotCheck = t.map(t.string, t.boolean)
 local Store = {}
 
 local function createStore(config: StoreConfig)
-	local dataStoreInterface = config.dataStoreInterface or DataStoreInterface.Mock.new()
+	local dataStoreInterface = config.dataStoreInterface
+	assert(dataStoreInterface, "dataStoreInterface is required")
 
 	local self = setmetatable({
 		_name = config.name,
@@ -54,6 +54,7 @@ local function createStore(config: StoreConfig)
 		_dataStoreInterface = dataStoreInterface,
 		_lockId = HttpService:GenerateGUID(false),
 		_cache = {},
+		_metadata = {},
 		_txLockPromises = {},
 		_unsavedMutations = {},
 		_keyOperationQueues = {},
@@ -68,7 +69,11 @@ local function createStore(config: StoreConfig)
 end
 createStore = t.wrap(createStore, t.tuple(storeConfigCheck))
 
-function Store:_writeLargeFile(data: any): Promise.TypedPromise<Types.File>
+function Store:_writeLargeFile(
+	data: any,
+	userIds: { number }?,
+	metadata: { [string]: any }?
+): Promise.TypedPromise<Types.File>
 	local str = HttpService:JSONEncode(data)
 	if #str <= Constants.MAX_CHUNK_SIZE then
 		return Promise.resolve({ data = data } :: Types.File)
@@ -78,13 +83,16 @@ function Store:_writeLargeFile(data: any): Promise.TypedPromise<Types.File>
 	local shards = splitUtf8String(data, Constants.MAX_CHUNK_SIZE)
 
 	local promises = Sift.Array.map(shards, function(shard, index)
-		-- TODO: attach metadata so it can be cleaned up
-		return self._dataStoreInterface:set(Constants.SHARD_SCOPE, `{shardId}-{index}`, shard)
+		return self._dataStoreInterface:set(Constants.SHARD_SCOPE, `{shardId}-{index}`, shard, userIds, metadata)
 	end)
 
 	return Promise.all(promises):andThenReturn({ shard = shardId, count = #shards })
 end
-Store._writeLargeFile = wrapPromiseFunc(Store._writeLargeFile, t.tuple(t.any), Types.fileCheck)
+Store._writeLargeFile = wrapPromiseFunc(
+	Store._writeLargeFile,
+	t.tuple(t.any, t.any, t.optional(t.array(t.number)), t.optional(t.map(t.string, t.any))),
+	Types.fileCheck
+)
 
 function Store:_readLargeFile(file: Types.File): Promise.TypedPromise<any>
 	local shardId = file.shard
@@ -102,7 +110,7 @@ function Store:_readLargeFile(file: Types.File): Promise.TypedPromise<any>
 		return HttpService:JSONDecode(table.concat(shards))
 	end)
 end
-Store._readLargeFile = wrapPromiseFunc(Store._readLargeFile, Types.fileCheck, t.any)
+Store._readLargeFile = wrapPromiseFunc(Store._readLargeFile, t.tuple(t.any, Types.fileCheck), t.any)
 
 function Store:_readTx(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 	local txId = txInfo.txId
@@ -118,7 +126,7 @@ function Store:_readTx(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 		end
 	end)
 end
-Store._readTx = wrapPromiseFunc(Store._readTx, Types.txInfoCheck, t.any)
+Store._readTx = wrapPromiseFunc(Store._readTx, t.tuple(t.any, Types.txInfoCheck), t.any)
 
 function Store:_enqueueKeyOperation(key: string, operation: () -> Promise.Promise): Promise.Promise
 	local queue = self._keyOperationQueues[key]
@@ -149,7 +157,8 @@ function Store:_enqueueKeyOperation(key: string, operation: () -> Promise.Promis
 
 	return promise
 end
-Store._enqueueKeyOperation = wrapPromiseFunc(Store._enqueueKeyOperation, t.tuple(t.string, t.callback), t.tuple(t.none))
+Store._enqueueKeyOperation =
+	wrapPromiseFunc(Store._enqueueKeyOperation, t.tuple(t.any, t.string, t.callback), t.tuple(t.none))
 
 function Store:_enqueueMultiKeyOperation(keys: { string }, operation: () -> Promise.Promise): Promise.Promise
 	local resolve
@@ -169,10 +178,10 @@ function Store:_enqueueMultiKeyOperation(keys: { string }, operation: () -> Prom
 		end)
 	end)
 
-	return Promise.all(promises)
+	return Promise.all(promises):andThenReturn(promise)
 end
 Store._enqueueMultiKeyOperation =
-	wrapPromiseFunc(Store._enqueueMultiKeyOperation, t.tuple(t.array(t.string), t.callback), t.tuple(t.none))
+	wrapPromiseFunc(Store._enqueueMultiKeyOperation, t.tuple(t.any, t.array(t.string), t.callback), t.tuple(t.none))
 
 function Store:_processKeyOperationQueue(queue: KeyOperationQueue): ()
 	while #queue > 0 do
@@ -193,26 +202,26 @@ end
 function Store:_getSnapshot(key: string): UnsavedMutationsSnapshot
 	return Sift.Set.copy(self._unsavedMutations[key])
 end
-Store._getSnapshot = t.wrap(Store._getSnapshot, t.tuple(t.string))
+Store._getSnapshot = t.wrap(Store._getSnapshot, t.tuple(t.any, t.string))
 
 function Store:_isSnapshotCommitted(snapshot: UnsavedMutationsSnapshot, key: string): boolean
 	local intersection = Sift.Set.intersection(snapshot, self._unsavedMutations[key])
 	return Sift.Set.count(intersection) == 0
 end
-Store._isSnapshotCommitted = t.wrap(Store._isSnapshotCommitted, t.tuple(unsavedMutationsSnapshotCheck, t.string))
+Store._isSnapshotCommitted = t.wrap(Store._isSnapshotCommitted, t.tuple(t.any, unsavedMutationsSnapshotCheck, t.string))
 
 function Store:_commitSnapshot(snapshot: UnsavedMutationsSnapshot, key: string): ()
 	self._unsavedMutations[key] = Sift.Set.difference(self._unsavedMutations[key], snapshot)
 end
-Store._commitSnapshot = t.wrap(Store._commitSnapshot, t.tuple(unsavedMutationsSnapshotCheck, t.string))
+Store._commitSnapshot = t.wrap(Store._commitSnapshot, t.tuple(t.any, unsavedMutationsSnapshotCheck, t.string))
 
 function Store:_isSaved(key: string): boolean
 	return Sift.Set.count(self._unsavedMutations[key]) == 0
 end
-Store._isSaved = t.wrap(Store._isSaved, t.tuple(t.string))
+Store._isSaved = t.wrap(Store._isSaved, t.tuple(t.any, t.string))
 
-function Store:lock(key: string): Promise.Promise
-	local function transformFunction(value)
+function Store:lock(key: string, userIds: { number }?): Promise.Promise
+	local function transformFunction(value, _previousUserIds, previousMetadata)
 		value = Sift.Dictionary.mergeDeep({ lock = {} }, value)
 
 		local lock = value.lock
@@ -222,53 +231,54 @@ function Store:lock(key: string): Promise.Promise
 
 		value.lock = self:_getLock()
 
-		return value
+		return value, userIds, previousMetadata
 	end
+
+	local metadata
 
 	return self._dataStoreInterface
 		:update(Constants.RECORD_SCOPE, key, transformFunction)
-		:andThen(function(record)
+		:andThen(function(record, _userIds, _metadata)
 			if record.lock.id ~= self._lockId then
 				return Promise.reject("Failed to acquire lock")
 			end
 
-			local file = record.file
-			if file == nil then
-				return nil :: any
-			end
+			metadata = _metadata
 
-			return self:_readLargeFile(file)
+			local file = record.file
+			return if file then self:_readLargeFile(file) else nil :: any
 		end)
 		:andThen(function(txInfo)
-			if txInfo == nil then
-				return nil
-			end
-
-			return self:_readTx(txInfo)
+			return if txInfo then self:_readTx(txInfo) else nil
 		end)
 		:andThen(function(data)
 			if data == nil then
 				data = Sift.Dictionary.copyDeep(self._template)
+				metadata = {
+					associatedShards = {},
+					associatedTxs = {},
+				}
 			end
 
 			-- TODO: migrations
 
 			self._cache[key] = data
+			self._metadata[key] = metadata
 			self._unsavedMutations[key] = {}
 			self._keyOperationQueues[key] = {}
 
 			return data
 		end)
 end
-Store.lock = wrapPromiseFunc(Store.lock, t.tuple(t.string), t.tuple(t.any))
+Store.lock = wrapPromiseFunc(Store.lock, t.tuple(t.any, t.string, t.optional(t.array(t.number))), t.tuple(t.any))
 
-function Store:unlock(key: string): Promise.Promise
+function Store:unlock(key: string, userIds: { number }?): Promise.Promise
 	-- TODO: forbid any other mutations to the key from here on out
 	return self:_enqueueKeyOperation(key, function()
 		local data = Sift.Dictionary.copyDeep(self._cache[key])
 		local txInfo = { committedData = data }
 
-		return self:_writeLargeFile(txInfo)
+		return self:_writeLargeFile(txInfo, userIds)
 			:andThen(function(file)
 				local record = {
 					lock = {
@@ -277,19 +287,20 @@ function Store:unlock(key: string): Promise.Promise
 					},
 					file = file,
 				}
+				local metadata = self._metadata[key]
 
-				local function transformFunction(value)
-					if value.lock.id == self._lockId then
-						return record
-					else
-						return nil :: any
+				local function transformFunction(value, previousUserIds, previousMetadata)
+					if value.lock.id ~= self._lockId then
+						return nil :: any, previousUserIds, previousMetadata
 					end
+					return record, userIds, metadata
 				end
 
 				return self._dataStoreInterface:update(Constants.RECORD_SCOPE, key, transformFunction)
 			end)
 			:andThen(function(latestValue)
 				self._cache[key] = nil
+				self._metadata[key] = nil
 				self._unsavedMutations[key] = nil
 				self._keyOperationQueues[key] = nil
 
@@ -301,14 +312,14 @@ function Store:unlock(key: string): Promise.Promise
 			end)
 	end)
 end
-Store.unlock = wrapPromiseFunc(Store.unlock, t.tuple(t.string), t.tuple(t.none))
+Store.unlock = wrapPromiseFunc(Store.unlock, t.tuple(t.any, t.string, t.optional(t.array(t.number))), t.tuple(t.none))
 
 function Store:_mutateKey(key: string, newData: any): ()
 	local mutationId = HttpService:GenerateGUID(false)
 	self._unsavedMutations[key] = Sift.Set.add(self._unsavedMutations[key], mutationId)
 	self._cache[key] = newData
 end
-Store._mutateKey = t.wrap(Store._mutateKey, t.tuple(t.string, t.any))
+Store._mutateKey = t.wrap(Store._mutateKey, t.tuple(t.any, t.string, t.any))
 
 function Store:update(key: string, transformFunction: (data: any) -> any): Promise.Promise
 	return Promise.new(function(resolve, reject)
@@ -342,11 +353,12 @@ function Store:update(key: string, transformFunction: (data: any) -> any): Promi
 		return resolve()
 	end)
 end
-Store.update = wrapPromiseFunc(Store.update, t.tuple(t.string, t.callback), t.tuple(t.none))
+Store.update = wrapPromiseFunc(Store.update, t.tuple(t.any, t.string, t.callback), t.tuple(t.none))
 
 function Store:tx(
 	keys: { string },
-	transformFunction: (state: { [string]: any }) -> { [string]: any }?
+	transformFunction: (state: { [string]: any }) -> { [string]: any }?,
+	userIds: { number }?
 ): Promise.Promise
 	local txLockResolve
 	local txLockPromise = Promise.new(function(_resolve)
@@ -398,34 +410,41 @@ function Store:tx(
 
 		local txId = HttpService:GenerateGUID(false)
 
-		local promises = Sift.Array.map(keys, function(key)
+		local promises = Sift.Array.map(keys, function(key, index)
 			local txInfo = {
 				txId = txId,
 				committedData = currentState[key],
 				txData = nextState[key],
 			}
 
-			return self:_writeLargeFile(txInfo):andThen(function(file)
+			local keyUserIds = if userIds then userIds[index] else nil
+
+			return self:_writeLargeFile(txInfo, keyUserIds):andThen(function(file)
 				local record = {
 					lock = self:_getLock(),
 					file = file,
 				}
+				local metadata = self._metadata[key]
 
-				return self._dataStoreInterface:update(Constants.RECORD_SCOPE, key, function(oldRecord)
-					if oldRecord.lock.id ~= self._lockId then
-						return nil :: any
-					end
+				return self._dataStoreInterface:update(
+					Constants.RECORD_SCOPE,
+					key,
+					function(previousValue, previousUserIds, previousMetadata)
+						if previousValue.lock.id ~= self._lockId then
+							return nil :: any, previousUserIds, previousMetadata
+						end
 
-					return record
-				end)
+						return record, userIds, metadata
+					end,
+					keyUserIds
+				)
 			end)
 		end)
 
 		local commitPromise = Promise.all(promises)
 			:andThen(function()
-				-- TODO: attach metadata so it can be cleaned up
-				return self._dataStoreInterface:set(Constants.TX_SCOPE, txId, {
-					status = "committed",
+				return self._dataStoreInterface:set(Constants.TX_SCOPE, txId, { status = "committed" }, nil, {
+					associatedKeys = keys,
 				})
 			end)
 			:andThen(function()
@@ -450,9 +469,13 @@ function Store:tx(
 		txLockResolve()
 	end)
 end
-Store.tx = wrapPromiseFunc(Store.tx, t.tuple(t.array(t.string), t.callback), t.tuple(t.none))
+Store.tx = wrapPromiseFunc(
+	Store.tx,
+	t.tuple(t.any, t.array(t.string), t.callback, t.optional(t.array(t.number))),
+	t.tuple(t.none)
+)
 
-function Store:save(key: string): Promise.Promise
+function Store:save(key: string, userIds: { number }?): Promise.Promise
 	if self:_isSaved(key) then
 		return Promise.resolve()
 	end
@@ -472,20 +495,22 @@ function Store:save(key: string): Promise.Promise
 		local data = Sift.Dictionary.copyDeep(self._cache[key])
 		local txInfo = { committedData = data }
 
-		return self:_writeLargeFile(txInfo)
+		return self:_writeLargeFile(txInfo, userIds)
 			:andThen(function(file)
 				local record = {
 					lock = self:_getLock(),
 					file = file,
 				}
-				return self._dataStoreInterface:set(Constants.RECORD_SCOPE, key, record)
+				local metadata = self._metadata[key]
+
+				return self._dataStoreInterface:set(Constants.RECORD_SCOPE, key, record, userIds, metadata)
 			end)
 			:andThen(function()
 				self:_commitSnapshot(snapshot, key)
 			end)
 	end)
 end
-Store.save = wrapPromiseFunc(Store.save, t.tuple(t.string), t.tuple(t.none))
+Store.save = wrapPromiseFunc(Store.save, t.tuple(t.any, t.string, t.optional(t.array(t.number))), t.tuple(t.none))
 
 return {
 	createStore = createStore,
