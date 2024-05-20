@@ -58,6 +58,8 @@ local function createStore(config: StoreConfig)
 		_txLockPromises = {},
 		_unsavedMutations = {},
 		_keyOperationQueues = {},
+		_orphanedShards = {},
+		_orphanedTxs = {},
 	}, { __index = Store })
 
 	local ok, err = self._schema(self._template)
@@ -69,7 +71,10 @@ local function createStore(config: StoreConfig)
 end
 createStore = t.wrap(createStore, t.tuple(storeConfigCheck))
 
+function Store:_markOrphanedShard(file: Types.File) end
+
 function Store:_writeLargeFile(
+	key: string,
 	data: any,
 	userIds: { number }?,
 	metadata: { [string]: any }?
@@ -86,12 +91,20 @@ function Store:_writeLargeFile(
 		return self._dataStoreInterface:set(Constants.SHARD_SCOPE, `{shardId}-{index}`, shard, userIds, metadata)
 	end)
 
-	return Promise.all(promises):andThenReturn({ shard = shardId, count = #shards })
+	local file = { shard = shardId, count = #shards }
+
+	local p = Promise.all(promises):andThenReturn(file):catch(function(err)
+		table.insert(self._metadata[key].orphanedShards, file)
+		self:_markOrphanedShard(file)
+		return Promise.reject(err)
+	end)
+
+	return p
 end
 Store._writeLargeFile = wrapPromiseFunc(
 	Store._writeLargeFile,
-	t.tuple(t.any, t.any, t.optional(t.array(t.number)), t.optional(t.map(t.string, t.any))),
-	Types.fileCheck
+	t.tuple(t.any, t.string, t.any, t.optional(t.array(t.number)), t.optional(t.map(t.string, t.any))),
+	t.tuple(Types.fileCheck)
 )
 
 function Store:_readLargeFile(file: Types.File): Promise.TypedPromise<any>
@@ -110,7 +123,7 @@ function Store:_readLargeFile(file: Types.File): Promise.TypedPromise<any>
 		return HttpService:JSONDecode(table.concat(shards))
 	end)
 end
-Store._readLargeFile = wrapPromiseFunc(Store._readLargeFile, t.tuple(t.any, Types.fileCheck), t.any)
+Store._readLargeFile = wrapPromiseFunc(Store._readLargeFile, t.tuple(t.any, Types.fileCheck), t.tuple(t.any))
 
 function Store:_readTx(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 	local txId = txInfo.txId
@@ -126,7 +139,7 @@ function Store:_readTx(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 		end
 	end)
 end
-Store._readTx = wrapPromiseFunc(Store._readTx, t.tuple(t.any, Types.txInfoCheck), t.any)
+Store._readTx = wrapPromiseFunc(Store._readTx, t.tuple(t.any, Types.txInfoCheck), t.tuple(t.any))
 
 function Store:_enqueueKeyOperation(key: string, operation: () -> Promise.Promise): Promise.Promise
 	local queue = self._keyOperationQueues[key]
@@ -278,7 +291,7 @@ function Store:unlock(key: string, userIds: { number }?): Promise.Promise
 		local data = Sift.Dictionary.copyDeep(self._cache[key])
 		local txInfo = { committedData = data }
 
-		return self:_writeLargeFile(txInfo, userIds)
+		return self:_writeLargeFile(key, txInfo, userIds)
 			:andThen(function(file)
 				local record = {
 					lock = {
@@ -417,9 +430,9 @@ function Store:tx(
 				txData = nextState[key],
 			}
 
-			local keyUserIds = if userIds then userIds[index] else nil
+			local keyUserId = if userIds then { userIds[index] } else nil
 
-			return self:_writeLargeFile(txInfo, keyUserIds):andThen(function(file)
+			return self:_writeLargeFile(key, txInfo, keyUserId):andThen(function(file)
 				local record = {
 					lock = self:_getLock(),
 					file = file,
@@ -434,9 +447,9 @@ function Store:tx(
 							return nil :: any, previousUserIds, previousMetadata
 						end
 
-						return record, userIds, metadata
+						return record, keyUserId, metadata
 					end,
-					keyUserIds
+					keyUserId
 				)
 			end)
 		end)
@@ -495,7 +508,7 @@ function Store:save(key: string, userIds: { number }?): Promise.Promise
 		local data = Sift.Dictionary.copyDeep(self._cache[key])
 		local txInfo = { committedData = data }
 
-		return self:_writeLargeFile(txInfo, userIds)
+		return self:_writeLargeFile(key, txInfo, userIds)
 			:andThen(function(file)
 				local record = {
 					lock = self:_getLock(),
