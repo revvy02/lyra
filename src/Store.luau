@@ -53,10 +53,8 @@ local function createStore(config: StoreConfig)
 		_migrations = config.migrations or {},
 		_dataStoreInterface = dataStoreInterface,
 		_lockId = HttpService:GenerateGUID(false),
-		_cache = {},
-		_metadata = {},
+		_keyInfo = {},
 		_txLockPromises = {},
-		_unsavedMutations = {},
 		_keyOperationQueues = {},
 		_orphanedShards = {},
 		_orphanedTxs = {},
@@ -94,7 +92,7 @@ function Store:_writeLargeFile(
 	local file = { shard = shardId, count = #shards }
 
 	local p = Promise.all(promises):andThenReturn(file):catch(function(err)
-		table.insert(self._metadata[key].orphanedShards, file)
+		table.insert(self._keyInfo[key].orphanedShards, file)
 		self:_markOrphanedShard(file)
 		return Promise.reject(err)
 	end)
@@ -142,11 +140,7 @@ end
 Store._readTx = wrapPromiseFunc(Store._readTx, t.tuple(t.any, Types.txInfoCheck), t.tuple(t.any))
 
 function Store:_enqueueKeyOperation(key: string, operation: () -> Promise.Promise): Promise.Promise
-	local queue = self._keyOperationQueues[key]
-	if queue == nil then
-		queue = {}
-		self._keyOperationQueues[key] = queue
-	end
+	local queue = self._keyInfo[key].operationQueue
 
 	local resolve, reject
 	local promise = Promise.new(function(_resolve, _reject)
@@ -213,23 +207,23 @@ function Store:_getLock(): Types.Lock
 end
 
 function Store:_getSnapshot(key: string): UnsavedMutationsSnapshot
-	return Sift.Set.copy(self._unsavedMutations[key])
+	return Sift.Set.copy(self._keyInfo[key].unsavedMutations)
 end
 Store._getSnapshot = t.wrap(Store._getSnapshot, t.tuple(t.any, t.string))
 
 function Store:_isSnapshotCommitted(snapshot: UnsavedMutationsSnapshot, key: string): boolean
-	local intersection = Sift.Set.intersection(snapshot, self._unsavedMutations[key])
+	local intersection = Sift.Set.intersection(snapshot, self._keyInfo[key].unsavedMutations)
 	return Sift.Set.count(intersection) == 0
 end
 Store._isSnapshotCommitted = t.wrap(Store._isSnapshotCommitted, t.tuple(t.any, unsavedMutationsSnapshotCheck, t.string))
 
 function Store:_commitSnapshot(snapshot: UnsavedMutationsSnapshot, key: string): ()
-	self._unsavedMutations[key] = Sift.Set.difference(self._unsavedMutations[key], snapshot)
+	self._keyInfo[key].unsavedMutations = Sift.Set.difference(self._keyInfo[key].unsavedMutations, snapshot)
 end
 Store._commitSnapshot = t.wrap(Store._commitSnapshot, t.tuple(t.any, unsavedMutationsSnapshotCheck, t.string))
 
 function Store:_isSaved(key: string): boolean
-	return Sift.Set.count(self._unsavedMutations[key]) == 0
+	return Sift.Set.count(self._keyInfo[key].unsavedMutations) == 0
 end
 Store._isSaved = t.wrap(Store._isSaved, t.tuple(t.any, t.string))
 
@@ -275,10 +269,12 @@ function Store:lock(key: string, userIds: { number }?): Promise.Promise
 
 			-- TODO: migrations
 
-			self._cache[key] = data
-			self._metadata[key] = metadata
-			self._unsavedMutations[key] = {}
-			self._keyOperationQueues[key] = {}
+			self._keyInfo[key] = {
+				data = data,
+				metadata = metadata,
+				unsavedMutations = {},
+				operationQueue = {},
+			}
 
 			return data
 		end)
@@ -288,7 +284,8 @@ Store.lock = wrapPromiseFunc(Store.lock, t.tuple(t.any, t.string, t.optional(t.a
 function Store:unlock(key: string, userIds: { number }?): Promise.Promise
 	-- TODO: forbid any other mutations to the key from here on out
 	return self:_enqueueKeyOperation(key, function()
-		local data = Sift.Dictionary.copyDeep(self._cache[key])
+		local keyInfo = self._keyInfo[key]
+		local data = Sift.Dictionary.copyDeep(keyInfo.data)
 		local txInfo = { committedData = data }
 
 		return self:_writeLargeFile(key, txInfo, userIds)
@@ -300,7 +297,7 @@ function Store:unlock(key: string, userIds: { number }?): Promise.Promise
 					},
 					file = file,
 				}
-				local metadata = self._metadata[key]
+				local metadata = keyInfo.metadata[key]
 
 				local function transformFunction(value, previousUserIds, previousMetadata)
 					if value.lock.id ~= self._lockId then
@@ -312,10 +309,7 @@ function Store:unlock(key: string, userIds: { number }?): Promise.Promise
 				return self._dataStoreInterface:update(Constants.RECORD_SCOPE, key, transformFunction)
 			end)
 			:andThen(function(latestValue)
-				self._cache[key] = nil
-				self._metadata[key] = nil
-				self._unsavedMutations[key] = nil
-				self._keyOperationQueues[key] = nil
+				self._keyInfo[key] = nil
 
 				if latestValue.lock.id ~= nil then
 					return Promise.reject("Failed to release lock")
@@ -329,8 +323,9 @@ Store.unlock = wrapPromiseFunc(Store.unlock, t.tuple(t.any, t.string, t.optional
 
 function Store:_mutateKey(key: string, newData: any): ()
 	local mutationId = HttpService:GenerateGUID(false)
-	self._unsavedMutations[key] = Sift.Set.add(self._unsavedMutations[key], mutationId)
-	self._cache[key] = newData
+	local keyInfo = self._keyInfo[key]
+	keyInfo.unsavedMutations = Sift.Set.add(keyInfo.unsavedMutations, mutationId)
+	keyInfo.data = newData
 end
 Store._mutateKey = t.wrap(Store._mutateKey, t.tuple(t.any, t.string, t.any))
 
@@ -340,7 +335,7 @@ function Store:update(key: string, transformFunction: (data: any) -> any): Promi
 			self._txLockPromises[key]:await()
 		end
 
-		local currentData = self._cache[key]
+		local currentData = self._keyInfo[key].data
 		local nextData = Sift.Dictionary.copyDeep(currentData)
 		local transformOk, result = pcall(noYield, transformFunction, nextData)
 		if not transformOk then
@@ -382,7 +377,7 @@ function Store:tx(
 		local currentState = {}
 		for _, key in keys do
 			self._txLockPromises[key] = txLockPromise
-			currentState[key] = self._cache[key]
+			currentState[key] = self._keyInfo[key].data
 		end
 
 		local nextState = Sift.Dictionary.copyDeep(currentState)
@@ -437,7 +432,7 @@ function Store:tx(
 					lock = self:_getLock(),
 					file = file,
 				}
-				local metadata = self._metadata[key]
+				local metadata = self._keyInfo[key].metadata
 
 				return self._dataStoreInterface:update(
 					Constants.RECORD_SCOPE,
@@ -466,7 +461,7 @@ function Store:tx(
 					-- mutations here
 					local snapshot = self:_getSnapshot(key)
 					self:_commitSnapshot(snapshot, key)
-					self._cache[key] = nextState[key]
+					self._keyInfo[key].data = nextState[key]
 				end
 
 				-- TODO: kick off cleanup process
@@ -505,7 +500,8 @@ function Store:save(key: string, userIds: { number }?): Promise.Promise
 
 		snapshot = self:_getSnapshot(key)
 
-		local data = Sift.Dictionary.copyDeep(self._cache[key])
+		local keyInfo = self._keyInfo[key]
+		local data = Sift.Dictionary.copyDeep(keyInfo.data)
 		local txInfo = { committedData = data }
 
 		return self:_writeLargeFile(key, txInfo, userIds)
@@ -514,7 +510,7 @@ function Store:save(key: string, userIds: { number }?): Promise.Promise
 					lock = self:_getLock(),
 					file = file,
 				}
-				local metadata = self._metadata[key]
+				local metadata = keyInfo.metadata
 
 				return self._dataStoreInterface:set(Constants.RECORD_SCOPE, key, record, userIds, metadata)
 			end)
