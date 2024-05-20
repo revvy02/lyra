@@ -69,7 +69,13 @@ local function createStore(config: StoreConfig)
 end
 createStore = t.wrap(createStore, t.tuple(storeConfigCheck))
 
-function Store:_markOrphanedShard(file: Types.File) end
+function Store:_markOrphanedShard(file: Types.File)
+	table.insert(self._orphanedShards, file)
+end
+
+function Store:_markOrphanedTx(txId: string)
+	table.insert(self._orphanedTxs, txId)
+end
 
 function Store:_writeLargeFile(
 	key: string,
@@ -233,6 +239,7 @@ function Store:lock(key: string, userIds: { number }?): Promise.Promise
 
 		local lock = value.lock
 		if lock.expiry ~= nil and lock.expiry > DateTime.now().UnixTimestamp then
+			-- TODO: retry after lock expiry
 			return nil
 		end
 
@@ -241,16 +248,37 @@ function Store:lock(key: string, userIds: { number }?): Promise.Promise
 		return value, userIds, previousMetadata
 	end
 
-	local metadata
+	local keyInfo = {
+		data = nil,
+		metadata = nil,
+		unsavedMutations = {},
+		operationQueue = {},
+		orphanedShards = {},
+		orphanedTxs = {},
+	}
 
 	return self._dataStoreInterface
 		:update(Constants.RECORD_SCOPE, key, transformFunction)
-		:andThen(function(record, _userIds, _metadata)
+		:andThen(function(record, _userIds, metadata)
 			if record.lock.id ~= self._lockId then
 				return Promise.reject("Failed to acquire lock")
 			end
 
-			metadata = _metadata
+			keyInfo.metadata = metadata
+
+			if record.orphanedShards then
+				keyInfo.orphanedShards = record.orphanedShards
+				for _, shard in record.orphanedShards do
+					self:_markOrphanedShard(shard)
+				end
+			end
+
+			if record.orphanedTxs then
+				keyInfo.orphanedTxs = record.orphanedTxs
+				for _, tx in record.orphanedTxs do
+					self._markOrphanedTx(tx)
+				end
+			end
 
 			local file = record.file
 			return if file then self:_readLargeFile(file) else nil :: any
@@ -261,20 +289,12 @@ function Store:lock(key: string, userIds: { number }?): Promise.Promise
 		:andThen(function(data)
 			if data == nil then
 				data = Sift.Dictionary.copyDeep(self._template)
-				metadata = {
-					associatedShards = {},
-					associatedTxs = {},
-				}
 			end
 
 			-- TODO: migrations
 
-			self._keyInfo[key] = {
-				data = data,
-				metadata = metadata,
-				unsavedMutations = {},
-				operationQueue = {},
-			}
+			keyInfo.data = data
+			self._keyInfo[key] = keyInfo
 
 			return data
 		end)
@@ -296,6 +316,8 @@ function Store:unlock(key: string, userIds: { number }?): Promise.Promise
 						expiry = nil,
 					},
 					file = file,
+					orphanedShards = keyInfo.orphanedShards,
+					orphanedTxs = keyInfo.orphanedTxs,
 				}
 				local metadata = keyInfo.metadata[key]
 
@@ -428,11 +450,15 @@ function Store:tx(
 			local keyUserId = if userIds then { userIds[index] } else nil
 
 			return self:_writeLargeFile(key, txInfo, keyUserId):andThen(function(file)
+				local keyInfo = self._keyInfo[key]
+
 				local record = {
 					lock = self:_getLock(),
 					file = file,
+					orphanedShards = keyInfo.orphanedShards,
+					orphanedTxs = keyInfo.orphanedTxs,
 				}
-				local metadata = self._keyInfo[key].metadata
+				local metadata = keyInfo.metadata
 
 				return self._dataStoreInterface:update(
 					Constants.RECORD_SCOPE,
@@ -509,6 +535,8 @@ function Store:save(key: string, userIds: { number }?): Promise.Promise
 				local record = {
 					lock = self:_getLock(),
 					file = file,
+					orphanedShards = keyInfo.orphanedShards,
+					orphanedTxs = keyInfo.orphanedTxs,
 				}
 				local metadata = keyInfo.metadata
 
