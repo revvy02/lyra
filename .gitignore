@@ -11,3 +11,4 @@ DevPackages
 sourcemap.json
 
 external
+.aider*
