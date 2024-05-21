@@ -46,7 +46,6 @@ export type DataStoreRecord = {
 	lock: Lock,
 	file: File,
 	orphanedShards: {},
-	orphanedTxs: {},
 }
 
 local txInfoCheck = t.some(
