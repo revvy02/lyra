@@ -69,12 +69,23 @@ local function createStore(config: StoreConfig)
 end
 createStore = t.wrap(createStore, t.tuple(storeConfigCheck))
 
-function Store:_markOrphanedShard(file: Types.File)
-	table.insert(self._orphanedShards, file)
+function Store:_markOrphanedShards(...: Types.File)
+	for _, file in { ... } do
+		local isPresent = Sift.Array.findWhere(self._orphanedShards, function(otherFile)
+			return Sift.Dictionary.equals(file, otherFile)
+		end)
+		if not isPresent then
+			table.insert(self._orphanedShards, file)
+		end
+	end
 end
 
-function Store:_markOrphanedTx(txId: string)
-	table.insert(self._orphanedTxs, txId)
+function Store:_markAssociatedTxIds(...: string)
+	for _, txId in { ... } do
+		if not table.find(self._orphanedTxs, txId) then
+			table.insert(self._orphanedTxs, txId)
+		end
+	end
 end
 
 function Store:_writeLargeFile(
@@ -99,7 +110,7 @@ function Store:_writeLargeFile(
 
 	local p = Promise.all(promises):andThenReturn(file):catch(function(err)
 		table.insert(self._keyInfo[key].orphanedShards, file)
-		self:_markOrphanedShard(file)
+		self:_markOrphanedShards(file)
 		return Promise.reject(err)
 	end)
 
@@ -254,7 +265,9 @@ function Store:lock(key: string, userIds: { number }?): Promise.Promise
 		unsavedMutations = {},
 		operationQueue = {},
 		orphanedShards = {},
-		orphanedTxs = {},
+		associatedTxIds = {},
+		stagedShards = {},
+		stagedTxs = {},
 	}
 
 	return self._dataStoreInterface
@@ -269,14 +282,14 @@ function Store:lock(key: string, userIds: { number }?): Promise.Promise
 			if record.orphanedShards then
 				keyInfo.orphanedShards = record.orphanedShards
 				for _, shard in record.orphanedShards do
-					self:_markOrphanedShard(shard)
+					self:_markOrphanedShards(shard)
 				end
 			end
 
-			if record.orphanedTxs then
-				keyInfo.orphanedTxs = record.orphanedTxs
-				for _, tx in record.orphanedTxs do
-					self._markOrphanedTx(tx)
+			if record.associatedTxIds then
+				keyInfo.associatedTxIds = record.associatedTxIds
+				for _, tx in record.associatedTxIds do
+					self._markAssociatedTxIds(tx)
 				end
 			end
 
@@ -298,6 +311,7 @@ function Store:lock(key: string, userIds: { number }?): Promise.Promise
 
 			return data
 		end)
+	-- TODO: Add catch handler to mark orphaned shards
 end
 Store.lock = wrapPromiseFunc(Store.lock, t.tuple(t.any, t.string, t.optional(t.array(t.number))), t.tuple(t.any))
 
@@ -317,7 +331,7 @@ function Store:unlock(key: string, userIds: { number }?): Promise.Promise
 					},
 					file = file,
 					orphanedShards = keyInfo.orphanedShards,
-					orphanedTxs = keyInfo.orphanedTxs,
+					associatedTxIds = keyInfo.associatedTxIds,
 				}
 				local metadata = keyInfo.metadata[key]
 
@@ -331,14 +345,16 @@ function Store:unlock(key: string, userIds: { number }?): Promise.Promise
 				return self._dataStoreInterface:update(Constants.RECORD_SCOPE, key, transformFunction)
 			end)
 			:andThen(function(latestValue)
-				self._keyInfo[key] = nil
-
 				if latestValue.lock.id ~= nil then
 					return Promise.reject("Failed to release lock")
 				end
 
+				self:_markOrphanedShards(table.unpack(latestValue.orphanedShards))
+				keyInfo[key] = nil
+
 				return nil :: any
 			end)
+		-- TODO: Add catch handler to mark orphaned shards
 	end)
 end
 Store.unlock = wrapPromiseFunc(Store.unlock, t.tuple(t.any, t.string, t.optional(t.array(t.number))), t.tuple(t.none))
@@ -439,6 +455,7 @@ function Store:tx(
 		end
 
 		local txId = HttpService:GenerateGUID(false)
+		local successfulKeyWrites = {}
 
 		local promises = Sift.Array.map(keys, function(key, index)
 			local txInfo = {
@@ -455,31 +472,41 @@ function Store:tx(
 				local record = {
 					lock = self:_getLock(),
 					file = file,
+					-- TODO(orphan): Stage orphaned shards for previously
+					-- written file.
 					orphanedShards = keyInfo.orphanedShards,
-					orphanedTxs = keyInfo.orphanedTxs,
+					-- TODO(orphan): Stage associated txId.
+					associatedTxIds = keyInfo.associatedTxIds,
 				}
 				local metadata = keyInfo.metadata
 
-				return self._dataStoreInterface:update(
-					Constants.RECORD_SCOPE,
-					key,
-					function(previousValue, previousUserIds, previousMetadata)
+				return self._dataStoreInterface
+					:update(Constants.RECORD_SCOPE, key, function(previousValue, previousUserIds, previousMetadata)
 						if previousValue.lock.id ~= self._lockId then
 							return nil :: any, previousUserIds, previousMetadata
 						end
 
 						return record, keyUserId, metadata
-					end,
-					keyUserId
-				)
+					end, keyUserId)
+					:andThen(function()
+						table.insert(successfulKeyWrites, key)
+					end)
+
+				-- TODO(orphan) Add andThen handler here to commit staged
+				-- orphanedShards and associatedTxIds.
+
+				-- TODO(orphan): Add catch handler here to mark orphaned shards
+				-- created in the _writeLargeFile call above.
 			end)
 		end)
 
 		local commitPromise = Promise.all(promises)
 			:andThen(function()
-				return self._dataStoreInterface:set(Constants.TX_SCOPE, txId, { status = "committed" }, nil, {
-					associatedKeys = keys,
-				})
+				return self._dataStoreInterface:set(
+					Constants.TX_SCOPE,
+					txId,
+					{ status = "committed", associatedKeys = keys }
+				)
 			end)
 			:andThen(function()
 				for _, key in keys do
@@ -491,6 +518,21 @@ function Store:tx(
 				end
 
 				-- TODO: kick off cleanup process
+			end)
+			:catch(function(err)
+				for _, key in successfulKeyWrites do
+					table.insert(self._keyInfo[key].associatedTxIds, txId)
+				end
+
+				-- TODO: return promise:andThen(reject)? or just leave this and
+				-- add an ad-hoc catch for error reporting? consider whether
+				-- this will block BindToClose or not
+				self._dataStoreInterface:set(Constants.TX_SCOPE, txId, {
+					status = "aborted",
+					associatedKeys = keys,
+				})
+
+				return Promise.reject(err)
 			end)
 
 		return commitPromise
@@ -536,7 +578,7 @@ function Store:save(key: string, userIds: { number }?): Promise.Promise
 					lock = self:_getLock(),
 					file = file,
 					orphanedShards = keyInfo.orphanedShards,
-					orphanedTxs = keyInfo.orphanedTxs,
+					associatedTxIds = keyInfo.associatedTxIds,
 				}
 				local metadata = keyInfo.metadata
 
@@ -545,6 +587,7 @@ function Store:save(key: string, userIds: { number }?): Promise.Promise
 			:andThen(function()
 				self:_commitSnapshot(snapshot, key)
 			end)
+		-- TODO: Add catch handler to mark orphaned shards
 	end)
 end
 Store.save = wrapPromiseFunc(Store.save, t.tuple(t.any, t.string, t.optional(t.array(t.number))), t.tuple(t.none))
