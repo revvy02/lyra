@@ -40,6 +40,10 @@ type KeyOperationQueue = { KeyOperationQueueItem }
 type UnsavedMutationsSnapshot = { [string]: boolean }
 local unsavedMutationsSnapshotCheck = t.map(t.string, t.boolean)
 
+local function isLargeFile(file: Types.File): boolean
+	return file.shard ~= nil
+end
+
 local Store = {}
 
 local function createStore(config: StoreConfig)
@@ -114,11 +118,11 @@ Store._writeLargeFile = wrapPromiseFunc(
 )
 
 function Store:_readLargeFile(file: Types.File): Promise.TypedPromise<any>
-	local shardId = file.shard
-	if shardId == nil then
+	if not isLargeFile(file) then
 		return Promise.resolve(file.data)
 	end
 
+	local shardId = file.shard
 	local promises = {}
 
 	for i = 1, file.count do
@@ -306,13 +310,14 @@ function Store:unlock(key: string, userIds: { number }?): Promise.Promise
 
 		return self:_writeLargeFile(key, txInfo, userIds)
 			:andThen(function(file)
+				local orphanedShards = Sift.Array.join(keyInfo.orphanedShards, keyInfo.stagedShards)
 				local record = {
 					lock = {
 						id = nil,
 						expiry = nil,
 					},
 					file = file,
-					orphanedShards = keyInfo.orphanedShards,
+					orphanedShards = orphanedShards,
 				}
 				local metadata = keyInfo.metadata[key]
 
@@ -323,7 +328,23 @@ function Store:unlock(key: string, userIds: { number }?): Promise.Promise
 					return record, userIds, metadata
 				end
 
-				return self._dataStoreInterface:update(Constants.RECORD_SCOPE, key, transformFunction)
+				return self._dataStoreInterface
+					:update(Constants.RECORD_SCOPE, key, transformFunction)
+					:andThen(function()
+						keyInfo.orphanedShards = orphanedShards
+						if isLargeFile(file) then
+							keyInfo.stagedShards = { file }
+						else
+							keyInfo.stagedShards = {}
+						end
+					end)
+					:catch(function(err)
+						if isLargeFile(file) then
+							self:_markOrphanedShards(file)
+							keyInfo.orphanedShards = Sift.Array.push(keyInfo.orphanedShards, file)
+						end
+						return Promise.reject(err)
+					end)
 			end)
 			:andThen(function(latestValue)
 				if latestValue.lock.id ~= nil then
@@ -471,12 +492,18 @@ function Store:tx(
 						self:_markOrphanedShards(table.unpack(keyInfo.stagedShards))
 
 						keyInfo.orphanedShards = orphanedShards
-						keyInfo.stagedShards = { file }
+
+						if isLargeFile(file) then
+							keyInfo.stagedShards = { file }
+						else
+							keyInfo.stagedShards = {}
+						end
 					end)
 					:catch(function(err)
-						self:_markOrphanedShards(file)
-
-						keyInfo.orphanedShards = Sift.Array.push(keyInfo.orphanedShards, file)
+						if isLargeFile(file) then
+							self:_markOrphanedShards(file)
+							keyInfo.orphanedShards = Sift.Array.push(keyInfo.orphanedShards, file)
+						end
 
 						return Promise.reject(err)
 					end)
@@ -542,19 +569,35 @@ function Store:save(key: string, userIds: { number }?): Promise.Promise
 
 		return self:_writeLargeFile(key, txInfo, userIds)
 			:andThen(function(file)
+				local orphanedShards = Sift.Array.join(keyInfo.orphanedShards, keyInfo.stagedShards)
 				local record = {
 					lock = self:_getLock(),
 					file = file,
-					orphanedShards = keyInfo.orphanedShards,
+					orphanedShards = orphanedShards,
 				}
 				local metadata = keyInfo.metadata
 
-				return self._dataStoreInterface:set(Constants.RECORD_SCOPE, key, record, userIds, metadata)
+				return self._dataStoreInterface
+					:set(Constants.RECORD_SCOPE, key, record, userIds, metadata)
+					:andThen(function()
+						keyInfo.orphanedShards = orphanedShards
+						if isLargeFile(file) then
+							keyInfo.stagedShards = { file }
+						else
+							keyInfo.stagedShards = {}
+						end
+					end)
+					:catch(function(err)
+						if isLargeFile(file) then
+							self:_markOrphanedShards(file)
+							keyInfo.orphanedShards = Sift.Array.push(keyInfo.orphanedShards, file)
+						end
+						return Promise.reject(err)
+					end)
 			end)
 			:andThen(function()
 				self:_commitSnapshot(snapshot, key)
 			end)
-		-- TODO: Add catch handler to mark orphaned shards
 	end)
 end
 Store.save = wrapPromiseFunc(Store.save, t.tuple(t.any, t.string, t.optional(t.array(t.number))), t.tuple(t.none))
