@@ -390,6 +390,7 @@ function Store:update(key: string, transformFunction: (data: any) -> any): Promi
 		end
 
 		if result == nil then
+			print(`Skipping update for key {key}`)
 			return resolve()
 		end
 		nextData = result
