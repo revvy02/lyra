@@ -60,7 +60,7 @@ local function createStore(config: StoreConfig)
 		_keyInfo = {},
 		_txLockPromises = {},
 		_keyOperationQueues = {},
-		_orphanedShards = {},
+		_orphanedFiles = {},
 	}, { __index = Store })
 
 	local ok, err = self._schema(self._template)
@@ -72,13 +72,13 @@ local function createStore(config: StoreConfig)
 end
 createStore = t.wrap(createStore, t.tuple(storeConfigCheck))
 
-function Store:_markOrphanedShards(...: Types.File)
+function Store:_markOrphanedFiles(...: Types.File)
 	for _, file in { ... } do
-		local isPresent = Sift.Array.findWhere(self._orphanedShards, function(otherFile)
+		local isPresent = Sift.Array.findWhere(self._orphanedFiles, function(otherFile)
 			return Sift.Dictionary.equals(file, otherFile)
 		end)
 		if not isPresent then
-			table.insert(self._orphanedShards, file)
+			table.insert(self._orphanedFiles, file)
 		end
 	end
 end
@@ -104,8 +104,8 @@ function Store:_writeLargeFile(
 	local file = { shard = shardId, count = #shards }
 
 	local p = Promise.all(promises):andThenReturn(file):catch(function(err)
-		table.insert(self._keyInfo[key].orphanedShards, file)
-		self:_markOrphanedShards(file)
+		table.insert(self._keyInfo[key].orphanedFiles, file)
+		self:_markOrphanedFiles(file)
 		return Promise.reject(err)
 	end)
 
@@ -141,8 +141,8 @@ function Store:_readTx(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 		return Promise.resolve(txInfo.committedData)
 	end
 
-	return self._dataStoreInterface:get(Constants.TX_SCOPE, txId):andThen(function(txStatus)
-		if txStatus == "committed" then
+	return self._dataStoreInterface:get(Constants.TX_SCOPE, txId):andThen(function(committed)
+		if committed == true then
 			return txInfo.txData
 		else
 			return txInfo.committedData
@@ -150,6 +150,60 @@ function Store:_readTx(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 	end)
 end
 Store._readTx = wrapPromiseFunc(Store._readTx, t.tuple(t.any, Types.txInfoCheck), t.tuple(t.any))
+
+function Store:_writeRecord(
+	key: string,
+	txInfo: Types.TxInfo,
+	userIds: { number }?,
+	releaseLock: boolean?
+): Promise.TypedPromise<any>
+	return self:_writeLargeFile(key, txInfo, userIds):andThen(function(file)
+		local keyInfo = self._keyInfo[key]
+		local orphanedFiles = Sift.Array.push(keyInfo.orphanedFiles, keyInfo.currentFile)
+
+		local record = {
+			lock = if releaseLock then {} else self:_getLock(),
+			file = file,
+			orphanedFiles = orphanedFiles,
+		}
+		local metadata = keyInfo.metadata
+
+		return self._dataStoreInterface
+			:update(Constants.RECORD_SCOPE, key, function(previousValue, previousUserIds, previousMetadata)
+				if previousValue.lock.id ~= self._lockId then
+					return nil :: any, previousUserIds, previousMetadata
+				end
+
+				return record, userIds, metadata
+			end, userIds)
+			:andThen(function(value)
+				if releaseLock and value.lock.id ~= nil then
+					return Promise.reject("Failed to release lock")
+				elseif not releaseLock and value.lock.id ~= self._lockId then
+					return Promise.reject("Lock violation")
+				end
+
+				self:_markOrphanedFiles(keyInfo.currentFile)
+				keyInfo.orphanedFiles = orphanedFiles
+				keyInfo.currentFile = if isLargeFile(file) then file else nil
+
+				return value
+			end)
+			:catch(function(err)
+				if isLargeFile(file) then
+					self:_markOrphanedFiles(file)
+					keyInfo.orphanedFiles = Sift.Array.push(keyInfo.orphanedFiles, file)
+				end
+
+				return Promise.reject(err)
+			end)
+	end)
+end
+Store._writeRecord = wrapPromiseFunc(
+	Store._writeRecord,
+	t.tuple(t.any, t.string, Types.txInfoCheck, t.optional(t.array(t.number)), t.optional(t.boolean)),
+	t.tuple(t.any)
+)
 
 function Store:_enqueueKeyOperation(key: string, operation: () -> Promise.Promise): Promise.Promise
 	local queue = self._keyInfo[key].operationQueue
@@ -259,8 +313,8 @@ function Store:lock(key: string, userIds: { number }?): Promise.Promise
 		metadata = nil,
 		unsavedMutations = {},
 		operationQueue = {},
-		orphanedShards = {},
-		stagedShards = {},
+		orphanedFiles = {},
+		currentFile = nil,
 	}
 
 	return self._dataStoreInterface
@@ -272,14 +326,13 @@ function Store:lock(key: string, userIds: { number }?): Promise.Promise
 
 			keyInfo.metadata = metadata
 
-			if record.orphanedShards then
-				keyInfo.orphanedShards = record.orphanedShards
-				for _, shard in record.orphanedShards do
-					self:_markOrphanedShards(shard)
-				end
+			if record.orphanedFiles then
+				keyInfo.orphanedFiles = record.orphanedFiles
+				self:_markOrphanedFiles(record.orphanedFiles)
 			end
 
 			local file = record.file
+			keyInfo.currentFile = file
 			return if file then self:_readLargeFile(file) else nil :: any
 		end)
 		:andThen(function(txInfo)
@@ -297,66 +350,19 @@ function Store:lock(key: string, userIds: { number }?): Promise.Promise
 
 			return data
 		end)
-	-- TODO: Add catch handler to mark orphaned shards
 end
 Store.lock = wrapPromiseFunc(Store.lock, t.tuple(t.any, t.string, t.optional(t.array(t.number))), t.tuple(t.any))
 
 function Store:unlock(key: string, userIds: { number }?): Promise.Promise
 	-- TODO: forbid any other mutations to the key from here on out
 	return self:_enqueueKeyOperation(key, function()
-		local keyInfo = self._keyInfo[key]
-		local data = Sift.Dictionary.copyDeep(keyInfo.data)
+		local data = Sift.Dictionary.copyDeep(self._keyInfo[key])
 		local txInfo = { committedData = data }
 
-		return self:_writeLargeFile(key, txInfo, userIds)
-			:andThen(function(file)
-				local orphanedShards = Sift.Array.join(keyInfo.orphanedShards, keyInfo.stagedShards)
-				local record = {
-					lock = {
-						id = nil,
-						expiry = nil,
-					},
-					file = file,
-					orphanedShards = orphanedShards,
-				}
-				local metadata = keyInfo.metadata[key]
-
-				local function transformFunction(value, previousUserIds, previousMetadata)
-					if value.lock.id ~= self._lockId then
-						return nil :: any, previousUserIds, previousMetadata
-					end
-					return record, userIds, metadata
-				end
-
-				return self._dataStoreInterface
-					:update(Constants.RECORD_SCOPE, key, transformFunction)
-					:andThen(function()
-						keyInfo.orphanedShards = orphanedShards
-						if isLargeFile(file) then
-							keyInfo.stagedShards = { file }
-						else
-							keyInfo.stagedShards = {}
-						end
-					end)
-					:catch(function(err)
-						if isLargeFile(file) then
-							self:_markOrphanedShards(file)
-							keyInfo.orphanedShards = Sift.Array.push(keyInfo.orphanedShards, file)
-						end
-						return Promise.reject(err)
-					end)
-			end)
-			:andThen(function(latestValue)
-				if latestValue.lock.id ~= nil then
-					return Promise.reject("Failed to release lock")
-				end
-
-				self:_markOrphanedShards(table.unpack(latestValue.orphanedShards))
-				keyInfo[key] = nil
-
-				return nil :: any
-			end)
-		-- TODO: Add catch handler to mark orphaned shards
+		return self:_writeRecord(key, txInfo, userIds, true):andThen(function(latestValue)
+			self:_markOrphanedFiles(table.unpack(latestValue.orphanedFiles))
+			self._keyInfo[key] = nil
+		end)
 	end)
 end
 Store.unlock = wrapPromiseFunc(Store.unlock, t.tuple(t.any, t.string, t.optional(t.array(t.number))), t.tuple(t.none))
@@ -406,7 +412,7 @@ Store.update = wrapPromiseFunc(Store.update, t.tuple(t.any, t.string, t.callback
 function Store:tx(
 	keys: { string },
 	transformFunction: (state: { [string]: any }) -> { [string]: any }?,
-	userIds: { number }?
+	userIds: { { number } }?
 ): Promise.Promise
 	local txLockResolve
 	local txLockPromise = Promise.new(function(_resolve)
@@ -465,49 +471,9 @@ function Store:tx(
 				txData = nextState[key],
 			}
 
-			local keyUserId = if userIds then { userIds[index] } else nil
+			local keyUserIds = if userIds then userIds[index] else nil
 
-			return self:_writeLargeFile(key, txInfo, keyUserId):andThen(function(file)
-				local keyInfo = self._keyInfo[key]
-				local orphanedShards = Sift.Array.join(keyInfo.orphanedShards, keyInfo.stagedShards)
-
-				local record = {
-					lock = self:_getLock(),
-					file = file,
-					orphanedShards = orphanedShards,
-				}
-				local metadata = keyInfo.metadata
-
-				return self._dataStoreInterface
-					:update(Constants.RECORD_SCOPE, key, function(previousValue, previousUserIds, previousMetadata)
-						if previousValue.lock.id ~= self._lockId then
-							return nil :: any, previousUserIds, previousMetadata
-						end
-
-						return record, keyUserId, metadata
-					end, keyUserId)
-					:andThen(function()
-						-- TODO: verify lock
-
-						self:_markOrphanedShards(table.unpack(keyInfo.stagedShards))
-
-						keyInfo.orphanedShards = orphanedShards
-
-						if isLargeFile(file) then
-							keyInfo.stagedShards = { file }
-						else
-							keyInfo.stagedShards = {}
-						end
-					end)
-					:catch(function(err)
-						if isLargeFile(file) then
-							self:_markOrphanedShards(file)
-							keyInfo.orphanedShards = Sift.Array.push(keyInfo.orphanedShards, file)
-						end
-
-						return Promise.reject(err)
-					end)
-			end)
+			return self:_writeRecord(key, txInfo, keyUserIds)
 		end)
 
 		local commitPromise = Promise.all(promises)
@@ -567,37 +533,10 @@ function Store:save(key: string, userIds: { number }?): Promise.Promise
 		local data = Sift.Dictionary.copyDeep(keyInfo.data)
 		local txInfo = { committedData = data }
 
-		return self:_writeLargeFile(key, txInfo, userIds)
-			:andThen(function(file)
-				local orphanedShards = Sift.Array.join(keyInfo.orphanedShards, keyInfo.stagedShards)
-				local record = {
-					lock = self:_getLock(),
-					file = file,
-					orphanedShards = orphanedShards,
-				}
-				local metadata = keyInfo.metadata
-
-				return self._dataStoreInterface
-					:set(Constants.RECORD_SCOPE, key, record, userIds, metadata)
-					:andThen(function()
-						keyInfo.orphanedShards = orphanedShards
-						if isLargeFile(file) then
-							keyInfo.stagedShards = { file }
-						else
-							keyInfo.stagedShards = {}
-						end
-					end)
-					:catch(function(err)
-						if isLargeFile(file) then
-							self:_markOrphanedShards(file)
-							keyInfo.orphanedShards = Sift.Array.push(keyInfo.orphanedShards, file)
-						end
-						return Promise.reject(err)
-					end)
-			end)
-			:andThen(function()
-				self:_commitSnapshot(snapshot, key)
-			end)
+		-- bookmark
+		return self:_writeRecord(key, txInfo, userIds):andThen(function()
+			self:_commitSnapshot(snapshot, key)
+		end)
 	end)
 end
 Store.save = wrapPromiseFunc(Store.save, t.tuple(t.any, t.string, t.optional(t.array(t.number))), t.tuple(t.none))
