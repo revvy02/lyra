@@ -426,6 +426,7 @@ function Store:tx(
 		for _, key in keys do
 			self._txLockPromises[key] = txLockPromise
 			currentState[key] = self._keyInfo[key].data
+			-- TODO: verify we have lock on all keys
 		end
 
 		local nextState = Sift.Dictionary.copyDeep(currentState)
