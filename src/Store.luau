@@ -60,6 +60,7 @@ local function createStore(config: StoreConfig)
 		_keyInfo = {},
 		_txLockPromises = {},
 		_keyOperationQueues = {},
+		_lastTxId = nil,
 		_orphanedFiles = {},
 	}, { __index = Store })
 
@@ -462,7 +463,8 @@ function Store:tx(
 			return
 		end
 
-		local txId = HttpService:GenerateGUID(false)
+		self._lastTxId = HttpService:GenerateGUID(false)
+		local txId = self._lastTxId
 
 		local promises = Sift.Array.map(keys, function(key, index)
 			local txInfo = {
