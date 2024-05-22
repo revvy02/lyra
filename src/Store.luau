@@ -3,8 +3,6 @@
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local LOCK_DURATION_SECONDS = 2 * 60
-
 local Constants = require(script.Parent.Constants)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 local Sift = require(ReplicatedStorage.Packages.Sift)
@@ -269,7 +267,7 @@ end
 function Store:_getLock(): Types.Lock
 	return {
 		id = self._lockId,
-		expiry = DateTime.now().UnixTimestamp + LOCK_DURATION_SECONDS,
+		expiry = DateTime.now().UnixTimestamp + Constants.LOCK_DURATION_SECONDS,
 	}
 end
 
