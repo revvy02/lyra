@@ -1,6 +1,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
+local Constants = require(ReplicatedStorage.Packages.Mix.Constants)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 
 local it = JestGlobals.it
@@ -17,7 +18,7 @@ describe("Store Transaction Race Conditions", function()
 		return type(value) == "table"
 	end
 
-	beforeEach(function()
+	local function resetStore()
 		local MockInterface = require(ReplicatedStorage.Packages.Mix.DataStoreInterface.MockInterface)
 		local createStore = require(ReplicatedStorage.Packages.Mix.Store).createStore
 		store = createStore({
@@ -26,7 +27,9 @@ describe("Store Transaction Race Conditions", function()
 			schema = schema,
 			dataStoreInterface = MockInterface.new({ yields = true }),
 		})
-	end)
+	end
+
+	beforeEach(resetStore)
 
 	it("should handle concurrent writes to the same key", function()
 		local tx1 = store:lock("testKey"):andThen(function()
@@ -172,5 +175,92 @@ describe("Store Transaction Race Conditions", function()
 		return expect(function()
 			return p:expect()
 		end).toThrow("attempt to yield")
+	end)
+
+	it("should read txData/committedData when tx is committed/aborted respectively", function()
+		return Promise.try(function()
+			local p = Promise.all({
+				store:lock("testKey1"),
+				store:lock("testKey2"),
+				store:lock("testKey3"),
+				store:lock("testKey4"),
+			})
+
+			jest.runAllTimers()
+			p:expect()
+
+			p = Promise.all({
+				store:update("testKey1", function(data)
+					data.someData = "committed"
+					return data
+				end),
+				store:update("testKey2", function(data)
+					data.someData = "committed"
+					return data
+				end),
+				store:update("testKey3", function(data)
+					data.someData = "committed"
+					return data
+				end),
+				store:update("testKey4", function(data)
+					data.someData = "committed"
+					return data
+				end),
+			})
+
+			jest.runAllTimers()
+			p:expect()
+
+			p = store:tx({ "testKey1", "testKey2" }, function(state)
+				state.testKey1.someData = "tx"
+				state.testKey2.someData = "tx"
+				return state
+			end)
+
+			jest.runAllTimers()
+			p:expect()
+
+			local abortTxId
+			p = store
+				:tx({ "testKey3", "testKey4" }, function(state)
+					state.testKey3.someData = "tx"
+					state.testKey4.someData = "tx"
+					return state
+				end)
+				:andThen(function()
+					abortTxId = store._lastTxId
+				end)
+
+			jest.runAllTimers()
+			p:expect()
+
+			-- Forcefully abort tx
+			p = store._dataStoreInterface:set(Constants.TX_SCOPE, abortTxId, false)
+
+			jest.runAllTimers()
+			p:expect()
+
+			local interface = store._dataStoreInterface
+			resetStore()
+			store._dataStoreInterface = interface
+
+			-- Simulate server dying by advancing time to expire the lock
+			jest.setSystemTime(DateTime.now().UnixTimestamp + Constants.LOCK_DURATION_SECONDS + 1)
+
+			p = Promise.all({
+				store:lock("testKey1"),
+				store:lock("testKey2"),
+				store:lock("testKey3"),
+				store:lock("testKey4"),
+			})
+
+			jest.runAllTimers()
+			p:expect()
+
+			expect(store._keyInfo["testKey1"].data.someData).toBe("tx")
+			expect(store._keyInfo["testKey2"].data.someData).toBe("tx")
+			expect(store._keyInfo["testKey3"].data.someData).toBe("committed")
+			expect(store._keyInfo["testKey4"].data.someData).toBe("committed")
+		end)
 	end)
 end)
