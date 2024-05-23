@@ -292,6 +292,14 @@ function Store:_isSaved(key: string): boolean
 end
 Store._isSaved = t.wrap(Store._isSaved, t.tuple(t.any, t.string))
 
+function Store:_mutateKey(key: string, newData: any): ()
+	local mutationId = HttpService:GenerateGUID(false)
+	local keyInfo = self._keyInfo[key]
+	keyInfo.unsavedMutations = Sift.Set.add(keyInfo.unsavedMutations, mutationId)
+	keyInfo.data = newData
+end
+Store._mutateKey = t.wrap(Store._mutateKey, t.tuple(t.any, t.string, t.any))
+
 function Store:lock(key: string, userIds: { number }?): Promise.Promise
 	local function transformFunction(value, _previousUserIds, previousMetadata)
 		value = Sift.Dictionary.mergeDeep({ lock = {} }, value)
@@ -365,14 +373,6 @@ function Store:unlock(key: string, userIds: { number }?): Promise.Promise
 	end)
 end
 Store.unlock = wrapPromiseFunc(Store.unlock, t.tuple(t.any, t.string, t.optional(t.array(t.number))), t.tuple(t.none))
-
-function Store:_mutateKey(key: string, newData: any): ()
-	local mutationId = HttpService:GenerateGUID(false)
-	local keyInfo = self._keyInfo[key]
-	keyInfo.unsavedMutations = Sift.Set.add(keyInfo.unsavedMutations, mutationId)
-	keyInfo.data = newData
-end
-Store._mutateKey = t.wrap(Store._mutateKey, t.tuple(t.any, t.string, t.any))
 
 function Store:update(key: string, transformFunction: (data: any) -> any): Promise.Promise
 	return Promise.new(function(resolve, reject)
