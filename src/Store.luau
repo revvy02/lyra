@@ -535,7 +535,6 @@ function Store:save(key: string, userIds: { number }?): Promise.Promise
 		local data = Sift.Dictionary.copyDeep(keyInfo.data)
 		local txInfo = { committedData = data }
 
-		-- bookmark
 		return self:_writeRecord(key, txInfo, userIds):andThen(function()
 			self:_commitSnapshot(snapshot, key)
 		end)
