@@ -4,6 +4,7 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Constants = require(script.Parent.Constants)
+local PromiseQueue = require(script.Parent.PromiseQueue)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 local Sift = require(ReplicatedStorage.Packages.Sift)
 local t = require(ReplicatedStorage.Packages.t)
@@ -27,14 +28,6 @@ local storeConfigCheck = t.strictInterface({
 	dataStoreInterface = t.optional(t.table),
 })
 
-type KeyOperationQueueItem = {
-	resolve: () -> (),
-	reject: (string) -> (),
-	operation: () -> Promise.Promise,
-}
-
-type KeyOperationQueue = { KeyOperationQueueItem }
-
 type UnsavedMutationsSnapshot = { [string]: boolean }
 local unsavedMutationsSnapshotCheck = t.map(t.string, t.boolean)
 
@@ -57,7 +50,6 @@ local function createStore(config: StoreConfig)
 		_lockId = HttpService:GenerateGUID(false),
 		_keyInfo = {},
 		_txLockPromises = {},
-		_keyOperationQueues = {},
 		_lastTxId = nil,
 		_orphanedFiles = {},
 	}, { __index = Store })
@@ -204,66 +196,6 @@ Store._writeRecord = wrapPromiseFunc(
 	t.tuple(t.any)
 )
 
-function Store:_enqueueKeyOperation(key: string, operation: () -> Promise.Promise): Promise.Promise
-	local queue = self._keyInfo[key].operationQueue
-
-	local resolve, reject
-	local promise = Promise.new(function(_resolve, _reject)
-		resolve = _resolve
-		reject = _reject
-	end)
-
-	local info = {
-		resolve = resolve,
-		reject = reject,
-		operation = operation,
-	}
-
-	table.insert(queue, info)
-
-	if #queue == 1 then
-		task.spawn(function()
-			self:_processKeyOperationQueue(queue)
-		end)
-	end
-
-	return promise
-end
-Store._enqueueKeyOperation =
-	wrapPromiseFunc(Store._enqueueKeyOperation, t.tuple(t.any, t.string, t.callback), t.tuple(t.none))
-
-function Store:_enqueueMultiKeyOperation(keys: { string }, operation: () -> Promise.Promise): Promise.Promise
-	local resolve
-	local promise = Promise.new(function(_resolve)
-		resolve = _resolve
-	end):andThenCall(operation)
-
-	local numReady = 0
-
-	local promises = Sift.Array.map(keys, function(key)
-		return self:_enqueueKeyOperation(key, function()
-			numReady += 1
-			if numReady == #keys then
-				resolve()
-			end
-			return promise
-		end)
-	end)
-
-	return Promise.all(promises):andThenReturn(promise)
-end
-Store._enqueueMultiKeyOperation =
-	wrapPromiseFunc(Store._enqueueMultiKeyOperation, t.tuple(t.any, t.array(t.string), t.callback), t.tuple(t.none))
-
-function Store:_processKeyOperationQueue(queue: KeyOperationQueue): ()
-	while #queue > 0 do
-		local info = queue[1]
-
-		-- TODO: timeout to notify of deadlock?
-		Promise.try(info.operation):andThen(info.resolve, info.reject):finallyCall(table.remove, queue, 1):await()
-	end
-end
-
 function Store:_getLock(): Types.Lock
 	return {
 		id = self._lockId,
@@ -319,9 +251,9 @@ function Store:lock(key: string, userIds: { number }?): Promise.Promise
 		data = nil,
 		metadata = nil,
 		unsavedMutations = {},
-		operationQueue = {},
 		orphanedFiles = {},
 		currentFile = nil,
+		queue = PromiseQueue.new(),
 	}
 
 	return self._dataStoreInterface
@@ -362,8 +294,10 @@ Store.lock = wrapPromiseFunc(Store.lock, t.tuple(t.any, t.string, t.optional(t.a
 
 function Store:unlock(key: string, userIds: { number }?): Promise.Promise
 	-- TODO: forbid any other mutations to the key from here on out
-	return self:_enqueueKeyOperation(key, function()
-		local data = Sift.Dictionary.copyDeep(self._keyInfo[key])
+	-- TODO: error when queue is added to from here on out
+	local keyInfo = self._keyInfo[key]
+	return keyInfo.queue:add(function()
+		local data = Sift.Dictionary.copyDeep(keyInfo.data)
 		local txInfo = { committedData = data }
 
 		return self:_writeRecord(key, txInfo, userIds, true):andThen(function(latestValue)
@@ -415,11 +349,15 @@ function Store:tx(
 	userIds: { { number } }?
 ): Promise.Promise
 	local txLockResolve
-	local txLockPromise = Promise.new(function(_resolve)
-		txLockResolve = _resolve
+	local txLockPromise = Promise.new(function(resolve)
+		txLockResolve = resolve
 	end)
 
-	return self:_enqueueMultiKeyOperation(keys, function()
+	local queues = Sift.Array.map(keys, function(key)
+		return self._keyInfo[key].queue
+	end)
+
+	return PromiseQueue.multiQueueAdd(queues, function()
 		local currentState = {}
 		for _, key in keys do
 			self._txLockPromises[key] = txLockPromise
@@ -519,8 +457,9 @@ function Store:save(key: string, userIds: { number }?): Promise.Promise
 		return Promise.resolve()
 	end
 	local snapshot = self:_getSnapshot(key)
+	local keyInfo = self._keyInfo[key]
 
-	return self:_enqueueKeyOperation(function()
+	return keyInfo.queue:add(function()
 		if self:_isSnapshotCommitted(snapshot, key) then
 			return
 		end
@@ -531,7 +470,6 @@ function Store:save(key: string, userIds: { number }?): Promise.Promise
 
 		snapshot = self:_getSnapshot(key)
 
-		local keyInfo = self._keyInfo[key]
 		local data = Sift.Dictionary.copyDeep(keyInfo.data)
 		local txInfo = { committedData = data }
 
