@@ -3,11 +3,24 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Promise = require(ReplicatedStorage.Packages.Promise)
 local Sift = require(ReplicatedStorage.Packages.Sift)
 
+type PromiseQueueBase = {
+	new: () -> PromiseQueue,
+	_processQueue: (self: PromiseQueue) -> (),
+	add: (self: PromiseQueue, callback: () -> ()) -> Promise.Promise,
+	multiQueueAdd: (queues: { PromiseQueue }, callback: () -> ()) -> Promise.Promise,
+}
+
+type PromiseQueueProps = {
+	_queue: { () -> () },
+}
+
+type PromiseQueue = typeof(setmetatable({} :: PromiseQueueProps, { __index = {} :: PromiseQueueBase }))
+
 local PromiseQueue = {}
 PromiseQueue.__index = PromiseQueue
 
-function PromiseQueue.new()
-	return setmetatable({ _queue = {} }, PromiseQueue)
+function PromiseQueue.new(): PromiseQueue
+	return setmetatable({ _queue = {} }, PromiseQueue) :: PromiseQueue
 end
 
 function PromiseQueue:add(callback: () -> ()): Promise.Promise
