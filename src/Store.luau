@@ -49,7 +49,6 @@ local function createStore(config: StoreConfig)
 		_dataStoreInterface = dataStoreInterface,
 		_lockId = HttpService:GenerateGUID(false),
 		_keyInfo = {},
-		_txLockPromises = {},
 		_lastTxId = nil,
 		_orphanedFiles = {},
 	}, { __index = Store })
@@ -254,6 +253,7 @@ function Store:lock(key: string, userIds: { number }?): Promise.Promise
 		orphanedFiles = {},
 		currentFile = nil,
 		queue = PromiseQueue.new(),
+		txLockPromise = nil,
 	}
 
 	return self._dataStoreInterface
@@ -309,9 +309,11 @@ end
 Store.unlock = wrapPromiseFunc(Store.unlock, t.tuple(t.any, t.string, t.optional(t.array(t.number))), t.tuple(t.none))
 
 function Store:update(key: string, transformFunction: (data: any) -> any): Promise.Promise
+	local keyInfo = self._keyInfo[key]
+
 	return Promise.new(function(resolve, reject)
-		while self._txLockPromises[key] ~= nil do
-			self._txLockPromises[key]:await()
+		while keyInfo.txLockPromise ~= nil do
+			keyInfo.txLockPromise:await()
 		end
 
 		local currentData = self._keyInfo[key].data
@@ -360,8 +362,11 @@ function Store:tx(
 	return PromiseQueue.multiQueueAdd(queues, function()
 		local currentState = {}
 		for _, key in keys do
-			self._txLockPromises[key] = txLockPromise
-			currentState[key] = self._keyInfo[key].data
+			local keyInfo = self._keyInfo[key]
+
+			keyInfo.txLockPromise = txLockPromise
+			currentState[key] = keyInfo.data
+
 			-- TODO: verify we have lock on all keys
 		end
 
@@ -439,8 +444,9 @@ function Store:tx(
 		return commitPromise
 	end):finally(function()
 		for _, key in keys do
-			if self._txLockPromises[key] == txLockPromise then
-				self._txLockPromises[key] = nil
+			local keyInfo = self._keyInfo[key]
+			if keyInfo.txLockPromise == txLockPromise then
+				keyInfo.txLockPromise = nil :: any
 			end
 		end
 		txLockResolve()
