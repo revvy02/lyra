@@ -42,6 +42,7 @@ local function createStore(config: StoreConfig)
 	assert(dataStoreInterface, "dataStoreInterface is required")
 
 	local self = setmetatable({
+		-- TODO: add name to scopes
 		_name = config.name,
 		_template = config.template,
 		_schema = config.schema,
