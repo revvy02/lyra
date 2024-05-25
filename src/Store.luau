@@ -138,7 +138,7 @@ function Store:_markOrphanedFiles(key: string, files: { Types.File }): ()
 		self:_markOrphanedFile(key, file)
 	end
 end
-Store._markOrphanedFiles = t.wrap(Store._markOrphanedFiles, t.tuple(t.any, t.string, Types.fileCheck))
+Store._markOrphanedFiles = t.wrap(Store._markOrphanedFiles, t.tuple(t.any, t.string, t.array(Types.fileCheck)))
 
 function Store:_writeLargeFile(
 	key: string,

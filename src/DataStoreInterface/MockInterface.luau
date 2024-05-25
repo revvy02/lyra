@@ -66,7 +66,7 @@ function MockInterface:getRequestBudgetForBudgetType(_budgetType: Enum.DataStore
 	return 999
 end
 MockInterface.getRequestBudgetForBudgetType =
-	t.wrap(MockInterface.getRequestBudgetForBudgetType, t.tuple(t.any, t.instanceOf(Enum.DataStoreRequestType)))
+	t.wrap(MockInterface.getRequestBudgetForBudgetType, t.tuple(t.any, t.enum(Enum.DataStoreRequestType)))
 
 function MockInterface:get(scope: string, key: string): Promise.TypedPromise<(any?, DataStoreKeyInfo?)>
 	return self:_wait():andThen(function()
