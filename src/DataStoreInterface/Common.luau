@@ -22,6 +22,7 @@ type DataStoreInterfaceMt = {
 		transformFunction: (currentValue: any, keyInfo: DataStoreKeyInfo) -> (any, { number }?, { [string]: any }?)?
 	) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
 	remove: (self: DataStoreInterface, scope: string, key: string) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
+	getRequestBudgetForBudgetType: (self: DataStoreInterface, budgetType: Enum.DataStoreRequestType) -> number,
 }
 
 type DataStoreInterfaceProps = {

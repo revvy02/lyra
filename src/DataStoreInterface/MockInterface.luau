@@ -62,6 +62,12 @@ function MockInterface:_getScope(scope: string)
 end
 MockInterface._getScope = t.wrap(MockInterface._getScope, t.tuple(t.any, t.string))
 
+function MockInterface:getRequestBudgetForBudgetType(_budgetType: Enum.DataStoreRequestType): number
+	return 999
+end
+MockInterface.getRequestBudgetForBudgetType =
+	t.wrap(MockInterface.getRequestBudgetForBudgetType, t.tuple(t.any, t.instanceOf(Enum.DataStoreRequestType)))
+
 function MockInterface:get(scope: string, key: string): Promise.TypedPromise<(any?, DataStoreKeyInfo?)>
 	return self:_wait():andThen(function()
 		local info = self:_getScope(scope)[key]
