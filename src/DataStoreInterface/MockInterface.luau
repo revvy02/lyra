@@ -176,4 +176,4 @@ MockInterface.remove = wrapPromiseFunc(
 	t.tuple(t.optional(t.any), t.optional(Common.checkDataStoreKeyInfo))
 )
 
-return (MockInterface :: any) :: Common.DataStoreInterface
+return MockInterface

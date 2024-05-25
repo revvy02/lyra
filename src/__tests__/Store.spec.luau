@@ -50,7 +50,7 @@ describe("Store Transaction Race Conditions", function()
 
 		return Promise.all({ tx1, tx2 })
 			:andThen(function()
-				local finalState = store._keyInfo["testKey"].data.someData
+				local finalState = store._keyEntries["testKey"].data.someData
 				expect(finalState == "tx1" or finalState == "tx2").toBe(true)
 			end)
 			:catch(error)
@@ -75,7 +75,7 @@ describe("Store Transaction Race Conditions", function()
 			jest.runAllTimers()
 
 			return tx2:andThen(function()
-				expect(store._keyInfo["testKey"].data.someData).toBe("tx1tx2")
+				expect(store._keyEntries["testKey"].data.someData).toBe("tx1tx2")
 			end)
 		end):catch(error)
 	end)
@@ -106,8 +106,8 @@ describe("Store Transaction Race Conditions", function()
 			jest.runAllTimers()
 
 			return tx2:andThen(function()
-				expect(store._keyInfo["testKey1"].data.someData).toBe("tx1tx2")
-				expect(store._keyInfo["testKey2"].data.someData).toBe("tx1tx2")
+				expect(store._keyEntries["testKey1"].data.someData).toBe("tx1tx2")
+				expect(store._keyEntries["testKey2"].data.someData).toBe("tx1tx2")
 			end)
 		end):catch(error)
 	end)
@@ -123,7 +123,7 @@ describe("Store Transaction Race Conditions", function()
 		jest.runAllTimers()
 
 		return p:andThen(function()
-			expect(store._keyInfo["testKey"]).toBe(nil)
+			expect(store._keyEntries["testKey"]).toBe(nil)
 		end)
 	end)
 
@@ -154,9 +154,9 @@ describe("Store Transaction Race Conditions", function()
 
 		return Promise.all({ tx1, tx2 })
 			:andThen(function()
-				expect(store._keyInfo["testKey1"].data.someData).toBe("tx1")
-				expect(store._keyInfo["testKey2"].data.someData).toBe("tx1tx2")
-				expect(store._keyInfo["testKey3"].data.someData).toBe("tx2")
+				expect(store._keyEntries["testKey1"].data.someData).toBe("tx1")
+				expect(store._keyEntries["testKey2"].data.someData).toBe("tx1tx2")
+				expect(store._keyEntries["testKey3"].data.someData).toBe("tx2")
 			end)
 			:catch(error)
 	end)
@@ -235,14 +235,14 @@ describe("Store Transaction Race Conditions", function()
 			p:expect()
 
 			-- Forcefully abort tx
-			p = store._dataStoreInterface:set(Constants.TX_SCOPE, abortTxId, false)
+			p = store._ctx.dataStoreInterface:set(Constants.TX_SCOPE, abortTxId, false)
 
 			jest.runAllTimers()
 			p:expect()
 
-			local interface = store._dataStoreInterface
+			local interface = store._ctx.dataStoreInterface
 			resetStore()
-			store._dataStoreInterface = interface
+			store._ctx.dataStoreInterface = interface
 
 			-- Simulate server dying by advancing time to expire the lock
 			jest.setSystemTime(DateTime.now().UnixTimestamp + Constants.LOCK_DURATION_SECONDS + 1)
@@ -257,10 +257,10 @@ describe("Store Transaction Race Conditions", function()
 			jest.runAllTimers()
 			p:expect()
 
-			expect(store._keyInfo["testKey1"].data.someData).toBe("tx")
-			expect(store._keyInfo["testKey2"].data.someData).toBe("tx")
-			expect(store._keyInfo["testKey3"].data.someData).toBe("committed")
-			expect(store._keyInfo["testKey4"].data.someData).toBe("committed")
+			expect(store._keyEntries["testKey1"].data.someData).toBe("tx")
+			expect(store._keyEntries["testKey2"].data.someData).toBe("tx")
+			expect(store._keyEntries["testKey3"].data.someData).toBe("committed")
+			expect(store._keyEntries["testKey4"].data.someData).toBe("committed")
 		end)
 	end)
 end)

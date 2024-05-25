@@ -6,22 +6,23 @@ local Promise = require(ReplicatedStorage.Packages.Promise)
 local t = require(ReplicatedStorage.Packages.t)
 
 export type DataStoreInterface = {
-	get: (self: DataStoreInterface, storeName: string, key: string) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
+	get: (self: DataStoreInterface, scope: string, key: string) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
 	set: (
 		self: DataStoreInterface,
-		storeName: string,
+		scope: string,
 		key: string,
 		value: any,
 		userIds: { number }?,
-		options: DataStoreSetOptions?
+		metadata: { [string]: any }?
 	) -> Promise.TypedPromise<string>,
 	update: (
 		self: DataStoreInterface,
-		storeName: string,
+		scope: string,
 		key: string,
-		transformFunction: (currentValue: any, keyInfo: DataStoreKeyInfo) -> (any, { number }?, { [string]: any }?)
+		transformFunction: (currentValue: any, keyInfo: DataStoreKeyInfo) -> (any, { number }?, { [string]: any }?)?
 	) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
-	remove: (self: DataStoreInterface, storeName: string, key: string) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
+	remove: (self: DataStoreInterface, scope: string, key: string) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
+	getRequestBudgetForBudgetType: (self: DataStoreInterface, budgetType: Enum.DataStoreRequestType) -> number,
 }
 
 export type TxInfo = {
@@ -46,6 +47,37 @@ export type DataStoreRecord = {
 	lock: Lock,
 	file: File,
 	orphanedShards: {},
+}
+
+export type OrphanedFileQueueItem = {
+	key: string,
+	file: File,
+	beingProcessed: boolean,
+}
+
+export type OrphanedFileQueueImpl = {
+	__index: OrphanedFileQueueImpl,
+	new: () -> OrphanedFileQueue,
+	markFile: (self: OrphanedFileQueue, key: string, file: File) -> (),
+	markFiles: (self: OrphanedFileQueue, key: string, files: { File }) -> (),
+	_processQueueItems: (self: OrphanedFileQueue) -> (),
+}
+
+type OrphanedFileQueueProps = {
+	queue: { OrphanedFileQueueItem },
+	processQueueItem: ((item: OrphanedFileQueueItem) -> boolean)?,
+}
+
+export type OrphanedFileQueue = typeof(setmetatable({} :: OrphanedFileQueueProps, {} :: OrphanedFileQueueImpl))
+
+export type StoreContext = {
+	name: string,
+	template: { [string]: any },
+	schema: (value: { [string]: any }) -> (boolean, string?),
+	migrations: { [number]: (value: { [string]: any }) -> { [string]: any } },
+	dataStoreInterface: DataStoreInterface,
+	lockId: string,
+	orphanedFileQueue: OrphanedFileQueue,
 }
 
 local txInfoCheck = t.some(

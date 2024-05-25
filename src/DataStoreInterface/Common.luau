@@ -2,39 +2,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Promise = require(ReplicatedStorage.Packages.Promise)
 local t = require(ReplicatedStorage.Packages.t)
-
-type DataStoreInterfaceMt = {
-	get: (self: DataStoreInterface, scope: string, key: string) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
-	set: (
-		self: DataStoreInterface,
-		scope: string,
-		key: string,
-		value: any,
-		userIds: { number }?,
-		metadata: { [string]: any }?
-	) -> Promise.TypedPromise<string>,
-	update: (
-		self: DataStoreInterface,
-		scope: string,
-		key: string,
-		transformFunction: (currentValue: any, keyInfo: DataStoreKeyInfo) -> (any, { number }?, { [string]: any }?)?
-	) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
-	remove: (self: DataStoreInterface, scope: string, key: string) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
-	getRequestBudgetForBudgetType: (self: DataStoreInterface, budgetType: Enum.DataStoreRequestType) -> number,
-}
-
-type DataStoreInterfaceProps = {
-	new: () -> DataStoreInterface,
-	_getScope: (self: DataStoreInterface, scope: string) -> { [string]: any },
-	_store: { [string]: { [string]: any } },
-}
-
-export type DataStoreInterface = typeof(setmetatable(
-	{} :: DataStoreInterfaceProps,
-	{ __index = {} :: DataStoreInterfaceMt }
-))
 
 local metadataCheck = t.map(t.string, t.any)
 local userIdsCheck = t.array(t.number)
