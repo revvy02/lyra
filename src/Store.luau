@@ -50,7 +50,7 @@ local function createStore(config: StoreConfig)
 		_lockId = HttpService:GenerateGUID(false),
 		_keyInfo = {},
 		_lastTxId = nil,
-		_orphanedFiles = {},
+		_fileCleanupQueue = {},
 	}, { __index = Store })
 
 	local ok, err = self._schema(self._template)
@@ -62,16 +62,83 @@ local function createStore(config: StoreConfig)
 end
 createStore = t.wrap(createStore, t.tuple(storeConfigCheck))
 
-function Store:_markOrphanedFiles(...: Types.File)
-	for _, file in { ... } do
-		local isPresent = Sift.Array.findWhere(self._orphanedFiles, function(otherFile)
-			return Sift.Dictionary.equals(file, otherFile)
-		end)
-		if not isPresent then
-			table.insert(self._orphanedFiles, file)
+function Store:_cleanupOrphanedFiles()
+	while #self._fileCleanupQueue > 0 do
+		local minBudget = 100
+		local curBudget =
+			self._dataStoreInterface:getRequestBudgetForBudgetType(Enum.DataStoreRequestType.SetIncrementAsync)
+		if curBudget < minBudget then
+			task.wait(0.1)
+			continue
 		end
+
+		local entry
+		for _, otherEntry: any in self._fileCleanupQueue do
+			if otherEntry.beingProcessed then
+				continue
+			end
+			entry = otherEntry
+			break
+		end
+
+		if entry == nil then
+			task.wait(0.1)
+			continue
+		end
+
+		entry.beingProcessed = true
+
+		local promises = {}
+		for i = 1, #entry.file.count do
+			table.insert(promises, self._dataStoreInterface:delete(Constants.SHARD_SCOPE, `{entry.file.shard}-{i}`))
+		end
+
+		Promise.all(promises)
+			:andThen(function()
+				self._fileCleanupQueue = Sift.Array.removeValue(self._fileCleanupQueue, entry)
+
+				local keyInfo = self._keyInfo[entry.key]
+				keyInfo.orphanedFiles = Sift.Array.filter(keyInfo.orphanedFiles, function(file)
+					return not Sift.Dictionary.equals(file, entry.file)
+				end)
+			end)
+			:finally(function()
+				entry.beingProcessed = false
+			end)
+
+		task.wait(0.1)
 	end
 end
+
+function Store:_markOrphanedFile(key: string, file: Types.File): ()
+	if not isLargeFile(file) then
+		return
+	end
+
+	local isMarked = Sift.Array.findWhere(self._fileCleanupQueue, function(entry)
+		return Sift.Dictionary.equals(entry.file, file)
+	end)
+
+	if isMarked then
+		return
+	end
+
+	table.insert(self._fileCleanupQueue, { key = key, file = file, beingProcessed = false })
+
+	if #self._fileCleanupQueue == 1 then
+		task.spawn(function()
+			self:_cleanupOrphanedFiles()
+		end)
+	end
+end
+Store._markOrphanedFile = t.wrap(Store._markOrphanedFile, t.tuple(t.any, t.string, Types.fileCheck))
+
+function Store:_markOrphanedFiles(key: string, files: { Types.File }): ()
+	for _, file in files do
+		self:_markOrphanedFile(key, file)
+	end
+end
+Store._markOrphanedFiles = t.wrap(Store._markOrphanedFiles, t.tuple(t.any, t.string, Types.fileCheck))
 
 function Store:_writeLargeFile(
 	key: string,
@@ -95,7 +162,7 @@ function Store:_writeLargeFile(
 
 	local p = Promise.all(promises):andThenReturn(file):catch(function(err)
 		table.insert(self._keyInfo[key].orphanedFiles, file)
-		self:_markOrphanedFiles(file)
+		self:_markOrphanedFile(key, file)
 		return Promise.reject(err)
 	end)
 
@@ -173,16 +240,18 @@ function Store:_writeRecord(
 					return Promise.reject("Lock violation")
 				end
 
-				self:_markOrphanedFiles(keyInfo.currentFile)
 				keyInfo.orphanedFiles = orphanedFiles
 				keyInfo.currentFile = if isLargeFile(file) then file else nil
+				if keyInfo.currentFile then
+					self:_markOrphanedFile(key, keyInfo.currentFile)
+				end
 
 				return value
 			end)
 			:catch(function(err)
 				if isLargeFile(file) then
-					self:_markOrphanedFiles(file)
 					keyInfo.orphanedFiles = Sift.Array.push(keyInfo.orphanedFiles, file)
+					self:_markOrphanedFile(key, file)
 				end
 
 				return Promise.reject(err)
@@ -251,7 +320,7 @@ function Store:lock(key: string, userIds: { number }?): Promise.Promise
 		metadata = nil,
 		unsavedMutations = {},
 		orphanedFiles = {},
-		currentFile = nil,
+		currentFile = nil :: any,
 		queue = PromiseQueue.new(),
 		txLockPromise = nil,
 	}
@@ -267,12 +336,19 @@ function Store:lock(key: string, userIds: { number }?): Promise.Promise
 
 			if record.orphanedFiles then
 				keyInfo.orphanedFiles = record.orphanedFiles
-				self:_markOrphanedFiles(record.orphanedFiles)
+				self:_markOrphanedFiles(key, record.orphanedFiles)
 			end
 
 			local file = record.file
-			keyInfo.currentFile = file
-			return if file then self:_readLargeFile(file) else nil :: any
+			if file then
+				if isLargeFile(file) then
+					keyInfo.currentFile = file
+				end
+
+				return self:_readLargeFile(file)
+			end
+
+			return nil :: any
 		end)
 		:andThen(function(txInfo)
 			return if txInfo then self:_readTx(txInfo) else nil
@@ -301,7 +377,7 @@ function Store:unlock(key: string, userIds: { number }?): Promise.Promise
 		local txInfo = { committedData = data }
 
 		return self:_writeRecord(key, txInfo, userIds, true):andThen(function(latestValue)
-			self:_markOrphanedFiles(table.unpack(latestValue.orphanedFiles))
+			self:_markOrphanedFiles(key, latestValue.orphanedFiles)
 			self._keyInfo[key] = nil
 		end)
 	end)
