@@ -44,9 +44,10 @@ export type Lock = {
 }
 
 export type DataStoreRecord = {
+	version: number,
 	lock: Lock,
 	file: File,
-	orphanedShards: {},
+	orphanedFiles: {},
 }
 
 export type OrphanedFileQueueItem = {
@@ -78,6 +79,7 @@ export type StoreContext = {
 	dataStoreInterface: DataStoreInterface,
 	lockId: string,
 	orphanedFileQueue: OrphanedFileQueue,
+	latestVersion: number,
 }
 
 local txInfoCheck = t.some(

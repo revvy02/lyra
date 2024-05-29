@@ -61,15 +61,18 @@ local function createStore(config: StoreConfig): Store
 
 	local orphanedFileQueue = OrphanedFileQueue.new()
 
+	local migrations = config.migrations or {}
+
 	local storeContext: Types.StoreContext = {
 		-- TODO: add name to scopes
 		name = config.name,
 		template = config.template,
 		schema = config.schema,
-		migrations = config.migrations or {},
+		migrations = migrations,
 		dataStoreInterface = dataStoreInterface,
 		lockId = HttpService:GenerateGUID(false),
 		orphanedFileQueue = orphanedFileQueue,
+		latestVersion = math.max(#migrations, 1),
 	}
 
 	local ok, err = storeContext.schema(storeContext.template)

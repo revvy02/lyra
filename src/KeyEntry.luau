@@ -37,6 +37,7 @@ type KeyEntryImpl = {
 	commitSnapshot: (self: KeyEntry, snapshot: UnsavedMutationsSnapshot) -> (),
 	isSaved: (self: KeyEntry) -> boolean,
 	mutateKey: (self: KeyEntry, newData: any) -> (),
+	migrateData: (self: KeyEntry, data: any) -> Promise.TypedPromise<any>,
 	lock: (self: KeyEntry) -> Promise.Promise,
 	unlock: (self: KeyEntry) -> Promise.Promise,
 	update: (self: KeyEntry, transformFunction: (data: any) -> any) -> Promise.Promise,
@@ -49,6 +50,7 @@ type KeyEntryProps = {
 	userIds: { number }?,
 	data: any?,
 	metadata: { [string]: any }?,
+	version: number,
 	unsavedMutations: UnsavedMutationsSnapshot,
 	orphanedFiles: { Types.File },
 	currentFile: Types.File?,
@@ -74,6 +76,7 @@ function KeyEntry.new(config: KeyEntryConfig): KeyEntry
 		userIds = config.userIds,
 		data = nil,
 		metadata = nil,
+		version = config.storeContext.latestVersion,
 		unsavedMutations = {},
 		orphanedFiles = {},
 		currentFile = nil,
@@ -156,6 +159,7 @@ function KeyEntry:writeRecord(txInfo: Types.TxInfo, releaseLock: boolean?): Prom
 		local orphanedFiles = Sift.Array.push(self.orphanedFiles, self.currentFile :: any)
 
 		local record = {
+			version = self.version,
 			lock = if releaseLock then {} else self:getLock(),
 			file = file,
 			orphanedFiles = orphanedFiles,
@@ -233,6 +237,19 @@ function KeyEntry:mutateKey(newData: any): ()
 end
 KeyEntry.mutateKey = t.wrap(KeyEntry.mutateKey, t.tuple(t.any, t.any))
 
+function KeyEntry:migrateData(data: any): Promise.TypedPromise<any>
+	return Promise.new(function(resolve)
+		for i = self.version + 1, self.ctx.latestVersion do
+			local migration = self.ctx.migrations[i]
+			if migration then
+				data = Promise.try(migration, data):expect()
+			end
+		end
+
+		resolve(data)
+	end)
+end
+
 function KeyEntry:lock(): Promise.Promise
 	local function transformFunction(value, keyInfo)
 		value = Sift.Dictionary.mergeDeep({ lock = {} }, value)
@@ -250,12 +267,13 @@ function KeyEntry:lock(): Promise.Promise
 
 	return self.ctx.dataStoreInterface
 		:update(Constants.RECORD_SCOPE, self.key, transformFunction)
-		:andThen(function(record, _userIds, metadata)
+		:andThen(function(record: Types.DataStoreRecord, _userIds, metadata)
 			if record.lock.id ~= self.ctx.lockId then
 				return Promise.reject("Failed to acquire lock")
 			end
 
 			self.metadata = metadata
+			self.version = record.version or self.ctx.latestVersion
 
 			if record.orphanedFiles then
 				self.orphanedFiles = record.orphanedFiles
@@ -281,7 +299,12 @@ function KeyEntry:lock(): Promise.Promise
 				data = Sift.Dictionary.copyDeep(self.ctx.template)
 			end
 
-			-- TODO: migrations
+			if self.version > self.ctx.latestVersion then
+				return Promise.reject("Data has newer version than this server supports")
+			elseif self.version < self.ctx.latestVersion then
+				data = self:migrateData(data):expect()
+				self.version = self.ctx.latestVersion
+			end
 
 			self.data = data
 
