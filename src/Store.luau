@@ -157,9 +157,20 @@ function Store:tx(
 		txLockResolve = resolve
 	end)
 
+	local isClosed = false
 	local queues = Sift.Array.map(keys, function(key)
-		return self._keyEntries[key].queue
+		local keyEntry = self._keyEntries[key]
+
+		if keyEntry.closed then
+			isClosed = true
+		end
+
+		return keyEntry.queue
 	end)
+
+	if isClosed then
+		return Promise.reject("One or more KeyEntries are closed")
+	end
 
 	return PromiseQueue.multiQueueAdd(queues, function()
 		local currentState = {}

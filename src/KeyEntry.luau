@@ -56,6 +56,7 @@ type KeyEntryProps = {
 	currentFile: Types.File?,
 	queue: PromiseQueue.PromiseQueue,
 	txLockPromise: Promise.Promise?,
+	closed: boolean,
 }
 
 export type KeyEntry = typeof(setmetatable({} :: KeyEntryProps, {} :: KeyEntryImpl))
@@ -82,6 +83,7 @@ function KeyEntry.new(config: KeyEntryConfig): KeyEntry
 		currentFile = nil,
 		queue = PromiseQueue.new(),
 		txLockPromise = nil,
+		closed = false,
 	}, KeyEntry)
 end
 
@@ -314,8 +316,12 @@ end
 KeyEntry.lock = wrapPromiseFunc(KeyEntry.lock, t.tuple(t.any), t.tuple(t.any))
 
 function KeyEntry:unlock(): Promise.Promise
-	-- TODO: forbid any other mutations to the key from here on out
-	-- TODO: error when queue is added to from here on out
+	if self.closed then
+		return Promise.reject("KeyEntry is closed")
+	end
+
+	self.closed = true
+
 	return self.queue:add(function()
 		local data = Sift.Dictionary.copyDeep(self.data)
 		local txInfo = { committedData = data }
@@ -328,6 +334,10 @@ end
 KeyEntry.unlock = wrapPromiseFunc(KeyEntry.unlock, t.tuple(t.any), t.tuple(t.none))
 
 function KeyEntry:update(transformFunction: (data: { [string]: any }) -> { [string]: any }): Promise.Promise
+	if self.closed then
+		return Promise.reject("KeyEntry is closed")
+	end
+
 	return Promise.new(function(resolve, reject)
 		while self.txLockPromise ~= nil do
 			self.txLockPromise:await()
@@ -363,6 +373,10 @@ end
 KeyEntry.update = wrapPromiseFunc(KeyEntry.update, t.tuple(t.any, t.callback), t.tuple(t.none))
 
 function KeyEntry:save(): Promise.Promise
+	if self.closed then
+		return Promise.reject("KeyEntry is closed")
+	end
+
 	if self:isSaved() then
 		return Promise.resolve()
 	end
