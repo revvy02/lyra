@@ -11,7 +11,6 @@ local t = require(ReplicatedStorage.Packages.t)
 local Types = require(script.Parent.Types)
 local noYield = require(script.Parent.noYield)
 local splitUtf8String = require(script.Parent.splitUtf8String)
-local wrapPromiseFunc = require(script.Parent.wrapPromiseFunc)
 
 type UnsavedMutationsSnapshot = { [string]: boolean }
 local unsavedMutationsSnapshotCheck = t.map(t.string, t.boolean)
@@ -116,11 +115,7 @@ function KeyEntry:writeLargeFile(data: any, metadata: { [string]: any }?): Promi
 
 	return p
 end
-KeyEntry.writeLargeFile = wrapPromiseFunc(
-	KeyEntry.writeLargeFile,
-	t.tuple(t.any, t.any, t.optional(t.map(t.string, t.any))),
-	t.tuple(Types.fileCheck)
-)
+KeyEntry.writeLargeFile = t.wrap(KeyEntry.writeLargeFile, t.tuple(t.any, t.any, t.optional(t.map(t.string, t.any))))
 
 function KeyEntry:readLargeFile(file: Types.File): Promise.TypedPromise<any>
 	if not isLargeFile(file) then
@@ -138,7 +133,7 @@ function KeyEntry:readLargeFile(file: Types.File): Promise.TypedPromise<any>
 		return HttpService:JSONDecode(table.concat(shards))
 	end)
 end
-KeyEntry.readLargeFile = wrapPromiseFunc(KeyEntry.readLargeFile, t.tuple(t.any, Types.fileCheck), t.tuple(t.any))
+KeyEntry.readLargeFile = t.wrap(KeyEntry.readLargeFile, t.tuple(t.any, Types.fileCheck))
 
 function KeyEntry:readTx(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 	local txId = txInfo.txId
@@ -154,7 +149,7 @@ function KeyEntry:readTx(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 		end
 	end)
 end
-KeyEntry.readTx = wrapPromiseFunc(KeyEntry.readTx, t.tuple(t.any, Types.txInfoCheck), t.tuple(t.any))
+KeyEntry.readTx = t.wrap(KeyEntry.readTx, t.tuple(t.any, Types.txInfoCheck))
 
 function KeyEntry:writeRecord(txInfo: Types.TxInfo, releaseLock: boolean?): Promise.TypedPromise<any>
 	return self:writeLargeFile(txInfo):andThen(function(file)
@@ -201,8 +196,7 @@ function KeyEntry:writeRecord(txInfo: Types.TxInfo, releaseLock: boolean?): Prom
 			end)
 	end)
 end
-KeyEntry.writeRecord =
-	wrapPromiseFunc(KeyEntry.writeRecord, t.tuple(t.any, Types.txInfoCheck, t.optional(t.boolean)), t.tuple(t.any))
+KeyEntry.writeRecord = t.wrap(KeyEntry.writeRecord, t.tuple(t.any, Types.txInfoCheck, t.optional(t.boolean)))
 
 function KeyEntry:getLock(): Types.Lock
 	return {
@@ -313,7 +307,7 @@ function KeyEntry:lock(): Promise.Promise
 			return data
 		end)
 end
-KeyEntry.lock = wrapPromiseFunc(KeyEntry.lock, t.tuple(t.any), t.tuple(t.any))
+KeyEntry.lock = t.wrap(KeyEntry.lock, t.tuple(t.any))
 
 function KeyEntry:unlock(): Promise.Promise
 	if self.closed then
@@ -331,7 +325,7 @@ function KeyEntry:unlock(): Promise.Promise
 		end)
 	end)
 end
-KeyEntry.unlock = wrapPromiseFunc(KeyEntry.unlock, t.tuple(t.any), t.tuple(t.none))
+KeyEntry.unlock = t.wrap(KeyEntry.unlock, t.tuple(t.any))
 
 function KeyEntry:update(transformFunction: (data: { [string]: any }) -> { [string]: any }): Promise.Promise
 	if self.closed then
@@ -370,7 +364,7 @@ function KeyEntry:update(transformFunction: (data: { [string]: any }) -> { [stri
 		return resolve()
 	end)
 end
-KeyEntry.update = wrapPromiseFunc(KeyEntry.update, t.tuple(t.any, t.callback), t.tuple(t.none))
+KeyEntry.update = t.wrap(KeyEntry.update, t.tuple(t.any, t.callback))
 
 function KeyEntry:save(): Promise.Promise
 	if self.closed then
@@ -401,6 +395,6 @@ function KeyEntry:save(): Promise.Promise
 		end)
 	end)
 end
-KeyEntry.save = wrapPromiseFunc(KeyEntry.save, t.tuple(t.any), t.tuple(t.none))
+KeyEntry.save = t.wrap(KeyEntry.save, t.tuple(t.any))
 
 return KeyEntry

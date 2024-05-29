@@ -12,7 +12,6 @@ local Sift = require(ReplicatedStorage.Packages.Sift)
 local t = require(ReplicatedStorage.Packages.t)
 local Types = require(script.Parent.Types)
 local noYield = require(script.Parent.noYield)
-local wrapPromiseFunc = require(script.Parent.wrapPromiseFunc)
 
 export type StoreConfig = {
 	name: string,
@@ -134,19 +133,19 @@ function Store:lock(key: string, userIds: { number }?): Promise.Promise
 		self._keyEntries[key] = keyEntry
 	end)
 end
-Store.lock = wrapPromiseFunc(Store.lock, t.tuple(t.any, t.string, t.optional(t.array(t.number))), t.tuple(t.any))
+Store.lock = t.wrap(Store.lock, t.tuple(t.any, t.string, t.optional(t.array(t.number))))
 
 function Store:unlock(key: string): Promise.Promise
 	return self._keyEntries[key]:unlock():tap(function()
 		self._keyEntries[key] = nil
 	end)
 end
-Store.unlock = wrapPromiseFunc(Store.unlock, t.tuple(t.any, t.string), t.tuple(t.none))
+Store.unlock = t.wrap(Store.unlock, t.tuple(t.any, t.string))
 
 function Store:update(key: string, transformFunction: (data: any) -> any): Promise.Promise
 	return self._keyEntries[key]:update(transformFunction)
 end
-Store.update = wrapPromiseFunc(Store.update, t.tuple(t.any, t.string, t.callback), t.tuple(t.none))
+Store.update = t.wrap(Store.update, t.tuple(t.any, t.string, t.callback))
 
 function Store:tx(
 	keys: { string },
@@ -264,12 +263,12 @@ function Store:tx(
 		txLockResolve()
 	end)
 end
-Store.tx = wrapPromiseFunc(Store.tx, t.tuple(t.any, t.array(t.string), t.callback), t.tuple(t.none))
+Store.tx = t.wrap(Store.tx, t.tuple(t.any, t.array(t.string), t.callback))
 
 function Store:save(key: string): Promise.Promise
 	return self._keyEntries[key]:save()
 end
-Store.save = wrapPromiseFunc(Store.save, t.tuple(t.any, t.string), t.tuple(t.none))
+Store.save = t.wrap(Store.save, t.tuple(t.any, t.string))
 
 return {
 	createStore = createStore,

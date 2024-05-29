@@ -6,7 +6,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Common = require(script.Parent.Common)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 local t = require(ReplicatedStorage.Packages.t)
-local wrapPromiseFunc = require(ReplicatedStorage.Packages.Mix.wrapPromiseFunc)
 
 local function createMockDataStoreKeyInfo()
 	local currentTime = Common.getNow()
@@ -77,11 +76,7 @@ function MockInterface:get(scope: string, key: string): Promise.TypedPromise<(an
 		return nil, nil
 	end)
 end
-MockInterface.get = wrapPromiseFunc(
-	MockInterface.get,
-	t.tuple(t.any, t.string, t.string),
-	t.tuple(t.optional(t.any), t.optional(Common.checkDataStoreKeyInfo))
-)
+MockInterface.get = t.wrap(MockInterface.get, t.tuple(t.any, t.string, t.string))
 
 function MockInterface:set(
 	scope: string,
@@ -107,10 +102,9 @@ function MockInterface:set(
 		return info.keyInfo.Version
 	end)
 end
-MockInterface.set = wrapPromiseFunc(
+MockInterface.set = t.wrap(
 	MockInterface.set,
-	t.tuple(t.any, t.string, t.string, t.any, t.optional(Common.userIdsCheck), t.optional(Common.metadataCheck)),
-	t.tuple(t.string)
+	t.tuple(t.any, t.string, t.string, t.any, t.optional(Common.userIdsCheck), t.optional(Common.metadataCheck))
 )
 
 function MockInterface:update(
@@ -150,11 +144,7 @@ function MockInterface:update(
 		return newValue, info.keyInfo :: any
 	end)
 end
-MockInterface.update = wrapPromiseFunc(
-	MockInterface.update,
-	t.tuple(t.any, t.string, t.string, Common.callableCheck),
-	t.tuple(t.any, Common.checkDataStoreKeyInfo)
-)
+MockInterface.update = t.wrap(MockInterface.update, t.tuple(t.any, t.string, t.string, Common.callableCheck))
 
 function MockInterface:remove(scope: string, key: string): Promise.TypedPromise<(any?, DataStoreKeyInfo?)>
 	return self:_wait():andThen(function()
@@ -170,10 +160,6 @@ function MockInterface:remove(scope: string, key: string): Promise.TypedPromise<
 		return value, keyInfo
 	end)
 end
-MockInterface.remove = wrapPromiseFunc(
-	MockInterface.remove,
-	t.tuple(t.any, t.string, t.string),
-	t.tuple(t.optional(t.any), t.optional(Common.checkDataStoreKeyInfo))
-)
+MockInterface.remove = t.wrap(MockInterface.remove, t.tuple(t.any, t.string, t.string))
 
 return MockInterface
