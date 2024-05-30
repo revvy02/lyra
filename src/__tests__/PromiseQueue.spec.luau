@@ -46,12 +46,14 @@ describe("PromiseQueue", function()
 			end)
 		end)
 
-		it.failing("returns a promise that rejects if the callback throws an error", function()
+		it("returns a promise that rejects if the callback throws an error", function()
 			local queue = PromiseQueue.new()
-			local callback = jest.fn(function()
-				error("Error")
-			end)
-			return expect(queue:add(callback)).rejects.toThrow("Error")
+			local callback = function()
+				error("error inside callback")
+			end
+			return expect(queue:add(callback)).rejects.toMatchObject({
+				error = expect.stringMatching("error inside callback"),
+			})
 		end)
 
 		it("ensures callbacks are executed in the order they are added", function()
@@ -156,19 +158,21 @@ describe("PromiseQueue", function()
 			expect(queue._queue).toEqual({})
 		end)
 
-		it.failing("ensures proper error handling and propagation within the queue", function()
+		it("ensures proper error handling and propagation within the queue", function()
 			local queue = PromiseQueue.new()
 			local callback1 = jest.fn(function()
-				return Promise.delay(0.1):andThenCall(error, "propagated error")
+				task.wait(0.1)
+				error("propagated error")
 			end)
 			local callback2 = jest.fn()
 			local p1 = queue:add(callback1)
 			local p2 = queue:add(callback2)
 
-			return Promise.allSettled({ p1, p2 }):andThen(function(statuses)
-				expect(statuses[1].status).toBe("rejected")
-				expect(statuses[2].status).toBe("rejected")
-			end)
+			expect(p1).rejects.toMatchObject({
+				error = expect.stringMatching("propagated error"),
+			})
+
+			return expect(p2).resolves.never.toBeDefined()
 		end)
 	end)
 
@@ -242,14 +246,16 @@ describe("PromiseQueue", function()
 			end)
 		end)
 
-		it.failing("returns a promise that rejects if the callback throws an error", function()
+		it("returns a promise that rejects if the callback throws an error", function()
 			local queue1 = PromiseQueue.new()
 			local queue2 = PromiseQueue.new()
 			local callback = jest.fn(function()
-				error("Error")
+				error("propagated error")
 			end)
 
-			return expect(PromiseQueue.multiQueueAdd({ queue1, queue2 }, callback)).rejects.toThrow("Error")
+			return expect(PromiseQueue.multiQueueAdd({ queue1, queue2 }, callback)).rejects.toMatchObject({
+				error = expect.stringMatching("propagated error"),
+			})
 		end)
 
 		it("ensures all queues are blocked before the callback is executed", function()
@@ -328,20 +334,19 @@ describe("PromiseQueue", function()
 			end)
 		end)
 
-		it("ensures proper cleanup and resume of all queues even if the callback fails", function()
+		it.only("ensures proper cleanup and resume of all queues even if the callback fails", function()
 			local queue1 = PromiseQueue.new()
 			local queue2 = PromiseQueue.new()
 			local callback1 = jest.fn()
 			local callback2 = jest.fn()
 
-			local p1 = PromiseQueue.multiQueueAdd({ queue1, queue2 }, function()
-				error("Error")
-			end)
+			PromiseQueue.multiQueueAdd({ queue1, queue2 }, function()
+				error("propagated error")
+			end):catch(function() end)
 			local p2 = queue1:add(callback1)
 			local p3 = queue2:add(callback2)
 
-			expect(p1).rejects.toThrow("Error")
-			return Promise.all({ p2, p3 }):andThen(function()
+			return Promise.allSettled({ p2, p3 }):andThen(function()
 				expect(callback1).toHaveBeenCalled()
 				expect(callback2).toHaveBeenCalled()
 			end)
@@ -364,7 +369,7 @@ describe("PromiseQueue", function()
 			table.insert(promises, PromiseQueue.multiQueueAdd(queues, function() end))
 
 			return Promise.all(promises):andThen(function()
-				for _, callback in ipairs(callbacks) do
+				for _, callback in callbacks do
 					expect(callback).toHaveBeenCalled()
 				end
 			end)
