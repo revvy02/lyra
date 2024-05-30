@@ -234,11 +234,13 @@ end
 KeyEntry.mutateKey = t.wrap(KeyEntry.mutateKey, t.tuple(t.any, t.any))
 
 function KeyEntry:migrateData(data: any): Promise.TypedPromise<any>
+	data = Sift.Dictionary.copyDeep(data)
 	return Promise.new(function(resolve)
 		for i = self.version + 1, self.ctx.latestVersion do
 			local migration = self.ctx.migrations[i]
 			if migration then
-				data = Promise.try(migration, data):expect()
+				local newData = Promise.try(migration, data):expect()
+				data = Sift.Dictionary.copyDeep(newData)
 			end
 		end
 
