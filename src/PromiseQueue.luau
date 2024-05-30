@@ -54,6 +54,7 @@ local function addResumableBlock(queue: PromiseQueue): Promise.TypedPromise<() -
 		end)
 	end)
 end
+PromiseQueue._addResumableBlock = addResumableBlock
 
 function PromiseQueue.multiQueueAdd(queues: { PromiseQueue }, callback: () -> ()): Promise.Promise
 	return Promise.new(function(resolve, reject)
