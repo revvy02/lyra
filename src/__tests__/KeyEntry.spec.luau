@@ -121,7 +121,7 @@ describe("KeyEntry", function()
 				key = "testKey",
 				storeContext = storeContext,
 			})
-			local data = string.rep("a", Constants.MAX_CHUNK_SIZE + 100)
+			local data = string.rep("a", Constants.MAX_CHUNK_SIZE + 1)
 
 			local file = keyEntry:writeLargeFile(data):expect()
 
@@ -134,7 +134,7 @@ describe("KeyEntry", function()
 				key = "testKey",
 				storeContext = storeContext,
 			})
-			local data = string.rep("a", Constants.MAX_CHUNK_SIZE + 100)
+			local data = string.rep("a", Constants.MAX_CHUNK_SIZE + 1)
 
 			mockDataStoreInterface.set = function(_, _, _, _, _, _)
 				return Promise.reject("Shard write error")
@@ -151,7 +151,7 @@ describe("KeyEntry", function()
 				key = "testKey",
 				storeContext = storeContext,
 			})
-			local data1 = string.rep("a", Constants.MAX_CHUNK_SIZE + 100)
+			local data1 = string.rep("a", Constants.MAX_CHUNK_SIZE + 1)
 			local data2 = string.rep("b", Constants.MAX_CHUNK_SIZE * 3)
 
 			mockDataStoreInterface.set = function(_, _, key, _, _, _)
@@ -174,7 +174,7 @@ describe("KeyEntry", function()
 				key = "testKey",
 				storeContext = storeContext,
 			})
-			local data = string.rep("a", Constants.MAX_CHUNK_SIZE + 100)
+			local data = string.rep("a", Constants.MAX_CHUNK_SIZE + 1)
 
 			local file = keyEntry:writeLargeFile(data):expect()
 
@@ -872,6 +872,33 @@ describe("KeyEntry", function()
 			expect(testData).toEqual({
 				initial = "value",
 			})
+		end)
+
+		it("ensures migrations start at version 2", function()
+			local keyEntry = KeyEntry.new({
+				key = "testKey",
+				storeContext = storeContext,
+			})
+			keyEntry.version = 1
+			local testData = {
+				initial = "value",
+			}
+
+			local migrations = {}
+			local invalidMigration = jest.fn(function(...)
+				return ...
+			end)
+			migrations[1] = invalidMigration
+			migrations[2] = function(data)
+				data.foo = "bar"
+				return data
+			end
+			storeContext.migrations = migrations
+			storeContext.latestVersion = 2
+
+			keyEntry:migrateData(testData):expect()
+
+			expect(invalidMigration).never.toHaveBeenCalled()
 		end)
 	end)
 

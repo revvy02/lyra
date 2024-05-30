@@ -65,6 +65,11 @@ type KeyEntryConfig = {
 	storeContext: Types.StoreContext,
 	userIds: { number }?,
 }
+local keyEntryConfigCheck = t.strictInterface({
+	key = t.string,
+	storeContext = t.any,
+	userIds = t.optional(t.array(t.number)),
+})
 
 local KeyEntry: KeyEntryImpl = {} :: KeyEntryImpl
 KeyEntry.__index = KeyEntry
@@ -85,6 +90,7 @@ function KeyEntry.new(config: KeyEntryConfig): KeyEntry
 		closed = false,
 	}, KeyEntry)
 end
+KeyEntry.new = t.wrap(KeyEntry.new, t.tuple(keyEntryConfigCheck))
 
 function KeyEntry:writeLargeFile(data: any, metadata: { [string]: any }?): Promise.TypedPromise<Types.File>
 	local str = HttpService:JSONEncode(data)
