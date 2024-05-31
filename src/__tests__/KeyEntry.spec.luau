@@ -146,7 +146,7 @@ describe("KeyEntry", function()
 			expect(storeContext.orphanedFileQueue.markFile).toHaveBeenCalledTimes(1)
 		end)
 
-		it.failing("ensures orphaned files are tracked correctly", function()
+		it("ensures orphaned files are tracked correctly", function()
 			local keyEntry = KeyEntry.new({
 				key = "testKey",
 				storeContext = storeContext,
@@ -155,14 +155,14 @@ describe("KeyEntry", function()
 			local data2 = string.rep("b", Constants.MAX_CHUNK_SIZE * 3)
 
 			mockDataStoreInterface.set = function(_, _, key, _, _, _)
-				if key == "1" then
+				if key:match("%-1$") then
 					return Promise.reject("Shard write error")
 				end
 				return Promise.resolve()
 			end
 
 			keyEntry:writeLargeFile(data1):catch(function() end):expect()
-			local file2 = keyEntry:writeLargeFile(data2):expect()
+			local file2 = keyEntry:writeLargeFile(data2):catch(function() end):expect()
 
 			expect(#keyEntry.orphanedFiles).toBe(2)
 			expect(storeContext.orphanedFileQueue.markFile).toHaveBeenCalledTimes(2)
@@ -182,7 +182,7 @@ describe("KeyEntry", function()
 			expect(typeof(file.count)).toBe("number")
 		end)
 
-		it.failing("ensures no data loss during sharding and writing", function()
+		it("ensures no data loss during sharding and writing", function()
 			local keyEntry = KeyEntry.new({
 				key = "testKey",
 				storeContext = storeContext,
@@ -190,16 +190,18 @@ describe("KeyEntry", function()
 			local testData = {
 				foo = "bar",
 				baz = { 1, 2, 3 },
+				large = string.rep("a", Constants.MAX_CHUNK_SIZE * 2),
 			}
-			local data = HttpService:JSONEncode(testData)
 
+			local data = HttpService:JSONEncode(testData)
 			local file = keyEntry:writeLargeFile(data):expect()
-			file.count = 2
 			local shardId = file.shard
+
 			local promises = {}
 			for i = 1, file.count do
 				table.insert(promises, mockDataStoreInterface:get(Constants.SHARD_SCOPE, `{shardId}-{i}`))
 			end
+
 			Promise.all(promises)
 				:andThen(function(shards)
 					local reconstructedData = HttpService:JSONDecode(table.concat(shards))
