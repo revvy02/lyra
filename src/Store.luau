@@ -49,7 +49,7 @@ type StoreProps = {
 	_fileCleanupQueue: { { key: string, file: Types.File, beingProcessed: boolean } },
 }
 
-type Store = typeof(setmetatable({} :: StoreProps, {} :: StoreImpl))
+export type Store = typeof(setmetatable({} :: StoreProps, {} :: StoreImpl))
 
 local Store: StoreImpl = {} :: StoreImpl
 Store.__index = Store
