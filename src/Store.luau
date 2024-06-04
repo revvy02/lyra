@@ -204,6 +204,10 @@ function Store:tx(
 			end
 		end
 
+		local currentKeys = Sift.Dictionary.keys(currentState)
+		local nextKeys = Sift.Dictionary.keys(nextState)
+		assert(#Sift.Array.differenceSymmetric(currentKeys, nextKeys) == 0, "Keys changed in transaction")
+
 		-- If no keys changed we can exit early, and if only one key changed, we
 		-- can treat it as a normal :update.
 		local changedKeys = Sift.Array.filter(keys, function(key)
