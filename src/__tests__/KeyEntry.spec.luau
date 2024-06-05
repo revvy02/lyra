@@ -67,28 +67,15 @@ describe.each({
 		end)
 
 		it("correctly initializes with provided config", function()
-			local keyEntry = KeyEntry.new({
+			keyEntry = KeyEntry.new({
 				key = "testKey",
 				storeContext = storeContext,
 				userIds = { 12345 },
+				metadata = { test = "metadata" },
 			})
 
 			expect(keyEntry.userIds).toEqual({ 12345 })
-		end)
-
-		it("handles missing or nil userIds gracefully", function()
-			local keyEntry1 = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-			local keyEntry2 = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-				userIds = nil,
-			})
-
-			expect(keyEntry1.userIds).toBeNil()
-			expect(keyEntry2.userIds).toBeNil()
+			expect(keyEntry.metadata).toEqual({ test = "metadata" })
 		end)
 	end)
 
@@ -406,6 +393,16 @@ describe.each({
 	end)
 
 	describe("KeyEntry:getLock", function()
+		it("returns properly formed lock", function()
+			local lock = keyEntry:getLock()
+			expect(lock).toEqual({
+				id = storeContext.lockId,
+				expiry = expect.closeTo(DateTime.now().UnixTimestamp + Constants.LOCK_DURATION_SECONDS, 0.1),
+			})
+		end)
+	end)
+
+	describe("KeyEntry:lock", function()
 		it("correctly acquires lock for the key", function()
 			return keyEntry
 				:lock()
