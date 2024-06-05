@@ -31,6 +31,7 @@ local storeConfigCheck = t.strictInterface({
 	schema = t.callback,
 	migrations = t.optional(t.array(t.callback)),
 	dataStoreInterface = t.optional(t.table),
+	useMock = t.optional(t.boolean),
 })
 
 type StoreImpl = {
