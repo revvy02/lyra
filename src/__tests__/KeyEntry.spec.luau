@@ -564,6 +564,47 @@ describe.each({
 		end)
 	end)
 
+	describe.only("KeyEntry:get", function()
+		it("correctly returns cached data", function()
+			local keyEntry = KeyEntry.new({
+				key = "testKey",
+				storeContext = storeContext,
+			})
+
+			return keyEntry:lock():andThen(function()
+				keyEntry
+					:update(function(data)
+						data.foo = "bar"
+						return data
+					end)
+					:expect()
+
+				local data = keyEntry:get():expect()
+				expect(data).toEqual(keyEntry.data)
+			end)
+		end)
+
+		it("freezes and deep copies cached data", function()
+			local keyEntry = KeyEntry.new({
+				key = "testKey",
+				storeContext = storeContext,
+			})
+
+			return keyEntry:lock():andThen(function()
+				keyEntry
+					:update(function(data)
+						data.foo = "bar"
+						return data
+					end)
+					:expect()
+
+				local data = keyEntry:get():expect()
+				expect(table.isfrozen(data)).toBe(true)
+				expect(data).never.toBe(keyEntry.data)
+			end)
+		end)
+	end)
+
 	describe("KeyEntry:unlock", function()
 		it("correctly releases lock for the key", function()
 			local keyEntry = KeyEntry.new({

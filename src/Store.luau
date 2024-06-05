@@ -32,9 +32,12 @@ local storeConfigCheck = t.strictInterface({
 
 type StoreImpl = {
 	__index: StoreImpl,
+
 	_processOrphanedFile: (self: Store, item: Types.OrphanedFileQueueItem) -> boolean,
+
 	lock: (self: Store, key: string) -> Promise.Promise,
 	unlock: (self: Store, key: string) -> Promise.Promise,
+	get: (self: Store, key: string) -> Promise.TypedPromise<any>,
 	update: (self: Store, key: string, transformFunction: (data: any) -> any) -> Promise.Promise,
 	tx: (
 		self: Store,
@@ -146,7 +149,10 @@ function Store:unlock(key: string): Promise.Promise
 end
 Store.unlock = t.wrap(Store.unlock, t.tuple(t.any, t.string))
 
--- TODO: add API for get
+function Store:get(key: string): Promise.Promise
+	return self._keyEntries[key]:get()
+end
+Store.get = t.wrap(Store.get, t.tuple(t.any, t.string))
 
 function Store:update(key: string, transformFunction: (data: any) -> any): Promise.Promise
 	return self._keyEntries[key]:update(transformFunction)

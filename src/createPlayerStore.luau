@@ -9,6 +9,7 @@ local mapKeys = require(script.Parent.mapKeys)
 
 type PlayerStoreImpl = {
 	__index: PlayerStoreImpl,
+	get: (self: PlayerStore, userId: number) -> Promise.Promise,
 	lock: (self: PlayerStore, userId: number) -> Promise.Promise,
 	unlock: (self: PlayerStore, userId: number) -> Promise.Promise,
 	update: (self: PlayerStore, userId: number, transformFunction: (data: any) -> any) -> Promise.Promise,
@@ -41,6 +42,11 @@ PlayerStore.__index = PlayerStore
 local function createPlayerStore(config: Store.StoreConfig): PlayerStore
 	local store = Store.createStore(config)
 	return setmetatable({ _store = store }, PlayerStore)
+end
+
+function PlayerStore:get(userId: number)
+	local userIdKey = assertUserId(userId)
+	return self._store:get(userIdKey)
 end
 
 function PlayerStore:lock(userId: number)

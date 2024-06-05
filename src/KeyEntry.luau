@@ -21,7 +21,9 @@ end
 
 type KeyEntryImpl = {
 	__index: KeyEntryImpl,
+
 	new: (config: KeyEntryConfig) -> KeyEntry,
+
 	writeLargeFile: (
 		self: KeyEntry,
 		data: any,
@@ -30,15 +32,22 @@ type KeyEntryImpl = {
 	readLargeFile: (self: KeyEntry, file: Types.File) -> Promise.TypedPromise<any>,
 	readTx: (self: KeyEntry, txInfo: Types.TxInfo) -> Promise.TypedPromise<any>,
 	writeRecord: (self: KeyEntry, txInfo: Types.TxInfo, releaseLock: boolean?) -> Promise.TypedPromise<any>,
+
 	getLock: (self: KeyEntry) -> Types.Lock,
+
 	getSnapshot: (self: KeyEntry) -> UnsavedMutationsSnapshot,
 	isSnapshotCommitted: (self: KeyEntry, snapshot: UnsavedMutationsSnapshot) -> boolean,
 	commitSnapshot: (self: KeyEntry, snapshot: UnsavedMutationsSnapshot) -> (),
 	isSaved: (self: KeyEntry) -> boolean,
+
 	mutateKey: (self: KeyEntry, newData: any) -> (),
 	migrateData: (self: KeyEntry, data: any) -> Promise.TypedPromise<any>,
+
+	waitUntilLocked: (self: KeyEntry) -> Promise.Promise,
+
 	lock: (self: KeyEntry) -> Promise.Promise,
 	unlock: (self: KeyEntry) -> Promise.Promise,
+	get: (self: KeyEntry) -> Promise.TypedPromise<any>,
 	update: (self: KeyEntry, transformFunction: (data: any) -> any) -> Promise.Promise,
 	save: (self: KeyEntry) -> Promise.Promise,
 }
@@ -46,17 +55,24 @@ type KeyEntryImpl = {
 type KeyEntryProps = {
 	key: string,
 	ctx: Types.StoreContext,
+
 	userIds: { number }?,
-	data: any?,
 	metadata: { [string]: any }?,
+
+	data: any?,
 	version: number,
+
 	unsavedMutations: UnsavedMutationsSnapshot,
+
 	orphanedFiles: { Types.File },
 	currentFile: Types.File?,
 	queue: PromiseQueue.PromiseQueue,
 	txLockPromise: Promise.Promise?,
+
 	closed: boolean,
 	locked: boolean,
+	acquireLockPromise: Promise.Promise?,
+
 	recordScope: string,
 	shardScope: string,
 	txScope: string,
@@ -82,17 +98,24 @@ function KeyEntry.new(config: KeyEntryConfig): KeyEntry
 	return setmetatable({
 		key = config.key,
 		ctx = config.storeContext,
+
 		userIds = config.userIds,
-		data = nil,
 		metadata = nil,
+
+		data = nil,
 		version = config.storeContext.latestVersion,
+
 		unsavedMutations = {},
+
 		orphanedFiles = {},
 		currentFile = nil,
 		queue = PromiseQueue.new(),
 		txLockPromise = nil,
+
 		closed = false,
 		locked = false,
+		acquireLockPromise = nil,
+
 		recordScope = `{Constants.RECORD_SCOPE}/{config.storeContext.name}`,
 		shardScope = `{Constants.SHARD_SCOPE}/{config.storeContext.name}`,
 		txScope = `{Constants.TX_SCOPE}/{config.storeContext.name}`,
@@ -256,9 +279,26 @@ function KeyEntry:migrateData(data: any): Promise.TypedPromise<any>
 	end)
 end
 
+function KeyEntry:waitUntilLocked(): Promise.Promise
+	return Promise.resolve(self.acquireLockPromise):andThen(function()
+		if not self.locked then
+			return Promise.reject("KeyEntry is not locked")
+		end
+		if self.closed then
+			return Promise.reject("KeyEntry is closed")
+		end
+	end)
+end
+
 function KeyEntry:lock(): Promise.Promise
 	if self.locked then
 		return Promise.reject("KeyEntry is already locked")
+	end
+	if self.closed then
+		return Promise.reject("KeyEntry is closed")
+	end
+	if self.acquireLockPromise then
+		return Promise.reject("KeyEntry is already being locked")
 	end
 
 	local function transformFunction(value, keyInfo)
@@ -278,7 +318,7 @@ function KeyEntry:lock(): Promise.Promise
 		return value, self.userIds, previousMetadata
 	end
 
-	return self.ctx.dataStoreInterface
+	self.acquireLockPromise = self.ctx.dataStoreInterface
 		:update(self.recordScope, self.key, transformFunction)
 		:andThen(function(record: Types.DataStoreRecord, keyInfo: DataStoreKeyInfo)
 			if record == nil or record.lock.id ~= self.ctx.lockId then
@@ -324,33 +364,40 @@ function KeyEntry:lock(): Promise.Promise
 
 			return data
 		end)
+		:finally(function()
+			self.acquireLockPromise = nil
+		end)
+
+	return self.acquireLockPromise :: any
 end
 KeyEntry.lock = t.wrap(KeyEntry.lock, t.tuple(t.any))
 
 function KeyEntry:unlock(): Promise.Promise
-	if self.closed then
-		return Promise.reject("KeyEntry is closed")
-	end
+	return self:waitUntilLocked():andThen(function()
+		self.closed = true
 
-	self.closed = true
+		return self.queue:add(function()
+			local data = Sift.Dictionary.copyDeep(self.data)
+			local txInfo = { committedData = data }
 
-	return self.queue:add(function()
-		local data = Sift.Dictionary.copyDeep(self.data)
-		local txInfo = { committedData = data }
-
-		return self:writeRecord(txInfo, true):andThen(function(latestValue)
-			self.ctx.orphanedFileQueue:markFiles(self.key, latestValue.orphanedFiles)
+			return self:writeRecord(txInfo, true):andThen(function(latestValue)
+				self.ctx.orphanedFileQueue:markFiles(self.key, latestValue.orphanedFiles)
+			end)
 		end)
 	end)
 end
 KeyEntry.unlock = t.wrap(KeyEntry.unlock, t.tuple(t.any))
 
-function KeyEntry:update(transformFunction: (data: { [string]: any }) -> { [string]: any }): Promise.Promise
-	if self.closed then
-		return Promise.reject("KeyEntry is closed")
-	end
+function KeyEntry:get(): Promise.TypedPromise<any>
+	return self:waitUntilLocked():andThen(function()
+		local data = Sift.Dictionary.copyDeep(self.data)
+		data = Sift.Dictionary.freezeDeep(data :: any)
+		return Promise.resolve(data)
+	end)
+end
 
-	return Promise.new(function(resolve, reject)
+function KeyEntry:update(transformFunction: (data: { [string]: any }) -> { [string]: any }): Promise.Promise
+	return self:waitUntilLocked():andThen(function()
 		while self.txLockPromise ~= nil do
 			self.txLockPromise:await()
 		end
@@ -359,57 +406,55 @@ function KeyEntry:update(transformFunction: (data: { [string]: any }) -> { [stri
 		local nextData = Sift.Dictionary.copyDeep(currentData)
 		local transformOk, result = pcall(noYield, transformFunction, nextData :: any)
 		if not transformOk then
-			return reject(`Store:update transformFunction failed: {result}`)
+			return Promise.reject(`Store:update transformFunction failed: {result}`)
 		end
 
 		if result == nil then
 			print(`Skipping update for key {self.key}`)
-			return resolve()
+			return
 		end
 		nextData = result
 
 		if Sift.Dictionary.equalsDeep(nextData :: any, currentData :: any) then
-			return resolve()
+			return
 		end
 
 		local schemaOk, err = self.ctx.schema(nextData :: any)
 		if not schemaOk then
-			return reject(`Store:update schema validation failed: {err}`)
+			return Promise.reject(`Store:update schema validation failed: {err}`)
 		end
 
 		self:mutateKey(nextData)
 
-		return resolve()
+		return
 	end)
 end
 KeyEntry.update = t.wrap(KeyEntry.update, t.tuple(t.any, t.callback))
 
 function KeyEntry:save(): Promise.Promise
-	if self.closed then
-		return Promise.reject("KeyEntry is closed")
-	end
-
-	if self:isSaved() then
-		return Promise.resolve()
-	end
-	local snapshot = self:getSnapshot()
-
-	return self.queue:add(function()
-		if self:isSnapshotCommitted(snapshot) then
-			return
-		end
-
+	return self:waitUntilLocked():andThen(function()
 		if self:isSaved() then
-			return
+			return Promise.resolve()
 		end
+		local snapshot = self:getSnapshot()
 
-		snapshot = self:getSnapshot()
+		return self.queue:add(function()
+			if self:isSnapshotCommitted(snapshot) then
+				return
+			end
 
-		local data = Sift.Dictionary.copyDeep(self.data)
-		local txInfo = { committedData = data }
+			if self:isSaved() then
+				return
+			end
 
-		return self:writeRecord(txInfo):andThen(function()
-			self:commitSnapshot(snapshot)
+			snapshot = self:getSnapshot()
+
+			local data = Sift.Dictionary.copyDeep(self.data)
+			local txInfo = { committedData = data }
+
+			return self:writeRecord(txInfo):andThen(function()
+				self:commitSnapshot(snapshot)
+			end)
 		end)
 	end)
 end
