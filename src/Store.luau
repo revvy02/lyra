@@ -3,10 +3,12 @@
 local DataStoreService = game:GetService("DataStoreService")
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Constants = require(script.Parent.Constants)
 local DataStoreInterface = require(script.Parent.DataStoreInterface)
 local KeyEntry = require(script.Parent.KeyEntry)
+local MockDataStoreService = require(script.Parent.MockDataStoreService)
 local OrphanedFileQueue = require(script.Parent.OrphanedFileQueue)
 local PromiseQueue = require(script.Parent.PromiseQueue)
 local Promise = require(ReplicatedStorage.Packages.Promise)
@@ -21,6 +23,7 @@ export type StoreConfig = {
 	schema: (value: any) -> (boolean, string?),
 	migrations: { [number]: (value: any) -> any }?,
 	dataStoreInterface: DataStoreInterface.DataStoreInterface?,
+	useMock: boolean?,
 }
 local storeConfigCheck = t.strictInterface({
 	name = t.string,
@@ -62,9 +65,17 @@ Store.__index = Store
 local function createStore(config: StoreConfig): Store
 	local dataStoreInterface = config.dataStoreInterface
 	if dataStoreInterface == nil then
-		dataStoreInterface = DataStoreInterface.new(DataStoreService)
+		local service
+		if config.useMock then
+			assert(RunService:IsStudio(), "useMock can only be true in Studio")
+			service = (MockDataStoreService :: any) :: DataStoreService
+		else
+			service = DataStoreService
+		end
+
+		dataStoreInterface = DataStoreInterface.new(service)
 	end
-	assert(dataStoreInterface, "dataStoreInterface is required")
+	assert(dataStoreInterface, "luau")
 
 	local orphanedFileQueue = OrphanedFileQueue.new()
 
