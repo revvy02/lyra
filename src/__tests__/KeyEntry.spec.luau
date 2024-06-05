@@ -517,8 +517,10 @@ describe.each({
 		end)
 
 		it("handles cases where the KeyEntry is already closed", function()
-			keyEntry.closed = true
-			return expect(keyEntry:unlock()).rejects.toMatch("KeyEntry is closed")
+			return keyEntry:lock():andThen(function()
+				keyEntry.closed = true
+				return expect(keyEntry:unlock()).rejects.toMatch("KeyEntry is closed")
+			end)
 		end)
 
 		it("ensures proper cleanup and saving of data", function()
