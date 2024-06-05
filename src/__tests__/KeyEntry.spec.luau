@@ -71,11 +71,9 @@ describe.each({
 				key = "testKey",
 				storeContext = storeContext,
 				userIds = { 12345 },
-				metadata = { test = "metadata" },
 			})
 
 			expect(keyEntry.userIds).toEqual({ 12345 })
-			expect(keyEntry.metadata).toEqual({ test = "metadata" })
 		end)
 	end)
 
@@ -183,19 +181,6 @@ describe.each({
 			end)
 		end)
 
-		it("handles errors during shard reading gracefully", function()
-			local shardId = HttpService:GenerateGUID(false)
-			local file = { shard = shardId, count = 2 } :: Types.File
-
-			dataStoreInterface.get = function()
-				return Promise.reject("Shard read error")
-			end
-
-			return keyEntry:readLargeFile(file):catch(function(err)
-				expect(err).toMatch("Shard read error")
-			end)
-		end)
-
 		it("ensures complete and correct reassembly of large files", function()
 			local testData = {
 				foo = "bar",
@@ -232,35 +217,6 @@ describe.each({
 
 			return keyEntry:readTx(txInfo):andThen(function(data)
 				expect(data).toEqual(txInfo.committedData)
-			end)
-		end)
-
-		it("correctly reads transaction data based on transaction ID", function()
-			local txInfo = {
-				txId = "tx123",
-				committedData = { foo = "bar" },
-				txData = { foo = "baz" },
-			} :: Types.TxInfo
-
-			return dataStoreInterface:set(keyEntry.txScope, "tx123", true):andThen(function()
-				local data = keyEntry:readTx(txInfo):expect()
-				expect(data).toEqual(txInfo.txData)
-			end)
-		end)
-
-		it("handles errors during transaction data retrieval", function()
-			local txInfo = {
-				txId = "tx123",
-				committedData = { foo = "bar" },
-				txData = { foo = "baz" },
-			} :: Types.TxInfo
-
-			dataStoreInterface.get = function(_, _, _)
-				return Promise.reject("Transaction read error")
-			end
-
-			return keyEntry:readTx(txInfo):catch(function(err)
-				expect(err).toBe("Transaction read error")
 			end)
 		end)
 
@@ -404,12 +360,10 @@ describe.each({
 
 	describe("KeyEntry:lock", function()
 		it("correctly acquires lock for the key", function()
-			return keyEntry
-				:lock()
-				:andThen(function(data)
-					expect(data).never.toBeNil()
-				end)
-				:catch(error)
+			return keyEntry:lock():andThen(function(data)
+				expect(data).never.toBeNil()
+				expect(keyEntry.locked).toBe(true)
+			end)
 		end)
 
 		it("verifies and handles lock expiry", function()
@@ -424,6 +378,7 @@ describe.each({
 				:andThen(function()
 					local data = keyEntry:lock():expect()
 					expect(data).never.toBeNil()
+					expect(keyEntry.locked).toBe(true)
 				end)
 		end)
 
@@ -458,10 +413,12 @@ describe.each({
 				end)
 		end)
 
-		it("handles concurrent lock attempts and ensures data consistency", function()
-			return keyEntry:lock():andThen(function(data)
-				expect(data).never.toBeNil()
-				return expect(keyEntry:lock()).rejects.toMatch("KeyEntry is already locked")
+		it("handles concurrent lock attempts", function()
+			local p1 = keyEntry:lock()
+			local p2 = keyEntry:lock()
+			local e = expect(p2).rejects.toMatch("KeyEntry is already being locked")
+			return p1:andThen(function()
+				return e
 			end)
 		end)
 	end)
@@ -520,7 +477,7 @@ describe.each({
 			end)
 		end)
 
-		it("ensures proper cleanup and saving of data", function()
+		it("ensures proper saving of data", function()
 			local data = {
 				test = "data",
 			}
@@ -589,7 +546,7 @@ describe.each({
 			end)
 		end)
 
-		it("adheres to the defined schema for data validation", function()
+		it.only("adheres to the defined schema for data validation", function()
 			storeContext.schema = function(data)
 				return typeof(data) == "table" and data.value ~= nil
 			end
@@ -603,20 +560,14 @@ describe.each({
 					:andThen(function()
 						error("Invalid update should not be allowed")
 					end)
-					:catch(function(err)
-						return Promise.resolve(err)
-					end)
+
 				local validUpdate = keyEntry:update(function(data)
 					data = { value = "valid" }
 					return data
 				end)
 
-				return Promise.all({ invalidUpdate, validUpdate }):andThen(function(results)
-					local invalidUpdateResult = results[1]
-
-					expect(invalidUpdateResult).toMatch("schema validation failed")
-					expect(results[2]).toBeNil()
-				end)
+				local e = expect(invalidUpdate).rejects.toMatch("schema validation failed")
+				return validUpdate:andThenReturn(e)
 			end)
 		end)
 

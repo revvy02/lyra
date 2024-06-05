@@ -128,7 +128,7 @@ local function createMockStore(datastoreName: string, scope: string?): DataStore
 		end
 
 		table.insert(queue, true)
-		delayWait(0.1)
+		delayWait(0.01)
 		local fn = table.remove(queue, 1)
 		if typeof(fn) == "function" then
 			fn()
@@ -142,6 +142,7 @@ local function createMockStore(datastoreName: string, scope: string?): DataStore
 		if not checkRateLimit("SetAsync") then
 			enqueueRequest("SetAsync")
 		end
+		delayWait(0.1)
 
 		local scopedData = getScopedData(self)
 		scopedData[key] = value
@@ -153,6 +154,7 @@ local function createMockStore(datastoreName: string, scope: string?): DataStore
 		if not checkRateLimit("GetAsync") then
 			enqueueRequest("GetAsync")
 		end
+		delayWait(0.1)
 
 		local scopedData = getScopedData(self)
 		local data = scopedData[key]
@@ -164,6 +166,7 @@ local function createMockStore(datastoreName: string, scope: string?): DataStore
 		if not checkRateLimit("UpdateAsync") then
 			enqueueRequest("UpdateAsync")
 		end
+		delayWait(0.1)
 
 		local scopedData = getScopedData(self)
 		local keyInfo = mockKeyInfo[`{self.datastoreName}|{self.scope}|{key}`] or createMockKeyInfo()
@@ -196,6 +199,7 @@ local function createMockStore(datastoreName: string, scope: string?): DataStore
 		if not checkRateLimit("RemoveAsync") then
 			enqueueRequest("RemoveAsync")
 		end
+		delayWait(0.01)
 
 		local scopedData = getScopedData(self)
 		local data = scopedData[key]
