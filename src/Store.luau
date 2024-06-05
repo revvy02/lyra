@@ -262,7 +262,7 @@ function Store:tx(
 				end
 			end)
 			:catch(function(err)
-				self._ctx.dataStoreInterface:set(Constants.TX_SCOPE, txId, false):catch(function(_arbortErr)
+				self._ctx.dataStoreInterface:set(Constants.TX_SCOPE, txId, false):catch(function(_abortErr)
 					-- TODO: log this
 				end)
 
