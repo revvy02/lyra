@@ -48,6 +48,8 @@ type StoreImpl = {
 		transformFunction: (state: { [string]: any }) -> { [string]: any }?
 	) -> Promise.Promise,
 	save: (self: Store, key: string) -> Promise.Promise,
+
+	-- TODO: API to migrate from other data store systems
 }
 
 type StoreProps = {
