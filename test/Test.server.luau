@@ -26,23 +26,4 @@ if processServiceExists then
 	ProcessService:ExitAsync(1)
 end
 
--- local Mix = require(ReplicatedStorage.Packages.Mix)
--- local store = Mix.createPlayerStore({
--- 	name = `test`,
--- 	template = {},
--- 	schema = function()
--- 		return true
--- 	end,
--- })
-
--- store:lock(123):expect()
--- store
--- 	:update(123, function(data)
--- 		data.foo = "bar"
--- 		return data
--- 	end)
--- 	:expect()
--- store:unlock(123):expect()
--- print(store:lock(123):expect())
-
 return nil

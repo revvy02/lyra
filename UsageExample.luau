@@ -1,28 +1,32 @@
-local Players = game:GetService("Players")
+local Mix = {} :: any
+local t = {} :: any
 
-local Mix: any = {}
-
-local store = Mix.createStore({
-	name = "PlayerData",
+local store = Mix.createPlayerStore({
+	name = `test`,
 	template = {},
-	schema = function() end,
-	migrations = Mix.migrationsFromFolder(),
+	schema = t.strictInterface({
+		coins = t.number(),
+	}),
+	migrations = Mix.migrationsFromFolder({ -- imagine you pass in a real folder instance with ModuleScripts here
+		[2] = function(data)
+			data.newStuff = true
+			return data
+		end,
+	}),
 })
 
-store:update(1234, function(state)
-	state.coins += 100
+store:lock(123):expect()
+local _data = store:get(123):expect()
+store
+	:update(123, function(data)
+		data.foo = "bar"
+		return data
+	end)
+	:expect()
+store:unlock(123):expect()
+print(store:lock(123):expect())
+
+store:tx({ 1234, 4567 }, function(state)
+	state[1234].items = {}
 	return state
-end)
-
-store:tx({ 1234, 4321 }, function(state)
-	state[1234].coins = state[4321].coins
-	return state
-end)
-
-Players.PlayerAdded:Connect(function(player)
-	store:lock(player.UserId)
-end)
-
-Players.PlayerRemoving:Connect(function(player)
-	store:unlock(player.UserId)
 end)
