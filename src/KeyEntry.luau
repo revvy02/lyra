@@ -56,6 +56,10 @@ type KeyEntryProps = {
 	queue: PromiseQueue.PromiseQueue,
 	txLockPromise: Promise.Promise?,
 	closed: boolean,
+	locked: boolean,
+	recordScope: string,
+	shardScope: string,
+	txScope: string,
 }
 
 export type KeyEntry = typeof(setmetatable({} :: KeyEntryProps, {} :: KeyEntryImpl))
@@ -88,6 +92,10 @@ function KeyEntry.new(config: KeyEntryConfig): KeyEntry
 		queue = PromiseQueue.new(),
 		txLockPromise = nil,
 		closed = false,
+		locked = false,
+		recordScope = `{Constants.RECORD_SCOPE}/{config.storeContext.name}`,
+		shardScope = `{Constants.SHARD_SCOPE}/{config.storeContext.name}`,
+		txScope = `{Constants.TX_SCOPE}/{config.storeContext.name}`,
 	}, KeyEntry)
 end
 KeyEntry.new = t.wrap(KeyEntry.new, t.tuple(keyEntryConfigCheck))
@@ -102,13 +110,7 @@ function KeyEntry:writeLargeFile(data: any, metadata: { [string]: any }?): Promi
 	local shards = splitUtf8String(data, Constants.MAX_CHUNK_SIZE)
 
 	local promises = Sift.Array.map(shards, function(shard, index)
-		return self.ctx.dataStoreInterface:set(
-			Constants.SHARD_SCOPE,
-			`{shardId}-{index}`,
-			shard,
-			self.userIds,
-			metadata
-		)
+		return self.ctx.dataStoreInterface:set(self.shardScope, `{shardId}-{index}`, shard, self.userIds, metadata)
 	end)
 
 	local file = { shard = shardId, count = #shards }
@@ -132,7 +134,7 @@ function KeyEntry:readLargeFile(file: Types.File): Promise.TypedPromise<any>
 	local promises = {}
 
 	for i = 1, file.count do
-		table.insert(promises, self.ctx.dataStoreInterface:get(Constants.SHARD_SCOPE, `{shardId}-{i}`))
+		table.insert(promises, self.ctx.dataStoreInterface:get(self.shardScope, `{shardId}-{i}`))
 	end
 
 	return Promise.all(promises):andThen(function(shards)
@@ -147,7 +149,7 @@ function KeyEntry:readTx(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 		return Promise.resolve(txInfo.committedData)
 	end
 
-	return self.ctx.dataStoreInterface:get(Constants.TX_SCOPE, txId):andThen(function(committed)
+	return self.ctx.dataStoreInterface:get(self.txScope, txId):andThen(function(committed)
 		if committed == true then
 			return txInfo.txData
 		else
@@ -170,7 +172,7 @@ function KeyEntry:writeRecord(txInfo: Types.TxInfo, releaseLock: boolean?): Prom
 		local metadata = self.metadata
 
 		return self.ctx.dataStoreInterface
-			:update(Constants.RECORD_SCOPE, self.key, function(previousValue, keyInfo)
+			:update(self.recordScope, self.key, function(previousValue, keyInfo)
 				if previousValue.lock.id ~= self.ctx.lockId then
 					return nil :: any, keyInfo:GetUserIds(), keyInfo:GetMetadata()
 				end
@@ -178,9 +180,9 @@ function KeyEntry:writeRecord(txInfo: Types.TxInfo, releaseLock: boolean?): Prom
 				return record, self.userIds, metadata
 			end)
 			:andThen(function(value)
-				if releaseLock and value.lock.id ~= nil then
+				if releaseLock and (value == nil or value.lock.id ~= nil) then
 					return Promise.reject("Failed to release lock")
-				elseif not releaseLock and value.lock.id ~= self.ctx.lockId then
+				elseif not releaseLock and (value == nil or value.lock.id ~= self.ctx.lockId) then
 					return Promise.reject("Lock violation")
 				end
 
@@ -255,28 +257,35 @@ function KeyEntry:migrateData(data: any): Promise.TypedPromise<any>
 end
 
 function KeyEntry:lock(): Promise.Promise
+	if self.locked then
+		return Promise.reject("KeyEntry is already locked")
+	end
+
 	local function transformFunction(value, keyInfo)
 		value = Sift.Dictionary.mergeDeep({ lock = {} }, value)
+
+		local previousUserIds = keyInfo and keyInfo:GetUserIds()
+		local previousMetadata = keyInfo and keyInfo:GetMetadata()
 
 		local lock = value.lock
 		if lock.expiry ~= nil and lock.expiry > DateTime.now().UnixTimestamp then
 			-- TODO: retry after lock expiry
-			return nil, keyInfo:GetUserIds(), keyInfo:GetMetadata()
+			return nil, previousUserIds, previousMetadata
 		end
 
 		value.lock = self:getLock()
 
-		return value, self.userIds, keyInfo:GetMetadata()
+		return value, self.userIds, previousMetadata
 	end
 
 	return self.ctx.dataStoreInterface
-		:update(Constants.RECORD_SCOPE, self.key, transformFunction)
-		:andThen(function(record: Types.DataStoreRecord, _userIds, metadata)
-			if record.lock.id ~= self.ctx.lockId then
+		:update(self.recordScope, self.key, transformFunction)
+		:andThen(function(record: Types.DataStoreRecord, keyInfo: DataStoreKeyInfo)
+			if record == nil or record.lock.id ~= self.ctx.lockId then
 				return Promise.reject("Failed to acquire lock")
 			end
 
-			self.metadata = metadata
+			self.metadata = keyInfo:GetMetadata()
 			self.version = record.version or self.ctx.latestVersion
 
 			if record.orphanedFiles then
@@ -311,6 +320,7 @@ function KeyEntry:lock(): Promise.Promise
 			end
 
 			self.data = data
+			self.locked = true
 
 			return data
 		end)
@@ -347,7 +357,7 @@ function KeyEntry:update(transformFunction: (data: { [string]: any }) -> { [stri
 
 		local currentData = self.data
 		local nextData = Sift.Dictionary.copyDeep(currentData)
-		local transformOk, result = pcall(noYield, transformFunction, nextData)
+		local transformOk, result = pcall(noYield, transformFunction, nextData :: any)
 		if not transformOk then
 			return reject(`Store:update transformFunction failed: {result}`)
 		end

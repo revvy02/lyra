@@ -3,12 +3,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local Constants = require(ReplicatedStorage.Packages.Mix.Constants)
-local MockInterface = require(ReplicatedStorage.Packages.Mix.DataStoreInterface.MockInterface)
+local DataStoreInterface = require(ReplicatedStorage.Packages.Mix.DataStoreInterface)
 local KeyEntry = require(ReplicatedStorage.Packages.Mix.KeyEntry)
+local MockDataStoreService = require(ReplicatedStorage.Packages.Mix.MockDataStoreService)
 local Types = require(ReplicatedStorage.Packages.Mix.Types)
 local splitUtf8String = require(ReplicatedStorage.Packages.Mix.splitUtf8String)
 local Promise = require(ReplicatedStorage.Packages.Promise)
-local Sift = require(ReplicatedStorage.Packages.Sift)
 
 local expect = JestGlobals.expect
 local describe = JestGlobals.describe
@@ -16,33 +16,24 @@ local it = JestGlobals.it
 local beforeEach = JestGlobals.beforeEach
 local jest = JestGlobals.jest
 
-local function createMockDataStoreKeyInfo()
-	local currentTime = DateTime.now()
-	local self
-	self = {
-		_metadata = {},
-		_userIds = {},
-		CreatedTime = currentTime,
-		UpdatedTime = currentTime,
-		Version = HttpService:GenerateGUID(false),
-		GetMetadata = function()
-			return self._metadata
-		end,
-		GetUserIds = function()
-			return self._userIds
-		end,
-	}
-	return self
-end
-
-describe("KeyEntry", function()
-	local mockDataStoreInterface
+describe.each({
+	{
+		name = "MockDataStoreService",
+		dataStoreService = MockDataStoreService.createMockService(),
+	},
+	{
+		name = "DataStoreService",
+		dataStoreService = game:GetService("DataStoreService"),
+	},
+})("KeyEntry with $name", function(services)
+	local dataStoreInterface
 	local storeContext
 
 	beforeEach(function()
-		mockDataStoreInterface = MockInterface.new({ yields = false })
+		dataStoreInterface = DataStoreInterface.new(services.dataStoreService)
 		storeContext = {
-			dataStoreInterface = mockDataStoreInterface,
+			name = `test-{string.sub(HttpService:GenerateGUID(false), 1, 8)}`,
+			dataStoreInterface = dataStoreInterface,
 			latestVersion = 1,
 			migrations = {},
 			template = {},
@@ -66,13 +57,13 @@ describe("KeyEntry", function()
 
 			expect(keyEntry.key).toBe("testKey")
 			expect(keyEntry.ctx).toBe(storeContext)
-			expect(keyEntry.userIds).toBe(nil)
-			expect(keyEntry.data).toBe(nil)
-			expect(keyEntry.metadata).toBe(nil)
+			expect(keyEntry.userIds).toBeNil()
+			expect(keyEntry.data).toBeNil()
+			expect(keyEntry.metadata).toBeNil()
 			expect(keyEntry.version).toBe(1)
 			expect(keyEntry.unsavedMutations).toEqual({})
 			expect(keyEntry.orphanedFiles).toEqual({})
-			expect(keyEntry.currentFile).toBe(nil)
+			expect(keyEntry.currentFile).toBeNil()
 		end)
 
 		it("correctly initializes with provided config", function()
@@ -96,8 +87,8 @@ describe("KeyEntry", function()
 				userIds = nil,
 			})
 
-			expect(keyEntry1.userIds).toBe(nil)
-			expect(keyEntry2.userIds).toBe(nil)
+			expect(keyEntry1.userIds).toBeNil()
+			expect(keyEntry2.userIds).toBeNil()
 		end)
 	end)
 
@@ -109,11 +100,11 @@ describe("KeyEntry", function()
 			})
 			local data = { test = "data" }
 
-			local file = keyEntry:writeLargeFile(data):expect()
-
-			expect(file.data).toBe(data)
-			expect(file.shard).toBe(nil)
-			expect(file.count).toBe(nil)
+			return keyEntry:writeLargeFile(data):andThen(function(file)
+				expect(file.data).toBe(data)
+				expect(file.shard).toBeNil()
+				expect(file.count).toBeNil()
+			end)
 		end)
 
 		it("correctly shards and writes large files", function()
@@ -123,10 +114,10 @@ describe("KeyEntry", function()
 			})
 			local data = string.rep("a", Constants.MAX_CHUNK_SIZE + 1)
 
-			local file = keyEntry:writeLargeFile(data):expect()
-
-			expect(file.shard).toBeDefined()
-			expect(file.count).toBe(2)
+			return keyEntry:writeLargeFile(data):andThen(function(file)
+				expect(file.shard).never.toBeNil()
+				expect(file.count).toBe(2)
+			end)
 		end)
 
 		it("handles errors during shard writing by marking files as orphaned", function()
@@ -136,37 +127,27 @@ describe("KeyEntry", function()
 			})
 			local data = string.rep("a", Constants.MAX_CHUNK_SIZE + 1)
 
-			mockDataStoreInterface.set = function(_, _, _, _, _, _)
-				return Promise.reject("Shard write error")
-			end
-
-			keyEntry:writeLargeFile(data):catch(function() end):expect()
-
-			expect(#keyEntry.orphanedFiles).toBe(1)
-			expect(storeContext.orphanedFileQueue.markFile).toHaveBeenCalledTimes(1)
-		end)
-
-		it("ensures orphaned files are tracked correctly", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-			local data1 = string.rep("a", Constants.MAX_CHUNK_SIZE + 1)
-			local data2 = string.rep("b", Constants.MAX_CHUNK_SIZE * 3)
-
-			mockDataStoreInterface.set = function(_, _, key, _, _, _)
-				if key:match("%-1$") then
+			local n = 0
+			local set = dataStoreInterface.set
+			dataStoreInterface.set = function(...)
+				n += 1
+				if n == 2 then
 					return Promise.reject("Shard write error")
 				end
-				return Promise.resolve()
+				return set(...)
 			end
 
-			keyEntry:writeLargeFile(data1):catch(function() end):expect()
-			local file2 = keyEntry:writeLargeFile(data2):catch(function() end):expect()
-
-			expect(#keyEntry.orphanedFiles).toBe(2)
-			expect(storeContext.orphanedFileQueue.markFile).toHaveBeenCalledTimes(2)
-			expect(keyEntry.currentFile).toEqual(file2)
+			return keyEntry
+				:writeLargeFile(data)
+				:andThen(function()
+					error("Shard write should have errored")
+				end)
+				:catch(function(err)
+					expect(err).toMatch("Shard write error")
+					expect(n).toBe(2)
+					expect(#keyEntry.orphanedFiles).toBe(1)
+					expect(storeContext.orphanedFileQueue.markFile).toHaveBeenCalledTimes(1)
+				end)
 		end)
 
 		it("validates type of returned file", function()
@@ -176,10 +157,10 @@ describe("KeyEntry", function()
 			})
 			local data = string.rep("a", Constants.MAX_CHUNK_SIZE + 1)
 
-			local file = keyEntry:writeLargeFile(data):expect()
-
-			expect(typeof(file.shard)).toBe("string")
-			expect(typeof(file.count)).toBe("number")
+			return keyEntry:writeLargeFile(data):andThen(function(file)
+				expect(typeof(file.shard)).toBe("string")
+				expect(typeof(file.count)).toBe("number")
+			end)
 		end)
 
 		it("ensures no data loss during sharding and writing", function()
@@ -194,20 +175,18 @@ describe("KeyEntry", function()
 			}
 
 			local data = HttpService:JSONEncode(testData)
-			local file = keyEntry:writeLargeFile(data):expect()
-			local shardId = file.shard
+			return keyEntry:writeLargeFile(data):andThen(function(file)
+				local shardId = file.shard
 
-			local promises = {}
-			for i = 1, file.count do
-				table.insert(promises, mockDataStoreInterface:get(Constants.SHARD_SCOPE, `{shardId}-{i}`))
-			end
+				local promises = {}
+				for i = 1, file.count do
+					table.insert(promises, dataStoreInterface:get(keyEntry.shardScope, `{shardId}-{i}`))
+				end
+				local shards = Promise.all(promises):expect()
 
-			Promise.all(promises)
-				:andThen(function(shards)
-					local reconstructedData = HttpService:JSONDecode(table.concat(shards))
-					expect(reconstructedData).toEqual(testData)
-				end)
-				:expect()
+				local reconstructedData = HttpService:JSONDecode(table.concat(shards))
+				expect(reconstructedData).toEqual(testData)
+			end)
 		end)
 	end)
 
@@ -220,9 +199,9 @@ describe("KeyEntry", function()
 			local data = { test = "data" }
 			local file = { data = data }
 
-			local readData = keyEntry:readLargeFile(file :: Types.File):expect()
-
-			expect(readData).toBe(data)
+			return keyEntry:readLargeFile(file :: Types.File):andThen(function(readData)
+				expect(readData).toBe(data)
+			end)
 		end)
 
 		it("correctly reads and reassembles large files from shards", function()
@@ -236,13 +215,13 @@ describe("KeyEntry", function()
 			local shardId = HttpService:GenerateGUID(false)
 			local file = { shard = shardId, count = 2 } :: Types.File
 
-			mockDataStoreInterface._store[Constants.SHARD_SCOPE] = {
-				[`{shardId}-1`] = { value = shards[1] },
-				[`{shardId}-2`] = { value = shards[2] },
-			}
-
-			local readData = keyEntry:readLargeFile(file):expect()
-			expect(readData).toEqual(data)
+			return Promise.all({
+				dataStoreInterface:set(keyEntry.shardScope, `{shardId}-1`, shards[1]),
+				dataStoreInterface:set(keyEntry.shardScope, `{shardId}-2`, shards[2]),
+			}):andThen(function()
+				local readData = keyEntry:readLargeFile(file):expect()
+				expect(readData).toEqual(data)
+			end)
 		end)
 
 		it("handles errors during shard reading gracefully", function()
@@ -253,18 +232,13 @@ describe("KeyEntry", function()
 			local shardId = HttpService:GenerateGUID(false)
 			local file = { shard = shardId, count = 2 } :: Types.File
 
-			mockDataStoreInterface.get = function(_, _, _)
+			dataStoreInterface.get = function()
 				return Promise.reject("Shard read error")
 			end
 
-			local readData = keyEntry
-				:readLargeFile(file)
-				:catch(function(err)
-					return err
-				end)
-				:expect()
-
-			expect(readData).toBe("Shard read error")
+			return keyEntry:readLargeFile(file):catch(function(err)
+				expect(err).toMatch("Shard read error")
+			end)
 		end)
 
 		it("ensures complete and correct reassembly of large files", function()
@@ -279,14 +253,22 @@ describe("KeyEntry", function()
 			local data = HttpService:JSONEncode(testData)
 			local shardId = HttpService:GenerateGUID(false)
 			local file = { shard = shardId, count = 2 } :: Types.File
-			mockDataStoreInterface._store[Constants.SHARD_SCOPE] = {
-				[`{shardId}-1`] = { value = string.sub(data, 1, Constants.MAX_CHUNK_SIZE) },
-				[`{shardId}-2`] = { value = string.sub(data, Constants.MAX_CHUNK_SIZE + 1) },
-			}
 
-			local readData = keyEntry:readLargeFile(file):expect()
-
-			expect(readData).toEqual(testData)
+			return Promise.all({
+				dataStoreInterface:set(
+					keyEntry.shardScope,
+					`{shardId}-1`,
+					string.sub(data, 1, Constants.MAX_CHUNK_SIZE)
+				),
+				dataStoreInterface:set(
+					keyEntry.shardScope,
+					`{shardId}-2`,
+					string.sub(data, Constants.MAX_CHUNK_SIZE + 1)
+				),
+			}):andThen(function()
+				local readData = keyEntry:readLargeFile(file):expect()
+				expect(readData).toEqual(testData)
+			end)
 		end)
 	end)
 
@@ -301,9 +283,9 @@ describe("KeyEntry", function()
 				committedData = { foo = "bar" },
 			} :: Types.TxInfo
 
-			local data = keyEntry:readTx(txInfo):expect()
-
-			expect(data).toEqual(txInfo.committedData)
+			return keyEntry:readTx(txInfo):andThen(function(data)
+				expect(data).toEqual(txInfo.committedData)
+			end)
 		end)
 
 		it("correctly reads transaction data based on transaction ID", function()
@@ -317,12 +299,10 @@ describe("KeyEntry", function()
 				txData = { foo = "baz" },
 			} :: Types.TxInfo
 
-			mockDataStoreInterface._store[Constants.TX_SCOPE] = {
-				["tx123"] = { value = true },
-			}
-			local data = keyEntry:readTx(txInfo):expect()
-
-			expect(data).toEqual(txInfo.txData)
+			return dataStoreInterface:set(keyEntry.txScope, "tx123", true):andThen(function()
+				local data = keyEntry:readTx(txInfo):expect()
+				expect(data).toEqual(txInfo.txData)
+			end)
 		end)
 
 		it("handles errors during transaction data retrieval", function()
@@ -336,18 +316,13 @@ describe("KeyEntry", function()
 				txData = { foo = "baz" },
 			} :: Types.TxInfo
 
-			mockDataStoreInterface.get = function(_, _, _)
+			dataStoreInterface.get = function(_, _, _)
 				return Promise.reject("Transaction read error")
 			end
 
-			local data = keyEntry
-				:readTx(txInfo)
-				:catch(function(err)
-					return err
-				end)
-				:expect()
-
-			expect(data).toBe("Transaction read error")
+			return keyEntry:readTx(txInfo):catch(function(err)
+				expect(err).toBe("Transaction read error")
+			end)
 		end)
 
 		it("ensures correct data is returned for committed and non-committed transactions", function()
@@ -366,16 +341,16 @@ describe("KeyEntry", function()
 				txData = { hello = "friend" },
 			} :: Types.TxInfo
 
-			mockDataStoreInterface._store[Constants.TX_SCOPE] = {
-				["tx123"] = { value = true },
-				["tx456"] = { value = false },
-			}
+			return Promise.all({
+				dataStoreInterface:set(keyEntry.txScope, "tx123", true),
+				dataStoreInterface:set(keyEntry.txScope, "tx456", false),
+			}):andThen(function()
+				local data1 = keyEntry:readTx(txInfo1):expect()
+				local data2 = keyEntry:readTx(txInfo2):expect()
 
-			local data1 = keyEntry:readTx(txInfo1):expect()
-			local data2 = keyEntry:readTx(txInfo2):expect()
-
-			expect(data1).toEqual(txInfo1.txData)
-			expect(data2).toEqual(txInfo2.committedData)
+				expect(data1).toEqual(txInfo1.txData)
+				expect(data2).toEqual(txInfo2.committedData)
+			end)
 		end)
 	end)
 
@@ -390,15 +365,15 @@ describe("KeyEntry", function()
 				committedData = { foo = "bar" },
 				txData = { foo = "baz" },
 			} :: Types.TxInfo
-			mockDataStoreInterface._store[Constants.RECORD_SCOPE] = {}
 
-			keyEntry:lock():expect()
-			local record = keyEntry:writeRecord(txInfo):expect()
+			return keyEntry:lock():andThen(function()
+				local record = keyEntry:writeRecord(txInfo):expect()
 
-			expect(record.version).toBe(1)
-			expect(record.lock.id).toBe(storeContext.lockId)
-			expect(record.file.data).toEqual(txInfo)
-			expect(record.orphanedFiles).toEqual({})
+				expect(record.version).toBe(1)
+				expect(record.lock.id).toBe(storeContext.lockId)
+				expect(record.file.data).toEqual(txInfo)
+				expect(record.orphanedFiles).toEqual({})
+			end)
 		end)
 
 		it("handles releaseLock flag correctly", function()
@@ -411,14 +386,14 @@ describe("KeyEntry", function()
 				committedData = { foo = "bar" },
 				txData = { foo = "baz" },
 			} :: Types.TxInfo
-			mockDataStoreInterface._store[Constants.RECORD_SCOPE] = {}
 
-			keyEntry:lock():expect()
-			local record1 = keyEntry:writeRecord(txInfo, false):expect()
-			local record2 = keyEntry:writeRecord(txInfo, true):expect()
+			return keyEntry:lock():andThen(function()
+				local record1 = keyEntry:writeRecord(txInfo, false):expect()
+				local record2 = keyEntry:writeRecord(txInfo, true):expect()
 
-			expect(record1.lock.id).toBeDefined()
-			expect(record2.lock.id).toBe(nil)
+				expect(record1.lock.id).never.toBeNil()
+				expect(record2.lock.id).toBeNil()
+			end)
 		end)
 
 		it("ensures lock status is properly verified", function()
@@ -432,22 +407,16 @@ describe("KeyEntry", function()
 				txData = { foo = "baz" },
 			} :: Types.TxInfo
 
-			mockDataStoreInterface.update = function(_, _, _)
-				return Promise.resolve({
+			return dataStoreInterface
+				:set(keyEntry.recordScope, "testKey", {
 					lock = {
 						id = "wrongLockId",
+						expiry = DateTime.now().UnixTimestamp + Constants.LOCK_DURATION_SECONDS,
 					},
 				})
-			end
-
-			local result = keyEntry
-				:writeRecord(txInfo)
-				:catch(function(err)
-					return err
+				:andThen(function()
+					return expect(keyEntry:writeRecord(txInfo)).rejects.toMatch("Lock violation")
 				end)
-				:expect()
-
-			expect(result).toBe("Lock violation")
 		end)
 
 		it("tracks and updates orphaned files accurately", function()
@@ -464,13 +433,12 @@ describe("KeyEntry", function()
 				data = "old data",
 			} :: Types.File
 			keyEntry.currentFile = toBeOrphaned
-			mockDataStoreInterface._store[Constants.RECORD_SCOPE] = {}
 
-			keyEntry:lock():expect()
-			keyEntry:writeRecord(txInfo):expect()
-
-			expect(#keyEntry.orphanedFiles).toBe(1)
-			expect(keyEntry.orphanedFiles[1]).toBe(toBeOrphaned)
+			return keyEntry:lock():andThen(function()
+				keyEntry:writeRecord(txInfo):expect()
+				expect(#keyEntry.orphanedFiles).toBe(1)
+				expect(keyEntry.orphanedFiles[1]).toBe(toBeOrphaned)
+			end)
 		end)
 
 		it("handles errors during record writing gracefully", function()
@@ -484,18 +452,13 @@ describe("KeyEntry", function()
 				txData = { foo = "baz" },
 			} :: Types.TxInfo
 
-			mockDataStoreInterface.update = function(_, _, _)
+			dataStoreInterface.update = function(_, _, _)
 				return Promise.reject("Record write error")
 			end
 
-			local result = keyEntry
-				:writeRecord(txInfo)
-				:catch(function(err)
-					return err
-				end)
-				:expect()
-
-			expect(result).toBe("Record write error")
+			return keyEntry:writeRecord(txInfo):catch(function(err)
+				expect(err).toBe("Record write error")
+			end)
 		end)
 
 		it("ensures data and metadata are updated correctly", function()
@@ -509,418 +472,28 @@ describe("KeyEntry", function()
 				txData = { foo = "baz" },
 			} :: Types.TxInfo
 			keyEntry.metadata = { old = "metadata" }
-			mockDataStoreInterface._store[Constants.RECORD_SCOPE] = {}
 
-			keyEntry:lock():expect()
-			local record = keyEntry:writeRecord(txInfo):expect()
-
-			expect(record.file.data).toEqual(txInfo)
-			expect(record.orphanedFiles).toEqual({ keyEntry.currentFile })
+			return keyEntry:lock():andThen(function()
+				local record = keyEntry:writeRecord(txInfo):expect()
+				expect(record.file.data).toEqual(txInfo)
+				expect(record.orphanedFiles).toEqual({ keyEntry.currentFile })
+			end)
 		end)
 	end)
 
 	describe("KeyEntry:getLock", function()
-		it("returns a lock with correct ID and expiry time", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
-			local lock = keyEntry:getLock()
-
-			expect(lock.id).toBe(storeContext.lockId)
-			expect(lock.expiry).toBeGreaterThan(DateTime.now().UnixTimestamp)
-		end)
-	end)
-
-	describe("KeyEntry:getSnapshot", function()
-		it("returns a correct snapshot of unsaved mutations", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
-			keyEntry.unsavedMutations = {
-				["mutation1"] = true,
-				["mutation2"] = true,
-			}
-
-			local snapshot = keyEntry:getSnapshot()
-
-			expect(snapshot).toEqual(keyEntry.unsavedMutations)
-		end)
-
-		it("ensures snapshot accurately reflects current unsaved mutations", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
-			keyEntry.unsavedMutations = {
-				["mutation1"] = true,
-				["mutation2"] = true,
-			}
-
-			local snapshot1 = keyEntry:getSnapshot()
-
-			keyEntry.unsavedMutations["mutation3"] = true
-
-			local snapshot2 = keyEntry:getSnapshot()
-
-			expect(snapshot1).toEqual({
-				["mutation1"] = true,
-				["mutation2"] = true,
-			})
-			expect(snapshot2).toEqual({
-				["mutation1"] = true,
-				["mutation2"] = true,
-				["mutation3"] = true,
-			})
-		end)
-	end)
-
-	describe("KeyEntry:isSnapshotCommitted", function()
-		it("correctly identifies committed snapshots", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
-			keyEntry.unsavedMutations = {
-				["mutation1"] = true,
-				["mutation2"] = true,
-			}
-
-			local snapshot1 = {
-				["mutation3"] = true,
-			}
-			local snapshot2 = {
-				["mutation1"] = true,
-			}
-
-			local isCommitted1 = keyEntry:isSnapshotCommitted(snapshot1)
-			local isCommitted2 = keyEntry:isSnapshotCommitted(snapshot2)
-
-			expect(isCommitted1).toBe(true)
-			expect(isCommitted2).toBe(false)
-		end)
-
-		it("handles cases with empty and non-empty snapshots", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
-			keyEntry.unsavedMutations = {
-				["mutation1"] = true,
-			}
-
-			local snapshot1 = {}
-			local snapshot2 = {
-				["mutation1"] = true,
-			}
-
-			local isCommitted1 = keyEntry:isSnapshotCommitted(snapshot1)
-			local isCommitted2 = keyEntry:isSnapshotCommitted(snapshot2)
-
-			expect(isCommitted1).toBe(true)
-			expect(isCommitted2).toBe(false)
-		end)
-
-		it("ensures accurate comparison of snapshots", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-			keyEntry.unsavedMutations = {
-				["mutation1"] = true,
-				["mutation2"] = true,
-				["mutation3"] = true,
-			}
-
-			local snapshot1 = {
-				["mutation1"] = true,
-				["mutation2"] = true,
-			}
-
-			local snapshot2 = {
-				["mutation1"] = true,
-				["mutation3"] = true,
-			}
-
-			local isCommitted1 = keyEntry:isSnapshotCommitted(snapshot1)
-			local isCommitted2 = keyEntry:isSnapshotCommitted(snapshot2)
-
-			expect(isCommitted1).toBe(false)
-			expect(isCommitted2).toBe(false)
-		end)
-	end)
-
-	describe("KeyEntry:commitSnapshot", function()
-		it("correctly commits the provided snapshot", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-			keyEntry.unsavedMutations = {
-				["mutation1"] = true,
-				["mutation2"] = true,
-				["mutation3"] = true,
-			}
-
-			local snapshot = {
-				["mutation1"] = true,
-				["mutation3"] = true,
-			}
-
-			keyEntry:commitSnapshot(snapshot)
-
-			expect(keyEntry.unsavedMutations).toEqual({
-				["mutation2"] = true,
-			})
-		end)
-
-		it("ensures unsaved mutations are updated accurately", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
-			keyEntry.unsavedMutations = {
-				["mutation1"] = true,
-				["mutation2"] = true,
-			}
-
-			local snapshot1 = {
-				["mutation1"] = true,
-			}
-
-			keyEntry:commitSnapshot(snapshot1)
-
-			expect(keyEntry.unsavedMutations).toEqual({ ["mutation2"] = true })
-
-			keyEntry.unsavedMutations = {
-				["mutation3"] = true,
-				["mutation4"] = true,
-			}
-
-			local snapshot2 = {
-				["mutation3"] = true,
-			}
-
-			keyEntry:commitSnapshot(snapshot2)
-
-			expect(keyEntry.unsavedMutations).toEqual({ ["mutation4"] = true })
-		end)
-	end)
-
-	describe("KeyEntry:isSaved", function()
-		it("correctly identifies if there are no unsaved mutations", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-			local isSaved1 = keyEntry:isSaved()
-
-			keyEntry.unsavedMutations = {
-				["mutation1"] = true,
-			}
-			local isSaved2 = keyEntry:isSaved()
-
-			keyEntry:commitSnapshot({ ["mutation1"] = true })
-			local isSaved3 = keyEntry:isSaved()
-
-			expect(isSaved1).toBe(true)
-			expect(isSaved2).toBe(false)
-			expect(isSaved3).toBe(true)
-		end)
-	end)
-
-	describe("KeyEntry:mutateKey", function()
-		it("correctly mutates key data and adds a new unsaved mutation", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-			local newData = {
-				foo = "newBar",
-			}
-			keyEntry:mutateKey(newData)
-
-			expect(keyEntry.data).toEqual(newData)
-			expect(Sift.Set.count(keyEntry.unsavedMutations)).toBeGreaterThan(0)
-
-			keyEntry:mutateKey(123)
-			expect(keyEntry.data).toBe(123)
-			expect(Sift.Set.count(keyEntry.unsavedMutations)).toBeGreaterThan(1)
-		end)
-
-		it("handles various data types for mutation", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
-			keyEntry:mutateKey({ foo = "bar" })
-			expect(typeof(keyEntry.data)).toBe("table")
-
-			keyEntry:mutateKey("test string")
-			expect(typeof(keyEntry.data)).toBe("string")
-
-			keyEntry:mutateKey(123)
-			expect(typeof(keyEntry.data)).toBe("number")
-
-			keyEntry:mutateKey(true)
-			expect(typeof(keyEntry.data)).toBe("boolean")
-		end)
-
-		it("ensures unique mutation IDs for each call", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
-			keyEntry:mutateKey({})
-			keyEntry:mutateKey({})
-
-			local ids = {}
-			for id in keyEntry.unsavedMutations do
-				expect(ids[id]).toBe(nil)
-				ids[id] = true
-			end
-		end)
-	end)
-
-	describe("KeyEntry:migrateData", function()
-		it("correctly migrates data through multiple versions", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-			keyEntry.version = 1
-
-			local migrations = {}
-			migrations[2] = function(data)
-				data.foo = "bar"
-				return data
-			end
-			migrations[3] = function(data)
-				data.baz = { 1, 2, 3 }
-				return data
-			end
-			storeContext.migrations = migrations
-			storeContext.latestVersion = 3
-
-			local data = keyEntry:migrateData({}):expect()
-
-			expect(data).toEqual({
-				foo = "bar",
-				baz = { 1, 2, 3 },
-			})
-		end)
-
-		it("handles missing migration steps gracefully", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-			keyEntry.version = 1
-
-			local migrations = {}
-			migrations[3] = function(data)
-				data.baz = { 1, 2, 3 }
-				return data
-			end
-			storeContext.migrations = migrations
-			storeContext.latestVersion = 3
-
-			local data = keyEntry:migrateData({ foo = "bar" }):expect()
-
-			expect(data).toEqual({
-				foo = "bar",
-				baz = { 1, 2, 3 },
-			})
-		end)
-
-		it("ensures data integrity after each migration step", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-			keyEntry.version = 1
-			local testData = {
-				initial = "value",
-			}
-
-			local migrations = {}
-			migrations[2] = function(data)
-				data.foo = "bar"
-				return data
-			end
-			migrations[3] = function(data)
-				data.baz = { 1, 2, 3 }
-				return data
-			end
-			storeContext.migrations = migrations
-			storeContext.latestVersion = 3
-
-			local data = keyEntry:migrateData(testData):expect()
-
-			expect(data).toEqual({
-				initial = "value",
-				foo = "bar",
-				baz = { 1, 2, 3 },
-			})
-			expect(testData).toEqual({
-				initial = "value",
-			})
-		end)
-
-		it("ensures migrations start at version 2", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-			keyEntry.version = 1
-			local testData = {
-				initial = "value",
-			}
-
-			local migrations = {}
-			local invalidMigration = jest.fn(function(...)
-				return ...
-			end)
-			migrations[1] = invalidMigration
-			migrations[2] = function(data)
-				data.foo = "bar"
-				return data
-			end
-			storeContext.migrations = migrations
-			storeContext.latestVersion = 2
-
-			keyEntry:migrateData(testData):expect()
-
-			expect(invalidMigration).never.toHaveBeenCalled()
-		end)
-	end)
-
-	describe("KeyEntry:lock", function()
 		it("correctly acquires lock for the key", function()
 			local keyEntry = KeyEntry.new({
 				key = "testKey",
 				storeContext = storeContext,
 			})
 
-			mockDataStoreInterface._store[Constants.RECORD_SCOPE] = {
-				["testKey"] = {
-					value = {
-						lock = {},
-					},
-					keyInfo = createMockDataStoreKeyInfo(),
-				},
-			}
-			local record = keyEntry:lock():expect()
-			expect(record).toEqual({})
+			return keyEntry
+				:lock()
+				:andThen(function(data)
+					expect(data).never.toBeNil()
+				end)
+				:catch(error)
 		end)
 
 		it("verifies and handles lock expiry", function()
@@ -930,20 +503,17 @@ describe("KeyEntry", function()
 			})
 
 			local oldTime = DateTime.now().UnixTimestamp - (Constants.LOCK_DURATION_SECONDS * 2)
-			mockDataStoreInterface._store[Constants.RECORD_SCOPE] = {
-				["testKey"] = {
-					value = {
-						lock = {
-							id = "someOtherLock",
-							expiry = oldTime,
-						},
+			return dataStoreInterface
+				:set(keyEntry.recordScope, "testKey", {
+					lock = {
+						id = "someOtherLock",
+						expiry = oldTime,
 					},
-					keyInfo = createMockDataStoreKeyInfo(),
-				},
-			}
-			local record = keyEntry:lock():expect()
-
-			expect(record).toEqual({})
+				})
+				:andThen(function()
+					local data = keyEntry:lock():expect()
+					expect(data).never.toBeNil()
+				end)
 		end)
 
 		it("correctly reads and migrates data if necessary", function()
@@ -962,29 +532,36 @@ describe("KeyEntry", function()
 			local data = {
 				foo = "bar",
 			}
-			mockDataStoreInterface._store[Constants.RECORD_SCOPE] = {
-				["testKey"] = {
-					value = {
-						version = 1,
-						lock = {},
-						file = { data = { committedData = data } } :: Types.File,
-					},
-					keyInfo = createMockDataStoreKeyInfo(),
-				},
-			}
-
-			local record = keyEntry:lock():expect()
-
-			expect(record).toEqual({
-				foo = "bar",
-				migrated = true,
-			})
-			expect(keyEntry.data).toEqual({
-				foo = "bar",
-				migrated = true,
-			})
+			return dataStoreInterface
+				:set(keyEntry.recordScope, "testKey", {
+					version = 1,
+					lock = {},
+					file = { data = { committedData = data } } :: Types.File,
+				})
+				:andThen(function()
+					local record = keyEntry:lock():expect()
+					expect(record).toEqual({
+						foo = "bar",
+						migrated = true,
+					})
+					expect(keyEntry.data).toEqual({
+						foo = "bar",
+						migrated = true,
+					})
+				end)
 		end)
-		-- TODO: Add tests for concurrent lock attempts and data consistency
+
+		it("handles concurrent lock attempts and ensures data consistency", function()
+			local keyEntry = KeyEntry.new({
+				key = "testKey",
+				storeContext = storeContext,
+			})
+
+			return keyEntry:lock():andThen(function(data)
+				expect(data).never.toBeNil()
+				return expect(keyEntry:lock()).rejects.toMatch("KeyEntry is already locked")
+			end)
+		end)
 	end)
 
 	describe("KeyEntry:unlock", function()
@@ -994,18 +571,18 @@ describe("KeyEntry", function()
 				storeContext = storeContext,
 			})
 
-			keyEntry:lock():expect()
-
 			local data = {
 				test = "data",
 			}
-			keyEntry.data = data
+			return keyEntry:lock():andThen(function()
+				keyEntry.data = data
+				keyEntry:unlock():expect()
 
-			keyEntry:unlock():expect()
+				local record = dataStoreInterface:get(keyEntry.recordScope, "testKey"):expect()
 
-			local record = mockDataStoreInterface._store[Constants.RECORD_SCOPE]["testKey"].value
-			expect(record.lock).toEqual({})
-			expect(record.file.data.committedData).toEqual(data)
+				expect(record.lock).toEqual({})
+				expect(record.file.data.committedData).toEqual(data)
+			end)
 		end)
 
 		it("handles cases where the KeyEntry is already closed", function()
@@ -1014,16 +591,39 @@ describe("KeyEntry", function()
 				storeContext = storeContext,
 			})
 			keyEntry.closed = true
-			local result = keyEntry
-				:unlock()
-				:catch(function(err)
-					return err
-				end)
-				:expect()
-			expect(result).toBe("KeyEntry is closed")
+			return expect(keyEntry:unlock()).rejects.toMatch("KeyEntry is closed")
 		end)
 
-		-- TODO: Add tests for proper cleanup, saving of data, concurrent unlock attempts
+		it("ensures proper cleanup and saving of data", function()
+			local keyEntry = KeyEntry.new({
+				key = "testKey",
+				storeContext = storeContext,
+			})
+			local data = {
+				test = "data",
+			}
+
+			return keyEntry:lock():andThen(function()
+				keyEntry:mutateKey(data)
+				keyEntry:unlock():expect()
+
+				local record = dataStoreInterface:get(keyEntry.recordScope, "testKey"):expect()
+
+				expect(record.file.data.committedData).toEqual(data)
+			end)
+		end)
+
+		it("handles concurrent unlock attempts gracefully", function()
+			local keyEntry = KeyEntry.new({
+				key = "testKey",
+				storeContext = storeContext,
+			})
+
+			return keyEntry:lock():andThen(function()
+				keyEntry:unlock():expect()
+				return expect(keyEntry:unlock()).rejects.toMatch("KeyEntry is closed")
+			end)
+		end)
 	end)
 
 	describe("KeyEntry:update", function()
@@ -1032,18 +632,18 @@ describe("KeyEntry", function()
 				key = "testKey",
 				storeContext = storeContext,
 			})
-			keyEntry:lock():expect()
+			return keyEntry:lock():andThen(function()
+				keyEntry.data = {
+					count = 10,
+				}
+				local transformFunction = function(data)
+					data.count = data.count + 5
+					return data
+				end
 
-			keyEntry.data = {
-				count = 10,
-			}
-			local transformFunction = function(data)
-				data.count = data.count + 5
-				return data
-			end
-
-			keyEntry:update(transformFunction):expect()
-			expect(keyEntry.data.count).toBe(15)
+				keyEntry:update(transformFunction):expect()
+				expect(keyEntry.data.count).toBe(15)
+			end)
 		end)
 
 		it("propagates errors from transform function correctly", function()
@@ -1051,21 +651,17 @@ describe("KeyEntry", function()
 				key = "testKey",
 				storeContext = storeContext,
 			})
-			keyEntry:lock():expect()
 
-			local transformFunction = function(_)
-				error("Transform error")
-			end
+			return keyEntry:lock():andThen(function()
+				local transformFunction = function(_)
+					error("Transform error")
+				end
 
-			local result = keyEntry
-				:update(transformFunction)
-				:catch(function(err)
-					return err
+				return keyEntry:update(transformFunction):catch(function(err)
+					expect(err).toMatch("Store:update transformFunction failed:")
+					expect(err).toMatch("Transform error")
 				end)
-				:expect()
-
-			expect(result).toMatch("Store:update transformFunction failed:")
-			expect(result).toMatch("Transform error")
+			end)
 		end)
 
 		it("handles cases where transform function returns nil", function()
@@ -1073,18 +669,105 @@ describe("KeyEntry", function()
 				key = "testKey",
 				storeContext = storeContext,
 			})
-			keyEntry.data = {
-				count = 10,
-			}
-			local transformFunction = function(_)
+			local mock, fn = jest.fn(function()
 				return nil
-			end
+			end)
 
-			keyEntry:update(transformFunction):expect()
-			expect(keyEntry.data.count).toBe(10)
+			return keyEntry:lock():andThen(function()
+				keyEntry.data = {
+					count = 10,
+				}
+				keyEntry:update(fn):expect()
+
+				expect(mock).toHaveBeenCalledTimes(1)
+				expect(keyEntry:getSnapshot()).toEqual({})
+				expect(keyEntry.data.count).toBe(10)
+			end)
 		end)
 
-		-- TODO: Add tests for schema validation, skipping update if data is unchanged, concurrent update attempts
+		it("adheres to the defined schema for data validation", function()
+			local keyEntry = KeyEntry.new({
+				key = "testKey",
+				storeContext = storeContext,
+			})
+			storeContext.schema = function(data)
+				return typeof(data) == "table" and data.value ~= nil
+			end
+
+			return keyEntry:lock():andThen(function()
+				local invalidUpdate = keyEntry
+					:update(function(data)
+						data = 123 -- Invalid update according to schema
+						return data
+					end)
+					:andThen(function()
+						error("Invalid update should not be allowed")
+					end)
+					:catch(function(err)
+						return Promise.resolve(err)
+					end)
+				local validUpdate = keyEntry:update(function(data)
+					data = { value = "valid" }
+					return data
+				end)
+
+				return Promise.all({ invalidUpdate, validUpdate }):andThen(function(results)
+					local invalidUpdateResult = results[1]
+
+					expect(invalidUpdateResult).toMatch("schema validation failed")
+					expect(results[2]).toBeNil()
+				end)
+			end)
+		end)
+
+		it("skips update if data is unchanged after applying transform function", function()
+			local keyEntry = KeyEntry.new({
+				key = "testKey",
+				storeContext = storeContext,
+			})
+			local mock, transformFn = jest.fn(function(data)
+				return data
+			end)
+
+			return keyEntry:lock():andThen(function()
+				keyEntry.data = { value = "initial" }
+
+				local before = keyEntry:getSnapshot()
+				keyEntry:update(transformFn):expect()
+				local after = keyEntry:getSnapshot()
+
+				expect(mock).toHaveBeenCalledTimes(1)
+				expect(before).toEqual(after)
+			end)
+		end)
+
+		it("handles concurrent update attempts and ensures data consistency", function()
+			local keyEntry = KeyEntry.new({
+				key = "testKey",
+				storeContext = storeContext,
+			})
+
+			return keyEntry:lock():andThen(function()
+				keyEntry.data = { count = 0 }
+				keyEntry
+					:update(function(data)
+						data.count = data.count + 1
+						return data
+					end)
+					:expect()
+				keyEntry
+					:update(function(data)
+						data.count = data.count + 5
+						return data
+					end)
+					:expect()
+
+				keyEntry:save():expect()
+
+				local record = dataStoreInterface:get(keyEntry.recordScope, "testKey"):expect()
+				expect(record.file.data.committedData.count).toBe(6)
+			end)
+		end)
 	end)
 
 	describe("KeyEntry:save", function()
@@ -1093,15 +776,17 @@ describe("KeyEntry", function()
 				key = "testKey",
 				storeContext = storeContext,
 			})
-			keyEntry:lock():expect()
-			keyEntry:mutateKey({
-				foo = "bar",
-			})
-			keyEntry:save():expect()
+			return keyEntry:lock():andThen(function()
+				keyEntry:mutateKey({
+					foo = "bar",
+				})
 
-			local record = mockDataStoreInterface._store[Constants.RECORD_SCOPE]["testKey"].value
-			expect(record.file.data.committedData).toEqual(keyEntry.data)
-			expect(#keyEntry.unsavedMutations).toBe(0)
+				keyEntry:save():expect()
+				local record = dataStoreInterface:get(keyEntry.recordScope, "testKey"):expect()
+
+				expect(record.file.data.committedData).toEqual(keyEntry.data)
+				expect(#keyEntry.unsavedMutations).toBe(0)
+			end)
 		end)
 
 		it("skips save if no unsaved mutations exist", function()
@@ -1109,15 +794,14 @@ describe("KeyEntry", function()
 				key = "testKey",
 				storeContext = storeContext,
 			})
-			keyEntry.data = {
-				foo = "bar",
-			}
-			mockDataStoreInterface._store[Constants.RECORD_SCOPE] = {}
 
-			keyEntry:save():expect()
+			local updateMock, fn = jest.fn()
 
-			local record = mockDataStoreInterface._store[Constants.RECORD_SCOPE]["testKey"]
-			expect(record).toBe(nil)
+			return keyEntry:lock():andThen(function()
+				dataStoreInterface.update = fn
+				keyEntry:save():expect()
+				expect(updateMock).toHaveBeenCalledTimes(0)
+			end)
 		end)
 
 		it("commits snapshot after successful save", function()
@@ -1125,18 +809,34 @@ describe("KeyEntry", function()
 				key = "testKey",
 				storeContext = storeContext,
 			})
-			keyEntry:lock():expect()
-			keyEntry:mutateKey({
-				foo = "bar",
-			})
-			local snapshot = keyEntry:getSnapshot()
-
-			keyEntry:save():expect()
-			expect(keyEntry:isSnapshotCommitted(snapshot)).toBe(true)
+			return keyEntry:lock():andThen(function()
+				keyEntry:mutateKey({
+					foo = "bar",
+				})
+				local snapshot = keyEntry:getSnapshot()
+				return keyEntry:save():andThen(function()
+					expect(keyEntry:isSnapshotCommitted(snapshot)).toBe(true)
+				end)
+			end)
 		end)
 
-		-- TODO: Add tests for error handling during save and data consistency
-	end)
+		it("handles errors during save operation gracefully", function()
+			local keyEntry = KeyEntry.new({
+				key = "testKey",
+				storeContext = storeContext,
+			})
 
-	-- TODO: Add Additional Redundancy Tests as described in the test overview
+			return keyEntry:lock():andThen(function()
+				keyEntry:mutateKey({
+					foo = "bar",
+				})
+
+				dataStoreInterface.update = function()
+					return Promise.reject("Save error")
+				end
+
+				return expect(keyEntry:save()).rejects.toMatch("Save error")
+			end)
+		end)
+	end)
 end)

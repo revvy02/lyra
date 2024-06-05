@@ -1,9 +1,9 @@
 --!strict
 
-local Store = require(script.Store)
+local createPlayerStore = require(script.createPlayerStore)
 local migrationsFromFolder = require(script.migrationsFromFolder)
 
 return {
-	createStore = Store.createStore,
+	createPlayerStore = createPlayerStore,
 	migrationsFromFolder = migrationsFromFolder,
 }

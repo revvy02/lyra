@@ -2,28 +2,8 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Promise = require(ReplicatedStorage.Packages.Promise)
+local DataStoreInterface = require(script.Parent.DataStoreInterface)
 local t = require(ReplicatedStorage.Packages.t)
-
-export type DataStoreInterface = {
-	get: (self: DataStoreInterface, scope: string, key: string) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
-	set: (
-		self: DataStoreInterface,
-		scope: string,
-		key: string,
-		value: any,
-		userIds: { number }?,
-		metadata: { [string]: any }?
-	) -> Promise.TypedPromise<string>,
-	update: (
-		self: DataStoreInterface,
-		scope: string,
-		key: string,
-		transformFunction: (currentValue: any, keyInfo: DataStoreKeyInfo) -> (any, { number }?, { [string]: any }?)?
-	) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
-	remove: (self: DataStoreInterface, scope: string, key: string) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
-	getRequestBudgetForBudgetType: (self: DataStoreInterface, budgetType: Enum.DataStoreRequestType) -> number,
-}
 
 export type TxInfo = {
 	committedData: any,
@@ -76,7 +56,7 @@ export type StoreContext = {
 	template: { [string]: any },
 	schema: (value: { [string]: any }) -> (boolean, string?),
 	migrations: { [number]: (value: { [string]: any }) -> { [string]: any } },
-	dataStoreInterface: DataStoreInterface,
+	dataStoreInterface: DataStoreInterface.DataStoreInterface,
 	lockId: string,
 	orphanedFileQueue: OrphanedFileQueue,
 	latestVersion: number,

@@ -1,9 +1,11 @@
 --!strict
 
+local DataStoreService = game:GetService("DataStoreService")
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Constants = require(script.Parent.Constants)
+local DataStoreInterface = require(script.Parent.DataStoreInterface)
 local KeyEntry = require(script.Parent.KeyEntry)
 local OrphanedFileQueue = require(script.Parent.OrphanedFileQueue)
 local PromiseQueue = require(script.Parent.PromiseQueue)
@@ -18,7 +20,7 @@ export type StoreConfig = {
 	template: any,
 	schema: (value: any) -> (boolean, string?),
 	migrations: { [number]: (value: any) -> any }?,
-	dataStoreInterface: Types.DataStoreInterface?,
+	dataStoreInterface: DataStoreInterface.DataStoreInterface?,
 }
 local storeConfigCheck = t.strictInterface({
 	name = t.string,
@@ -56,6 +58,9 @@ Store.__index = Store
 
 local function createStore(config: StoreConfig): Store
 	local dataStoreInterface = config.dataStoreInterface
+	if dataStoreInterface == nil then
+		dataStoreInterface = DataStoreInterface.new(DataStoreService)
+	end
 	assert(dataStoreInterface, "dataStoreInterface is required")
 
 	local orphanedFileQueue = OrphanedFileQueue.new()
@@ -63,7 +68,6 @@ local function createStore(config: StoreConfig): Store
 	local migrations = config.migrations or {}
 
 	local storeContext: Types.StoreContext = {
-		-- TODO: add name to scopes
 		name = config.name,
 		template = config.template,
 		schema = config.schema,
