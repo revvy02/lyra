@@ -28,6 +28,7 @@ describe.each({
 })("KeyEntry with $name", function(services)
 	local dataStoreInterface
 	local storeContext
+	local keyEntry
 
 	beforeEach(function()
 		dataStoreInterface = DataStoreInterface.new(services.dataStoreService)
@@ -46,15 +47,14 @@ describe.each({
 				markFiles = jest.fn(),
 			},
 		}
+		keyEntry = KeyEntry.new({
+			key = "testKey",
+			storeContext = storeContext,
+		})
 	end)
 
 	describe("KeyEntry.new", function()
 		it("correctly initializes with default properties", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
 			expect(keyEntry.key).toBe("testKey")
 			expect(keyEntry.ctx).toBe(storeContext)
 			expect(keyEntry.userIds).toBeNil()
@@ -94,10 +94,6 @@ describe.each({
 
 	describe("KeyEntry:writeLargeFile", function()
 		it("correctly handles small files without sharding", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local data = { test = "data" }
 
 			return keyEntry:writeLargeFile(data):andThen(function(file)
@@ -108,10 +104,6 @@ describe.each({
 		end)
 
 		it("correctly shards and writes large files", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local data = string.rep("a", Constants.MAX_CHUNK_SIZE + 1)
 
 			return keyEntry:writeLargeFile(data):andThen(function(file)
@@ -121,10 +113,6 @@ describe.each({
 		end)
 
 		it("handles errors during shard writing by marking files as orphaned", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local data = string.rep("a", Constants.MAX_CHUNK_SIZE + 1)
 
 			local n = 0
@@ -151,10 +139,6 @@ describe.each({
 		end)
 
 		it("validates type of returned file", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local data = string.rep("a", Constants.MAX_CHUNK_SIZE + 1)
 
 			return keyEntry:writeLargeFile(data):andThen(function(file)
@@ -164,10 +148,6 @@ describe.each({
 		end)
 
 		it("ensures no data loss during sharding and writing", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local testData = {
 				foo = "bar",
 				baz = { 1, 2, 3 },
@@ -192,10 +172,6 @@ describe.each({
 
 	describe("KeyEntry:readLargeFile", function()
 		it("correctly reads small files without sharding", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local data = { test = "data" }
 			local file = { data = data }
 
@@ -205,10 +181,6 @@ describe.each({
 		end)
 
 		it("correctly reads and reassembles large files from shards", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local data = { data = string.rep("a", Constants.MAX_CHUNK_SIZE + 100) }
 			local encoded = HttpService:JSONEncode(data)
 			local shards = splitUtf8String(encoded, Constants.MAX_CHUNK_SIZE)
@@ -225,10 +197,6 @@ describe.each({
 		end)
 
 		it("handles errors during shard reading gracefully", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local shardId = HttpService:GenerateGUID(false)
 			local file = { shard = shardId, count = 2 } :: Types.File
 
@@ -242,10 +210,6 @@ describe.each({
 		end)
 
 		it("ensures complete and correct reassembly of large files", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local testData = {
 				foo = "bar",
 				baz = { 1, 2, 3 },
@@ -274,10 +238,6 @@ describe.each({
 
 	describe("KeyEntry:readTx", function()
 		it("returns committed data if no transaction ID is provided", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local txInfo = {
 				txId = nil,
 				committedData = { foo = "bar" },
@@ -289,10 +249,6 @@ describe.each({
 		end)
 
 		it("correctly reads transaction data based on transaction ID", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local txInfo = {
 				txId = "tx123",
 				committedData = { foo = "bar" },
@@ -306,10 +262,6 @@ describe.each({
 		end)
 
 		it("handles errors during transaction data retrieval", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local txInfo = {
 				txId = "tx123",
 				committedData = { foo = "bar" },
@@ -326,10 +278,6 @@ describe.each({
 		end)
 
 		it("ensures correct data is returned for committed and non-committed transactions", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local txInfo1 = {
 				txId = "tx123",
 				committedData = { foo = "bar" },
@@ -356,10 +304,6 @@ describe.each({
 
 	describe("KeyEntry:writeRecord", function()
 		it("correctly writes a record with transaction info", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local txInfo = {
 				txId = "tx123",
 				committedData = { foo = "bar" },
@@ -377,10 +321,6 @@ describe.each({
 		end)
 
 		it("handles releaseLock flag correctly", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local txInfo = {
 				txId = "tx123",
 				committedData = { foo = "bar" },
@@ -397,10 +337,6 @@ describe.each({
 		end)
 
 		it("ensures lock status is properly verified", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local txInfo = {
 				txId = "tx123",
 				committedData = { foo = "bar" },
@@ -420,10 +356,6 @@ describe.each({
 		end)
 
 		it("tracks and updates orphaned files accurately", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local txInfo = {
 				txId = "tx123",
 				committedData = { foo = "bar" },
@@ -442,10 +374,6 @@ describe.each({
 		end)
 
 		it("handles errors during record writing gracefully", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local txInfo = {
 				txId = "tx123",
 				committedData = { foo = "bar" },
@@ -462,10 +390,6 @@ describe.each({
 		end)
 
 		it("ensures data and metadata are updated correctly", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local txInfo = {
 				txId = "tx123",
 				committedData = { foo = "bar" },
@@ -483,11 +407,6 @@ describe.each({
 
 	describe("KeyEntry:getLock", function()
 		it("correctly acquires lock for the key", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
 			return keyEntry
 				:lock()
 				:andThen(function(data)
@@ -497,11 +416,6 @@ describe.each({
 		end)
 
 		it("verifies and handles lock expiry", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
 			local oldTime = DateTime.now().UnixTimestamp - (Constants.LOCK_DURATION_SECONDS * 2)
 			return dataStoreInterface
 				:set(keyEntry.recordScope, "testKey", {
@@ -517,10 +431,6 @@ describe.each({
 		end)
 
 		it("correctly reads and migrates data if necessary", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local testMigrations = {}
 			testMigrations[2] = function(data)
 				data.migrated = true
@@ -552,11 +462,6 @@ describe.each({
 		end)
 
 		it("handles concurrent lock attempts and ensures data consistency", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
 			return keyEntry:lock():andThen(function(data)
 				expect(data).never.toBeNil()
 				return expect(keyEntry:lock()).rejects.toMatch("KeyEntry is already locked")
@@ -564,13 +469,8 @@ describe.each({
 		end)
 	end)
 
-	describe.only("KeyEntry:get", function()
+	describe("KeyEntry:get", function()
 		it("correctly returns cached data", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
 			return keyEntry:lock():andThen(function()
 				keyEntry
 					:update(function(data)
@@ -585,11 +485,6 @@ describe.each({
 		end)
 
 		it("freezes and deep copies cached data", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
 			return keyEntry:lock():andThen(function()
 				keyEntry
 					:update(function(data)
@@ -607,11 +502,6 @@ describe.each({
 
 	describe("KeyEntry:unlock", function()
 		it("correctly releases lock for the key", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
 			local data = {
 				test = "data",
 			}
@@ -627,19 +517,11 @@ describe.each({
 		end)
 
 		it("handles cases where the KeyEntry is already closed", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			keyEntry.closed = true
 			return expect(keyEntry:unlock()).rejects.toMatch("KeyEntry is closed")
 		end)
 
 		it("ensures proper cleanup and saving of data", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local data = {
 				test = "data",
 			}
@@ -655,11 +537,6 @@ describe.each({
 		end)
 
 		it("handles concurrent unlock attempts gracefully", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
 			return keyEntry:lock():andThen(function()
 				keyEntry:unlock():expect()
 				return expect(keyEntry:unlock()).rejects.toMatch("KeyEntry is closed")
@@ -669,10 +546,6 @@ describe.each({
 
 	describe("KeyEntry:update", function()
 		it("correctly applies transform function to key data", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			return keyEntry:lock():andThen(function()
 				keyEntry.data = {
 					count = 10,
@@ -688,11 +561,6 @@ describe.each({
 		end)
 
 		it("propagates errors from transform function correctly", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
 			return keyEntry:lock():andThen(function()
 				local transformFunction = function(_)
 					error("Transform error")
@@ -706,10 +574,6 @@ describe.each({
 		end)
 
 		it("handles cases where transform function returns nil", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local mock, fn = jest.fn(function()
 				return nil
 			end)
@@ -727,10 +591,6 @@ describe.each({
 		end)
 
 		it("adheres to the defined schema for data validation", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			storeContext.schema = function(data)
 				return typeof(data) == "table" and data.value ~= nil
 			end
@@ -762,10 +622,6 @@ describe.each({
 		end)
 
 		it("skips update if data is unchanged after applying transform function", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			local mock, transformFn = jest.fn(function(data)
 				return data
 			end)
@@ -783,11 +639,6 @@ describe.each({
 		end)
 
 		it("handles concurrent update attempts and ensures data consistency", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
 			return keyEntry:lock():andThen(function()
 				keyEntry.data = { count = 0 }
 				keyEntry
@@ -813,10 +664,6 @@ describe.each({
 
 	describe("KeyEntry:save", function()
 		it("correctly saves data if there are unsaved mutations", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			return keyEntry:lock():andThen(function()
 				keyEntry:mutateKey({
 					foo = "bar",
@@ -831,11 +678,6 @@ describe.each({
 		end)
 
 		it("skips save if no unsaved mutations exist", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
 			local updateMock, fn = jest.fn()
 
 			return keyEntry:lock():andThen(function()
@@ -846,10 +688,6 @@ describe.each({
 		end)
 
 		it("commits snapshot after successful save", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
 			return keyEntry:lock():andThen(function()
 				keyEntry:mutateKey({
 					foo = "bar",
@@ -862,11 +700,6 @@ describe.each({
 		end)
 
 		it("handles errors during save operation gracefully", function()
-			local keyEntry = KeyEntry.new({
-				key = "testKey",
-				storeContext = storeContext,
-			})
-
 			return keyEntry:lock():andThen(function()
 				keyEntry:mutateKey({
 					foo = "bar",
