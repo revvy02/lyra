@@ -146,6 +146,8 @@ function Store:unlock(key: string): Promise.Promise
 end
 Store.unlock = t.wrap(Store.unlock, t.tuple(t.any, t.string))
 
+-- TODO: add API for get
+
 function Store:update(key: string, transformFunction: (data: any) -> any): Promise.Promise
 	return self._keyEntries[key]:update(transformFunction)
 end
