@@ -546,7 +546,7 @@ describe.each({
 			end)
 		end)
 
-		it.only("adheres to the defined schema for data validation", function()
+		it("adheres to the defined schema for data validation", function()
 			storeContext.schema = function(data)
 				return typeof(data) == "table" and data.value ~= nil
 			end
