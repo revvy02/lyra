@@ -71,7 +71,7 @@ local function createStore(config: StoreConfig): Store
 		local service
 		if config.useMock then
 			assert(RunService:IsStudio(), "useMock can only be true in Studio")
-			service = (MockDataStoreService :: any) :: DataStoreService
+			service = (MockDataStoreService.createMockService() :: any) :: DataStoreService
 		else
 			service = DataStoreService
 		end
@@ -150,9 +150,8 @@ function Store:lock(key: string, userIds: { number }?): Promise.Promise
 		storeContext = self._ctx,
 		userIds = userIds,
 	})
-	return keyEntry:lock():tap(function()
-		self._keyEntries[key] = keyEntry
-	end)
+	self._keyEntries[key] = keyEntry
+	return keyEntry:lock()
 end
 Store.lock = t.wrap(Store.lock, t.tuple(t.any, t.string, t.optional(t.array(t.number))))
 
