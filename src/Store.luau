@@ -182,11 +182,15 @@ function Store:tx(
 	end)
 
 	local isClosed = false
+	local isLocked = true
 	local queues = Sift.Array.map(keys, function(key)
 		local keyEntry = self._keyEntries[key]
 
 		if keyEntry.closed then
 			isClosed = true
+		end
+		if not keyEntry.locked then
+			isLocked = false
 		end
 
 		return keyEntry.queue
@@ -196,6 +200,10 @@ function Store:tx(
 		return Promise.reject("One or more KeyEntries are closed")
 	end
 
+	if not isLocked then
+		return Promise.reject("One or more KeyEntries are not locked")
+	end
+
 	return PromiseQueue.multiQueueAdd(queues, function()
 		local currentState = {}
 		for _, key in keys do
@@ -203,8 +211,6 @@ function Store:tx(
 
 			keyEntry.txLockPromise = txLockPromise
 			currentState[key] = keyEntry.data
-
-			-- TODO: verify we have lock on all keys
 		end
 
 		local nextState = Sift.Dictionary.copyDeep(currentState)
