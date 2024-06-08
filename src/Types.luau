@@ -56,6 +56,7 @@ export type StoreContext = {
 	template: { [string]: any },
 	schema: (value: { [string]: any }) -> (boolean, string?),
 	migrations: { [number]: (value: { [string]: any }) -> { [string]: any } },
+	migrateFromOtherSystem: ((key: string) -> any?)?,
 	dataStoreInterface: DataStoreInterface.DataStoreInterface,
 	lockId: string,
 	orphanedFileQueue: OrphanedFileQueue,

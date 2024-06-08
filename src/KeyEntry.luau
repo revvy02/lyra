@@ -349,6 +349,15 @@ function KeyEntry:lock(): Promise.Promise
 		end)
 		:andThen(function(data)
 			if data == nil then
+				local migrateFromOtherSystem = self.ctx.migrateFromOtherSystem
+				if migrateFromOtherSystem ~= nil then
+					data = migrateFromOtherSystem(self.key)
+					if data ~= nil then
+						self.version = 1
+					end
+				end
+			end
+			if data == nil then
 				data = Sift.Dictionary.copyDeep(self.ctx.template)
 			end
 

@@ -22,6 +22,7 @@ export type StoreConfig = {
 	template: any,
 	schema: (value: any) -> (boolean, string?),
 	migrations: { [number]: (value: any) -> any }?,
+	migrateFromOtherSystem: ((key: string) -> any?)?,
 	dataStoreInterface: DataStoreInterface.DataStoreInterface?,
 	useMock: boolean?,
 }
@@ -49,8 +50,6 @@ type StoreImpl = {
 		transformFunction: (state: { [string]: any }) -> { [string]: any }?
 	) -> Promise.Promise,
 	save: (self: Store, key: string) -> Promise.Promise,
-
-	-- TODO: API to migrate from other data store systems
 }
 
 type StoreProps = {
@@ -89,6 +88,7 @@ local function createStore(config: StoreConfig): Store
 		template = config.template,
 		schema = config.schema,
 		migrations = migrations,
+		migrateFromOtherSystem = config.migrateFromOtherSystem,
 		dataStoreInterface = dataStoreInterface,
 		lockId = HttpService:GenerateGUID(false),
 		orphanedFileQueue = orphanedFileQueue,
