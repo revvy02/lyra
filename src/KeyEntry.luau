@@ -9,6 +9,7 @@ local Promise = require(ReplicatedStorage.Packages.Promise)
 local Sift = require(ReplicatedStorage.Packages.Sift)
 local t = require(ReplicatedStorage.Packages.t)
 local Types = require(script.Parent.Types)
+local getBackoffTime = require(script.Parent.getBackoffTime)
 local noYield = require(script.Parent.noYield)
 local splitUtf8String = require(script.Parent.splitUtf8String)
 
@@ -309,7 +310,6 @@ function KeyEntry:lock(): Promise.Promise
 
 		local lock = value.lock
 		if lock.expiry ~= nil and lock.expiry > DateTime.now().UnixTimestamp then
-			-- TODO: retry after lock expiry
 			return nil, previousUserIds, previousMetadata
 		end
 
@@ -318,8 +318,23 @@ function KeyEntry:lock(): Promise.Promise
 		return value, self.userIds, previousMetadata
 	end
 
-	self.acquireLockPromise = self.ctx.dataStoreInterface
-		:update(self.recordScope, self.key, transformFunction)
+	local function tryAcquireLock(): (Types.DataStoreRecord, DataStoreKeyInfo)
+		for i = 1, Constants.LOCK_ACQUIRE_ATTEMPTS do
+			local record, keyInfo =
+				self.ctx.dataStoreInterface:update(self.recordScope, self.key, transformFunction):expect()
+
+			if record ~= nil and record.lock.id == self.ctx.lockId then
+				return record, keyInfo
+			end
+
+			if i ~= Constants.LOCK_ACQUIRE_ATTEMPTS then
+				task.wait(getBackoffTime(Constants.LOCK_DURATION_SECONDS + 5, Constants.LOCK_ACQUIRE_ATTEMPTS - 1, i))
+			end
+		end
+		return Promise.reject("Failed to acquire lock") :: any, nil :: any
+	end
+
+	self.acquireLockPromise = Promise.try(tryAcquireLock)
 		:andThen(function(record: Types.DataStoreRecord, keyInfo: DataStoreKeyInfo)
 			if record == nil or record.lock.id ~= self.ctx.lockId then
 				return Promise.reject("Failed to acquire lock")
