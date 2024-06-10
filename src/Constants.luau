@@ -7,6 +7,7 @@ local Constants = {
 	MAX_CHUNK_SIZE = 1000,
 	LOCK_DURATION_SECONDS = 60,
 	LOCK_ACQUIRE_ATTEMPTS = 8,
+	AUTOSAVE_INTERVAL_SECONDS = 30,
 }
 
 return Constants

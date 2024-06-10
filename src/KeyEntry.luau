@@ -45,6 +45,7 @@ type KeyEntryImpl = {
 	migrateData: (self: KeyEntry, data: any) -> Promise.TypedPromise<any>,
 
 	waitUntilLocked: (self: KeyEntry) -> Promise.Promise,
+	startAutosaving: (self: KeyEntry) -> (),
 
 	lock: (self: KeyEntry) -> Promise.Promise,
 	unlock: (self: KeyEntry) -> Promise.Promise,
@@ -291,6 +292,22 @@ function KeyEntry:waitUntilLocked(): Promise.Promise
 	end)
 end
 
+function KeyEntry:startAutosaving(): ()
+	task.spawn(function()
+		while true do
+			task.wait(Constants.AUTOSAVE_INTERVAL_SECONDS)
+			if self.closed then
+				break
+			end
+
+			local ok, err = self:save():await()
+			if not ok then
+				warn(`Failed to autosave key {self.key}: {err}`)
+			end
+		end
+	end)
+end
+
 function KeyEntry:lock(): Promise.Promise
 	if self.locked then
 		return Promise.reject("KeyEntry is already locked")
@@ -385,6 +402,8 @@ function KeyEntry:lock(): Promise.Promise
 
 			self.data = data
 			self.locked = true
+
+			self:startAutosaving()
 
 			return data
 		end)
