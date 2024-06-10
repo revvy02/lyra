@@ -260,9 +260,17 @@ end
 KeyEntry.isSaved = t.wrap(KeyEntry.isSaved, t.tuple(t.any))
 
 function KeyEntry:mutateKey(newData: any): ()
+	local oldData = Sift.Dictionary.freezeDeep(self.data :: any)
+
 	local mutationId = HttpService:GenerateGUID(false)
 	self.unsavedMutations = Sift.Set.add(self.unsavedMutations, mutationId)
 	self.data = newData
+
+	newData = Sift.Dictionary.freezeDeep(newData :: any)
+
+	for _, callback in self.ctx.changedCallbacks do
+		task.spawn(callback, self.key, newData, oldData)
+	end
 end
 KeyEntry.mutateKey = t.wrap(KeyEntry.mutateKey, t.tuple(t.any, t.any))
 

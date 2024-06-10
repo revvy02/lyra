@@ -25,6 +25,7 @@ export type StoreConfig = {
 	migrateFromOtherSystem: ((key: string) -> any?)?,
 	dataStoreInterface: DataStoreInterface.DataStoreInterface?,
 	useMock: boolean?,
+	changedCallbacks: { (key: string, newData: any, oldData: any?) -> () -> () }?,
 }
 local storeConfigCheck = t.strictInterface({
 	name = t.string,
@@ -33,6 +34,7 @@ local storeConfigCheck = t.strictInterface({
 	migrations = t.optional(t.array(t.callback)),
 	dataStoreInterface = t.optional(t.table),
 	useMock = t.optional(t.boolean),
+	changedCallbacks = t.optional(t.array(t.callback)),
 })
 
 type StoreImpl = {
@@ -93,6 +95,7 @@ local function createStore(config: StoreConfig): Store
 		lockId = HttpService:GenerateGUID(false),
 		orphanedFileQueue = orphanedFileQueue,
 		latestVersion = math.max(#migrations, 1),
+		changedCallbacks = config.changedCallbacks or {},
 	}
 
 	local ok, err = storeContext.schema(storeContext.template)

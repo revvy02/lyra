@@ -61,6 +61,7 @@ export type StoreContext = {
 	lockId: string,
 	orphanedFileQueue: OrphanedFileQueue,
 	latestVersion: number,
+	changedCallbacks: { (key: string, newData: any, oldData: any?) -> () -> () },
 }
 
 local txInfoCheck = t.some(
