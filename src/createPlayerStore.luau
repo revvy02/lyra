@@ -7,25 +7,25 @@ local Sift = require(ReplicatedStorage.Packages.Sift)
 local Store = require(script.Parent.Store)
 local mapKeys = require(script.Parent.mapKeys)
 
-type PlayerStoreImpl = {
-	__index: PlayerStoreImpl,
-	get: (self: PlayerStore, userId: number) -> Promise.Promise,
-	lock: (self: PlayerStore, userId: number) -> Promise.Promise,
-	unlock: (self: PlayerStore, userId: number) -> Promise.Promise,
-	update: (self: PlayerStore, userId: number, transformFunction: (data: any) -> any) -> Promise.Promise,
+type PlayerStoreImpl<T> = {
+	__index: PlayerStoreImpl<T>,
+	get: (self: PlayerStore<T>, userId: number) -> Promise.TypedPromise<T>,
+	lock: (self: PlayerStore<T>, userId: number) -> Promise.Promise,
+	unlock: (self: PlayerStore<T>, userId: number) -> Promise.Promise,
+	update: (self: PlayerStore<T>, userId: number, transformFunction: (data: T) -> T?) -> Promise.Promise,
 	tx: (
-		self: PlayerStore,
+		self: PlayerStore<T>,
 		userIds: { number },
-		transformFunction: (state: { [number]: any }) -> { [number]: any }?
+		transformFunction: (state: { [number]: T }) -> { [number]: T }?
 	) -> Promise.Promise,
-	save: (self: PlayerStore, userId: number) -> Promise.Promise,
+	save: (self: PlayerStore<T>, userId: number) -> Promise.Promise,
 }
 
-type PlayerStoreProps = {
-	_store: Store.Store,
+type PlayerStoreProps<T> = {
+	_store: Store.Store<T>,
 }
 
-type PlayerStore = typeof(setmetatable({} :: PlayerStoreProps, {} :: PlayerStoreImpl))
+type PlayerStore<T> = typeof(setmetatable({} :: PlayerStoreProps<T>, {} :: PlayerStoreImpl<T>))
 
 local function assertUserId(userId: number): string
 	local userIdKey = tostring(userId)
@@ -36,10 +36,10 @@ local function assertUserId(userId: number): string
 	return userIdKey
 end
 
-local PlayerStore: PlayerStoreImpl = {} :: PlayerStoreImpl
+local PlayerStore: PlayerStoreImpl<any> = {} :: PlayerStoreImpl<any>
 PlayerStore.__index = PlayerStore
 
-local function createPlayerStore(config: Store.StoreConfig): PlayerStore
+local function createPlayerStore<T>(config: Store.StoreConfig<T>): PlayerStore<T>
 	local store = Store.createStore(config)
 	return setmetatable({ _store = store }, PlayerStore)
 end
@@ -59,12 +59,12 @@ function PlayerStore:unlock(userId: number)
 	return self._store:unlock(userIdKey)
 end
 
-function PlayerStore:update(userId: number, transformFunction: (data: any) -> any)
+function PlayerStore:update<T>(userId: number, transformFunction: (data: T) -> T?)
 	local userIdKey = assertUserId(userId)
 	return self._store:update(userIdKey, transformFunction)
 end
 
-function PlayerStore:tx(userIds: { number }, transformFunction: (state: { [number]: any }) -> { [number]: any }?)
+function PlayerStore:tx<T>(userIds: { number }, transformFunction: (state: { [number]: T }) -> { [number]: T }?)
 	local userIdKeys = Sift.Array.map(userIds, assertUserId)
 
 	local function wrapped(state)

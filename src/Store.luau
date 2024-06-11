@@ -17,15 +17,15 @@ local t = require(ReplicatedStorage.Packages.t)
 local Types = require(script.Parent.Types)
 local noYield = require(script.Parent.noYield)
 
-export type StoreConfig = {
+export type StoreConfig<T> = {
 	name: string,
-	template: any,
+	template: T,
 	schema: (value: any) -> (boolean, string?),
 	migrations: { [number]: (value: any) -> any }?,
-	migrateFromOtherSystem: ((key: string) -> any?)?,
+	migrateFromOtherSystem: ((key: string) -> T?)?,
 	dataStoreInterface: DataStoreInterface.DataStoreInterface?,
 	useMock: boolean?,
-	changedCallbacks: { (key: string, newData: any, oldData: any?) -> () -> () }?,
+	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () }?,
 }
 local storeConfigCheck = t.strictInterface({
 	name = t.string,
@@ -37,36 +37,36 @@ local storeConfigCheck = t.strictInterface({
 	changedCallbacks = t.optional(t.array(t.callback)),
 })
 
-type StoreImpl = {
-	__index: StoreImpl,
+type StoreImpl<T> = {
+	__index: StoreImpl<T>,
 
-	_processOrphanedFile: (self: Store, item: Types.OrphanedFileQueueItem) -> boolean,
+	_processOrphanedFile: (self: Store<T>, item: Types.OrphanedFileQueueItem) -> boolean,
 
-	lock: (self: Store, key: string) -> Promise.Promise,
-	unlock: (self: Store, key: string) -> Promise.Promise,
-	get: (self: Store, key: string) -> Promise.TypedPromise<any>,
-	update: (self: Store, key: string, transformFunction: (data: any) -> any) -> Promise.Promise,
+	lock: (self: Store<T>, key: string) -> Promise.Promise,
+	unlock: (self: Store<T>, key: string) -> Promise.Promise,
+	get: (self: Store<T>, key: string) -> Promise.TypedPromise<T>,
+	update: (self: Store<T>, key: string, transformFunction: (data: T) -> T?) -> Promise.Promise,
 	tx: (
-		self: Store,
+		self: Store<T>,
 		keys: { string },
-		transformFunction: (state: { [string]: any }) -> { [string]: any }?
+		transformFunction: (state: { [string]: T }) -> { [string]: T }?
 	) -> Promise.Promise,
-	save: (self: Store, key: string) -> Promise.Promise,
+	save: (self: Store<T>, key: string) -> Promise.Promise,
 }
 
-type StoreProps = {
-	_ctx: Types.StoreContext,
-	_keyEntries: { [string]: KeyEntry.KeyEntry },
+type StoreProps<T> = {
+	_ctx: Types.StoreContext<T>,
+	_keyEntries: { [string]: KeyEntry.KeyEntry<T> },
 	_lastTxId: string?,
 	_fileCleanupQueue: { { key: string, file: Types.File, beingProcessed: boolean } },
 }
 
-export type Store = typeof(setmetatable({} :: StoreProps, {} :: StoreImpl))
+export type Store<T> = typeof(setmetatable({} :: StoreProps<T>, {} :: StoreImpl<T>))
 
-local Store: StoreImpl = {} :: StoreImpl
+local Store: StoreImpl<any> = {} :: StoreImpl<any>
 Store.__index = Store
 
-local function createStore(config: StoreConfig): Store
+local function createStore<T>(config: StoreConfig<T>): Store<T>
 	local dataStoreInterface = config.dataStoreInterface
 	if dataStoreInterface == nil then
 		local service
@@ -85,7 +85,7 @@ local function createStore(config: StoreConfig): Store
 
 	local migrations = config.migrations or {}
 
-	local storeContext: Types.StoreContext = {
+	local storeContext: Types.StoreContext<T> = {
 		name = config.name,
 		template = config.template,
 		schema = config.schema,
@@ -165,20 +165,17 @@ function Store:unlock(key: string): Promise.Promise
 end
 Store.unlock = t.wrap(Store.unlock, t.tuple(t.any, t.string))
 
-function Store:get(key: string): Promise.Promise
+function Store:get<T>(key: string): Promise.TypedPromise<T>
 	return self._keyEntries[key]:get()
 end
 Store.get = t.wrap(Store.get, t.tuple(t.any, t.string))
 
-function Store:update(key: string, transformFunction: (data: any) -> any): Promise.Promise
+function Store:update<T>(key: string, transformFunction: (data: T) -> T?): Promise.Promise
 	return self._keyEntries[key]:update(transformFunction)
 end
 Store.update = t.wrap(Store.update, t.tuple(t.any, t.string, t.callback))
 
-function Store:tx(
-	keys: { string },
-	transformFunction: (state: { [string]: any }) -> { [string]: any }?
-): Promise.Promise
+function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T }) -> { [string]: T }?): Promise.Promise
 	local txLockResolve
 	local txLockPromise = Promise.new(function(resolve)
 		txLockResolve = resolve
@@ -217,7 +214,7 @@ function Store:tx(
 		end
 
 		local nextState = Sift.Dictionary.copyDeep(currentState)
-		local transformOk, result = pcall(noYield, transformFunction, nextState)
+		local transformOk, result = pcall(noYield, transformFunction, nextState :: any)
 		if not transformOk then
 			error(`Store:tx transformFunction failed: {result}`)
 		end

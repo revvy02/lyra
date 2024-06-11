@@ -20,48 +20,48 @@ local function isLargeFile(file: Types.File): boolean
 	return file.shard ~= nil
 end
 
-type KeyEntryImpl = {
-	__index: KeyEntryImpl,
+type KeyEntryImpl<T> = {
+	__index: KeyEntryImpl<T>,
 
-	new: (config: KeyEntryConfig) -> KeyEntry,
+	new: (config: KeyEntryConfig<T>) -> KeyEntry<T>,
 
 	writeLargeFile: (
-		self: KeyEntry,
-		data: any,
+		self: KeyEntry<T>,
+		data: T,
 		metadata: { [string]: any }?
 	) -> Promise.TypedPromise<Types.File>,
-	readLargeFile: (self: KeyEntry, file: Types.File) -> Promise.TypedPromise<any>,
-	readTx: (self: KeyEntry, txInfo: Types.TxInfo) -> Promise.TypedPromise<any>,
-	writeRecord: (self: KeyEntry, txInfo: Types.TxInfo, releaseLock: boolean?) -> Promise.TypedPromise<any>,
+	readLargeFile: (self: KeyEntry<T>, file: Types.File) -> Promise.TypedPromise<any>,
+	readTx: (self: KeyEntry<T>, txInfo: Types.TxInfo) -> Promise.TypedPromise<any>,
+	writeRecord: (self: KeyEntry<T>, txInfo: Types.TxInfo, releaseLock: boolean?) -> Promise.TypedPromise<any>,
 
-	getLock: (self: KeyEntry) -> Types.Lock,
+	getLock: (self: KeyEntry<T>) -> Types.Lock,
 
-	getSnapshot: (self: KeyEntry) -> UnsavedMutationsSnapshot,
-	isSnapshotCommitted: (self: KeyEntry, snapshot: UnsavedMutationsSnapshot) -> boolean,
-	commitSnapshot: (self: KeyEntry, snapshot: UnsavedMutationsSnapshot) -> (),
-	isSaved: (self: KeyEntry) -> boolean,
+	getSnapshot: (self: KeyEntry<T>) -> UnsavedMutationsSnapshot,
+	isSnapshotCommitted: (self: KeyEntry<T>, snapshot: UnsavedMutationsSnapshot) -> boolean,
+	commitSnapshot: (self: KeyEntry<T>, snapshot: UnsavedMutationsSnapshot) -> (),
+	isSaved: (self: KeyEntry<T>) -> boolean,
 
-	mutateKey: (self: KeyEntry, newData: any) -> (),
-	migrateData: (self: KeyEntry, data: any) -> Promise.TypedPromise<any>,
+	mutateKey: (self: KeyEntry<T>, newData: T) -> (),
+	migrateData: (self: KeyEntry<T>, data: any) -> Promise.TypedPromise<any>,
 
-	waitUntilLocked: (self: KeyEntry) -> Promise.Promise,
-	startAutosaving: (self: KeyEntry) -> (),
+	waitUntilLocked: (self: KeyEntry<T>) -> Promise.Promise,
+	startAutosaving: (self: KeyEntry<T>) -> (),
 
-	lock: (self: KeyEntry) -> Promise.Promise,
-	unlock: (self: KeyEntry) -> Promise.Promise,
-	get: (self: KeyEntry) -> Promise.TypedPromise<any>,
-	update: (self: KeyEntry, transformFunction: (data: any) -> any) -> Promise.Promise,
-	save: (self: KeyEntry) -> Promise.Promise,
+	lock: (self: KeyEntry<T>) -> Promise.Promise,
+	unlock: (self: KeyEntry<T>) -> Promise.Promise,
+	get: (self: KeyEntry<T>) -> Promise.TypedPromise<T>,
+	update: (self: KeyEntry<T>, transformFunction: (data: T) -> T?) -> Promise.Promise,
+	save: (self: KeyEntry<T>) -> Promise.Promise,
 }
 
-type KeyEntryProps = {
+type KeyEntryProps<T> = {
 	key: string,
-	ctx: Types.StoreContext,
+	ctx: Types.StoreContext<T>,
 
 	userIds: { number }?,
 	metadata: { [string]: any }?,
 
-	data: any?,
+	data: T?,
 	version: number,
 
 	unsavedMutations: UnsavedMutationsSnapshot,
@@ -80,11 +80,11 @@ type KeyEntryProps = {
 	txScope: string,
 }
 
-export type KeyEntry = typeof(setmetatable({} :: KeyEntryProps, {} :: KeyEntryImpl))
+export type KeyEntry<T> = typeof(setmetatable({} :: KeyEntryProps<T>, {} :: KeyEntryImpl<T>))
 
-type KeyEntryConfig = {
+type KeyEntryConfig<T> = {
 	key: string,
-	storeContext: Types.StoreContext,
+	storeContext: Types.StoreContext<T>,
 	userIds: { number }?,
 }
 local keyEntryConfigCheck = t.strictInterface({
@@ -93,10 +93,10 @@ local keyEntryConfigCheck = t.strictInterface({
 	userIds = t.optional(t.array(t.number)),
 })
 
-local KeyEntry: KeyEntryImpl = {} :: KeyEntryImpl
+local KeyEntry: KeyEntryImpl<any> = {} :: KeyEntryImpl<any>
 KeyEntry.__index = KeyEntry
 
-function KeyEntry.new(config: KeyEntryConfig): KeyEntry
+function KeyEntry.new<T>(config: KeyEntryConfig<T>): KeyEntry<T>
 	return setmetatable({
 		key = config.key,
 		ctx = config.storeContext,
@@ -121,7 +121,7 @@ function KeyEntry.new(config: KeyEntryConfig): KeyEntry
 		recordScope = `{Constants.RECORD_SCOPE}/{config.storeContext.name}`,
 		shardScope = `{Constants.SHARD_SCOPE}/{config.storeContext.name}`,
 		txScope = `{Constants.TX_SCOPE}/{config.storeContext.name}`,
-	}, KeyEntry)
+	}, KeyEntry) :: KeyEntry<T>
 end
 KeyEntry.new = t.wrap(KeyEntry.new, t.tuple(keyEntryConfigCheck))
 
@@ -439,7 +439,7 @@ function KeyEntry:unlock(): Promise.Promise
 end
 KeyEntry.unlock = t.wrap(KeyEntry.unlock, t.tuple(t.any))
 
-function KeyEntry:get(): Promise.TypedPromise<any>
+function KeyEntry:get<T>(): Promise.TypedPromise<T>
 	return self:waitUntilLocked():andThen(function()
 		local data = Sift.Dictionary.copyDeep(self.data)
 		data = Sift.Dictionary.freezeDeep(data :: any)
@@ -447,7 +447,7 @@ function KeyEntry:get(): Promise.TypedPromise<any>
 	end)
 end
 
-function KeyEntry:update(transformFunction: (data: { [string]: any }) -> { [string]: any }): Promise.Promise
+function KeyEntry:update<T>(transformFunction: (data: T) -> T?): Promise.Promise
 	return self:waitUntilLocked():andThen(function()
 		while self.txLockPromise ~= nil do
 			self.txLockPromise:await()
@@ -462,12 +462,12 @@ function KeyEntry:update(transformFunction: (data: { [string]: any }) -> { [stri
 
 		if result == nil then
 			print(`Skipping update for key {self.key}`)
-			return
+			return nil :: any
 		end
 		nextData = result
 
 		if Sift.Dictionary.equalsDeep(nextData :: any, currentData :: any) then
-			return
+			return nil :: any
 		end
 
 		local schemaOk, err = self.ctx.schema(nextData :: any)
@@ -477,8 +477,8 @@ function KeyEntry:update(transformFunction: (data: { [string]: any }) -> { [stri
 
 		self:mutateKey(nextData)
 
-		return
-	end)
+		return nil :: any
+	end) :: Promise.TypedPromise<T>
 end
 KeyEntry.update = t.wrap(KeyEntry.update, t.tuple(t.any, t.callback))
 

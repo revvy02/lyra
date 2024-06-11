@@ -51,17 +51,17 @@ type OrphanedFileQueueProps = {
 
 export type OrphanedFileQueue = typeof(setmetatable({} :: OrphanedFileQueueProps, {} :: OrphanedFileQueueImpl))
 
-export type StoreContext = {
+export type StoreContext<T> = {
 	name: string,
-	template: { [string]: any },
-	schema: (value: { [string]: any }) -> (boolean, string?),
-	migrations: { [number]: (value: { [string]: any }) -> { [string]: any } },
-	migrateFromOtherSystem: ((key: string) -> any?)?,
+	template: T,
+	schema: (value: any) -> (boolean, string?),
+	migrations: { [number]: (value: any) -> any },
+	migrateFromOtherSystem: ((key: string) -> T?)?,
 	dataStoreInterface: DataStoreInterface.DataStoreInterface,
 	lockId: string,
 	orphanedFileQueue: OrphanedFileQueue,
 	latestVersion: number,
-	changedCallbacks: { (key: string, newData: any, oldData: any?) -> () -> () },
+	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () },
 }
 
 local txInfoCheck = t.some(
