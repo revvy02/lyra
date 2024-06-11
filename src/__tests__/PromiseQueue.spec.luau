@@ -1,7 +1,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
-local PromiseQueue = require(ReplicatedStorage.Packages.Mix.PromiseQueue)
+local PromiseQueue = require(ReplicatedStorage.Packages.Lyra.PromiseQueue)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 
 local jest = JestGlobals.jest

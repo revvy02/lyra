@@ -1,7 +1,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
-local noYield = require(ReplicatedStorage.Packages.Mix.noYield)
+local noYield = require(ReplicatedStorage.Packages.Lyra.noYield)
 
 local it = JestGlobals.it
 local expect = JestGlobals.expect

@@ -1,12 +1,12 @@
 {
-	"name": "mix",
+	"name": "lyra",
 	"tree": {
 		"$className": "DataModel",
 		"ReplicatedStorage": {
 			"$className": "ReplicatedStorage",
 			"Packages": {
 				"$path": "Packages",
-				"Mix": {
+				"Lyra": {
 					"$path": "src"
 				}
 			},

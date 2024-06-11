@@ -1,13 +1,13 @@
-local Mix = {} :: any
+local Lyra = {} :: any
 local t = {} :: any
 
-local store = Mix.createPlayerStore({
+local store = Lyra.createPlayerStore({
 	name = `test`,
 	template = {},
 	schema = t.strictInterface({
 		coins = t.number(),
 	}),
-	migrations = Mix.migrationsFromFolder({ -- imagine you pass in a real folder instance with ModuleScripts here
+	migrations = Lyra.migrationsFromFolder({ -- imagine you pass in a real folder instance with ModuleScripts here
 		[2] = function(data)
 			data.newStuff = true
 			return data

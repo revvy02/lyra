@@ -1,7 +1,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
-local Constants = require(ReplicatedStorage.Packages.Mix.Constants)
+local Constants = require(ReplicatedStorage.Packages.Lyra.Constants)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 
 local it = JestGlobals.it
@@ -19,8 +19,8 @@ describe("Store Transaction Race Conditions", function()
 	end
 
 	local function resetStore()
-		local MockInterface = require(ReplicatedStorage.Packages.Mix.DataStoreInterface.MockInterface)
-		local createStore = require(ReplicatedStorage.Packages.Mix.Store).createStore
+		local MockInterface = require(ReplicatedStorage.Packages.Lyra.DataStoreInterface.MockInterface)
+		local createStore = require(ReplicatedStorage.Packages.Lyra.Store).createStore
 		store = createStore({
 			name = "TestStore",
 			template = {},

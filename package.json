@@ -1,5 +1,5 @@
 {
-  "name": "@paradoxum-games/mix",
+  "name": "@paradoxum-games/lyra",
   "version": "0.1.0",
   "description": "A DataStoreService wrapper",
   "scripts": {
@@ -7,12 +7,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/paradoxum-games/mix.git"
+    "url": "git+https://github.com/paradoxum-games/lyra.git"
   },
   "author": "nomer888",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/paradoxum-games/mix/issues"
+    "url": "https://github.com/paradoxum-games/lyra/issues"
   },
-  "homepage": "https://github.com/paradoxum-games/mix#readme"
+  "homepage": "https://github.com/paradoxum-games/lyra#readme"
 }

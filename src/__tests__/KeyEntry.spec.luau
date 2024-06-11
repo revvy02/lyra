@@ -2,12 +2,12 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
-local Constants = require(ReplicatedStorage.Packages.Mix.Constants)
-local DataStoreInterface = require(ReplicatedStorage.Packages.Mix.DataStoreInterface)
-local KeyEntry = require(ReplicatedStorage.Packages.Mix.KeyEntry)
-local MockDataStoreService = require(ReplicatedStorage.Packages.Mix.MockDataStoreService)
-local Types = require(ReplicatedStorage.Packages.Mix.Types)
-local splitUtf8String = require(ReplicatedStorage.Packages.Mix.splitUtf8String)
+local Constants = require(ReplicatedStorage.Packages.Lyra.Constants)
+local DataStoreInterface = require(ReplicatedStorage.Packages.Lyra.DataStoreInterface)
+local KeyEntry = require(ReplicatedStorage.Packages.Lyra.KeyEntry)
+local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataStoreService)
+local Types = require(ReplicatedStorage.Packages.Lyra.Types)
+local splitUtf8String = require(ReplicatedStorage.Packages.Lyra.splitUtf8String)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 
 local expect = JestGlobals.expect
