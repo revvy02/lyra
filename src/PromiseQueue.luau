@@ -38,8 +38,19 @@ end
 function PromiseQueue:_processQueue()
 	while #self._queue > 0 do
 		local item = self._queue[1]
-		-- TODO: timeout to notify of deadlock?
-		item():finallyCall(table.remove, self._queue, 1):await()
+
+		-- TODO: Track call stack in :add to output here
+		local deadlockWarn = task.delay(5, function()
+			warn("Potential PromiseQueue deadlock")
+		end)
+
+		item():finallyCall(function()
+			table.remove(self._queue, 1)
+
+			if coroutine.status(deadlockWarn) == "suspended" then
+				task.cancel(deadlockWarn)
+			end
+		end):await()
 	end
 end
 
