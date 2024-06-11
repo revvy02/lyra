@@ -58,7 +58,6 @@ type StoreProps<T> = {
 	_ctx: Types.StoreContext<T>,
 	_keyEntries: { [string]: KeyEntry.KeyEntry<T> },
 	_lastTxId: string?,
-	_fileCleanupQueue: { { key: string, file: Types.File, beingProcessed: boolean } },
 }
 
 export type Store<T> = typeof(setmetatable({} :: StoreProps<T>, {} :: StoreImpl<T>))
@@ -107,7 +106,6 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		_ctx = storeContext,
 		_keyEntries = {},
 		_lastTxId = nil,
-		_fileCleanupQueue = {},
 	}, Store)
 
 	orphanedFileQueue.processQueueItem = function(item)
