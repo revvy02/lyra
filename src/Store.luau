@@ -94,7 +94,7 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		dataStoreInterface = dataStoreInterface,
 		lockId = HttpService:GenerateGUID(false),
 		orphanedFileQueue = orphanedFileQueue,
-		latestVersion = math.max(#migrations, 1),
+		latestVersion = #migrations,
 		changedCallbacks = config.changedCallbacks or {},
 	}
 

@@ -26,7 +26,7 @@ local function migrationsFromFolder(folder: Folder): { [number]: (value: { [stri
 		migrations[version] = result
 	end
 
-	local lastVersion = 1
+	local lastVersion = 0
 	for version in migrations do
 		assert(version == lastVersion + 1, `Missing migration version: {lastVersion + 1}`)
 		lastVersion = version

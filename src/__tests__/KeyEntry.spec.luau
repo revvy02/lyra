@@ -35,7 +35,7 @@ describe.each({
 		storeContext = {
 			name = `test-{string.sub(HttpService:GenerateGUID(false), 1, 8)}`,
 			dataStoreInterface = dataStoreInterface,
-			latestVersion = 1,
+			latestVersion = 0,
 			migrations = {},
 			template = {},
 			lockId = HttpService:GenerateGUID(false),
@@ -384,19 +384,19 @@ describe.each({
 
 		it("correctly reads and migrates data if necessary", function()
 			local testMigrations = {}
-			testMigrations[2] = function(data)
+			testMigrations[1] = function(data)
 				data.migrated = true
 				return data
 			end
 			storeContext.migrations = testMigrations
-			storeContext.latestVersion = 2
+			storeContext.latestVersion = 1
 
 			local data = {
 				foo = "bar",
 			}
 			return dataStoreInterface
 				:set(keyEntry.recordScope, "testKey", {
-					version = 1,
+					version = 0,
 					lock = {},
 					file = { data = { committedData = data } } :: Types.File,
 				})

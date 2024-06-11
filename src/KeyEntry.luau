@@ -393,7 +393,7 @@ function KeyEntry:lock(): Promise.Promise
 				if migrateFromOtherSystem ~= nil then
 					data = migrateFromOtherSystem(self.key)
 					if data ~= nil then
-						self.version = 1
+						self.version = 0
 					end
 				end
 			end
