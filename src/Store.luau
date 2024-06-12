@@ -154,13 +154,16 @@ function Store:lock(key: string, userIds: { number }?): Promise.Promise
 	if self._closed then
 		return Promise.reject("Store is closed")
 	end
-	local keyEntry = KeyEntry.new({
-		key = key,
-		storeContext = self._ctx,
-		userIds = userIds,
-	})
-	self._keyEntries[key] = keyEntry
-	return keyEntry:lock()
+
+	return (self._unlockPromises[key] :: any or Promise.resolve()):finally(function()
+		local keyEntry = KeyEntry.new({
+			key = key,
+			storeContext = self._ctx,
+			userIds = userIds,
+		})
+		self._keyEntries[key] = keyEntry
+		return keyEntry:lock()
+	end)
 end
 Store.lock = t.wrap(Store.lock, t.tuple(t.any, t.string, t.optional(t.array(t.number))))
 
