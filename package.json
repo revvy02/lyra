@@ -14,5 +14,11 @@
   "bugs": {
     "url": "https://github.com/paradoxum-games/lyra/issues"
   },
-  "homepage": "https://github.com/paradoxum-games/lyra#readme"
+  "homepage": "https://github.com/paradoxum-games/lyra#readme",
+  "files": [
+    "src/**/*",
+    "!src/__tests__/**/*",
+    "!src/jest.config.luau",
+    "default.project.json"
+  ]
 }
