@@ -12,3 +12,5 @@ sourcemap.json
 
 external
 .aider*
+
+node_modules
