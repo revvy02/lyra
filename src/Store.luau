@@ -52,12 +52,15 @@ type StoreImpl<T> = {
 		transformFunction: (state: { [string]: T }) -> { [string]: T }?
 	) -> Promise.Promise,
 	save: (self: Store<T>, key: string) -> Promise.Promise,
+	close: (self: Store<T>) -> Promise.Promise,
 }
 
 type StoreProps<T> = {
 	_ctx: Types.StoreContext<T>,
+	_closed: boolean,
 	_keyEntries: { [string]: KeyEntry.KeyEntry<T> },
 	_lastTxId: string?,
+	_unlockPromises: { [string]: Promise.Promise },
 }
 
 export type Store<T> = typeof(setmetatable({} :: StoreProps<T>, {} :: StoreImpl<T>))
@@ -104,8 +107,10 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 
 	local self = setmetatable({
 		_ctx = storeContext,
+		_closed = false,
 		_keyEntries = {},
 		_lastTxId = nil,
+		_unlockPromises = {},
 	}, Store)
 
 	orphanedFileQueue.processQueueItem = function(item)
@@ -146,6 +151,9 @@ function Store:_processOrphanedFile(item: Types.OrphanedFileQueueItem): boolean
 end
 
 function Store:lock(key: string, userIds: { number }?): Promise.Promise
+	if self._closed then
+		return Promise.reject("Store is closed")
+	end
 	local keyEntry = KeyEntry.new({
 		key = key,
 		storeContext = self._ctx,
@@ -157,23 +165,43 @@ end
 Store.lock = t.wrap(Store.lock, t.tuple(t.any, t.string, t.optional(t.array(t.number))))
 
 function Store:unlock(key: string): Promise.Promise
-	return self._keyEntries[key]:unlock():tap(function()
+	if self._closed then
+		return Promise.reject("Store is closed")
+	end
+	if self._unlockPromises[key] then
+		return Promise.reject("Unlock already in progress")
+	end
+
+	self._unlockPromises[key] = self._keyEntries[key]:unlock():tap(function()
 		self._keyEntries[key] = nil
+		self._unlockPromises[key] = nil
 	end)
+
+	return self._unlockPromises[key]
 end
 Store.unlock = t.wrap(Store.unlock, t.tuple(t.any, t.string))
 
 function Store:get<T>(key: string): Promise.TypedPromise<T>
+	if self._closed then
+		return Promise.reject("Store is closed")
+	end
 	return self._keyEntries[key]:get()
 end
 Store.get = t.wrap(Store.get, t.tuple(t.any, t.string))
 
 function Store:update<T>(key: string, transformFunction: (data: T) -> T?): Promise.Promise
+	if self._closed then
+		return Promise.reject("Store is closed")
+	end
 	return self._keyEntries[key]:update(transformFunction)
 end
 Store.update = t.wrap(Store.update, t.tuple(t.any, t.string, t.callback))
 
 function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T }) -> { [string]: T }?): Promise.Promise
+	if self._closed then
+		return Promise.reject("Store is closed")
+	end
+
 	local txLockResolve
 	local txLockPromise = Promise.new(function(resolve)
 		txLockResolve = resolve
@@ -299,9 +327,23 @@ end
 Store.tx = t.wrap(Store.tx, t.tuple(t.any, t.array(t.string), t.callback))
 
 function Store:save(key: string): Promise.Promise
+	if self._closed then
+		return Promise.reject("Store is closed")
+	end
 	return self._keyEntries[key]:save()
 end
 Store.save = t.wrap(Store.save, t.tuple(t.any, t.string))
+
+function Store:close(): Promise.Promise
+	local promises = {}
+	for key in self._keyEntries do
+		table.insert(promises, self._unlockPromises[key] or self:unlock(key))
+	end
+
+	self._closed = true
+
+	return Promise.allSettled(promises)
+end
 
 return {
 	createStore = createStore,
