@@ -1,23 +1,6 @@
 {
-	"name": "lyra",
-	"tree": {
-		"$className": "DataModel",
-		"ReplicatedStorage": {
-			"$className": "ReplicatedStorage",
-			"Packages": {
-				"$path": "Packages",
-				"Lyra": {
-					"$path": "src"
-				}
-			},
-			"DevPackages": {
-				"$path": "DevPackages"
-			}
-		},
-		"ServerScriptService": {
-			"Test": {
-				"$path": "test"
-			}
-		}
-	}
+  "name": "lyra",
+  "tree": {
+    "$path": "src"
+  }
 }
