@@ -13,6 +13,10 @@ local getBackoffTime = require(script.Parent.getBackoffTime)
 local noYield = require(script.Parent.noYield)
 local splitUtf8String = require(script.Parent.splitUtf8String)
 
+local Dictionary = Sift.Dictionary
+local Array = Sift.Array
+local Set = Sift.Set
+
 type UnsavedMutationsSnapshot = { [string]: boolean }
 local unsavedMutationsSnapshotCheck = t.map(t.string, t.boolean)
 
@@ -134,7 +138,7 @@ function KeyEntry:writeLargeFile(data: any, metadata: { [string]: any }?): Promi
 	local shardId = HttpService:GenerateGUID(false)
 	local shards = splitUtf8String(data, Constants.MAX_CHUNK_SIZE)
 
-	local promises = Sift.Array.map(shards, function(shard, index)
+	local promises = Array.map(shards, function(shard, index)
 		return self.ctx.dataStoreInterface:set(self.shardScope, `{shardId}-{index}`, shard, self.userIds, metadata)
 	end)
 
@@ -186,7 +190,7 @@ KeyEntry.readTx = t.wrap(KeyEntry.readTx, t.tuple(t.any, Types.txInfoCheck))
 
 function KeyEntry:writeRecord(txInfo: Types.TxInfo, releaseLock: boolean?): Promise.TypedPromise<any>
 	return self:writeLargeFile(txInfo):andThen(function(file)
-		local orphanedFiles = Sift.Array.push(self.orphanedFiles, self.currentFile :: any)
+		local orphanedFiles = Array.push(self.orphanedFiles, self.currentFile :: any)
 
 		local record = {
 			version = self.version,
@@ -221,7 +225,7 @@ function KeyEntry:writeRecord(txInfo: Types.TxInfo, releaseLock: boolean?): Prom
 			end)
 			:catch(function(err)
 				if isLargeFile(file) then
-					self.orphanedFiles = Sift.Array.push(self.orphanedFiles, file)
+					self.orphanedFiles = Array.push(self.orphanedFiles, file)
 					self.ctx.orphanedFileQueue:markFile(self.key, file)
 				end
 
@@ -239,34 +243,34 @@ function KeyEntry:getLock(): Types.Lock
 end
 
 function KeyEntry:getSnapshot(): UnsavedMutationsSnapshot
-	return Sift.Set.copy(self.unsavedMutations)
+	return Set.copy(self.unsavedMutations)
 end
 KeyEntry.getSnapshot = t.wrap(KeyEntry.getSnapshot, t.tuple(t.any))
 
 function KeyEntry:isSnapshotCommitted(snapshot: UnsavedMutationsSnapshot): boolean
-	local intersection = Sift.Set.intersection(snapshot, self.unsavedMutations)
-	return Sift.Set.count(intersection) == 0
+	local intersection = Set.intersection(snapshot, self.unsavedMutations)
+	return Set.count(intersection) == 0
 end
 KeyEntry.isSnapshotCommitted = t.wrap(KeyEntry.isSnapshotCommitted, t.tuple(t.any, unsavedMutationsSnapshotCheck))
 
 function KeyEntry:commitSnapshot(snapshot: UnsavedMutationsSnapshot): ()
-	self.unsavedMutations = Sift.Set.difference(self.unsavedMutations, snapshot)
+	self.unsavedMutations = Set.difference(self.unsavedMutations, snapshot)
 end
 KeyEntry.commitSnapshot = t.wrap(KeyEntry.commitSnapshot, t.tuple(t.any, unsavedMutationsSnapshotCheck))
 
 function KeyEntry:isSaved(): boolean
-	return Sift.Set.count(self.unsavedMutations) == 0
+	return Set.count(self.unsavedMutations) == 0
 end
 KeyEntry.isSaved = t.wrap(KeyEntry.isSaved, t.tuple(t.any))
 
 function KeyEntry:mutateKey(newData: any): ()
-	local oldData = Sift.Dictionary.freezeDeep(self.data :: any)
+	local oldData = Dictionary.freezeDeep(self.data :: any)
 
 	local mutationId = HttpService:GenerateGUID(false)
-	self.unsavedMutations = Sift.Set.add(self.unsavedMutations, mutationId)
+	self.unsavedMutations = Set.add(self.unsavedMutations, mutationId)
 	self.data = newData
 
-	newData = Sift.Dictionary.freezeDeep(newData :: any)
+	newData = Dictionary.freezeDeep(newData :: any)
 
 	for _, callback in self.ctx.changedCallbacks do
 		task.spawn(callback, self.key, newData, oldData)
@@ -275,13 +279,13 @@ end
 KeyEntry.mutateKey = t.wrap(KeyEntry.mutateKey, t.tuple(t.any, t.any))
 
 function KeyEntry:migrateData(data: any): Promise.TypedPromise<any>
-	data = Sift.Dictionary.copyDeep(data)
+	data = Dictionary.copyDeep(data)
 	return Promise.new(function(resolve)
 		for i = self.version + 1, self.ctx.latestVersion do
 			local migration = self.ctx.migrations[i]
 			if migration then
 				local newData = Promise.try(migration, data):expect()
-				data = Sift.Dictionary.copyDeep(newData)
+				data = Dictionary.copyDeep(newData)
 			end
 		end
 
@@ -328,7 +332,7 @@ function KeyEntry:lock(): Promise.Promise
 	end
 
 	local function transformFunction(value, keyInfo)
-		value = Sift.Dictionary.mergeDeep({ lock = {} }, value)
+		value = Dictionary.mergeDeep({ lock = {} }, value)
 
 		local previousUserIds = keyInfo and keyInfo:GetUserIds()
 		local previousMetadata = keyInfo and keyInfo:GetMetadata()
@@ -398,7 +402,7 @@ function KeyEntry:lock(): Promise.Promise
 				end
 			end
 			if data == nil then
-				data = Sift.Dictionary.copyDeep(self.ctx.template)
+				data = Dictionary.copyDeep(self.ctx.template)
 			end
 
 			if self.version > self.ctx.latestVersion then
@@ -411,7 +415,7 @@ function KeyEntry:lock(): Promise.Promise
 			self.data = data
 			self.locked = true
 
-			local newData = Sift.Dictionary.freezeDeep(data)
+			local newData = Dictionary.freezeDeep(data)
 			for _, callback in self.ctx.changedCallbacks do
 				task.spawn(callback, self.key, newData, nil)
 			end
@@ -433,7 +437,7 @@ function KeyEntry:unlock(): Promise.Promise
 		self.closed = true
 
 		return self.queue:add(function()
-			local data = Sift.Dictionary.copyDeep(self.data)
+			local data = Dictionary.copyDeep(self.data)
 			local txInfo = { committedData = data }
 
 			return self:writeRecord(txInfo, true):andThen(function(latestValue)
@@ -446,8 +450,8 @@ KeyEntry.unlock = t.wrap(KeyEntry.unlock, t.tuple(t.any))
 
 function KeyEntry:get<T>(): Promise.TypedPromise<T>
 	return self:waitUntilLocked():andThen(function()
-		local data = Sift.Dictionary.copyDeep(self.data)
-		data = Sift.Dictionary.freezeDeep(data :: any)
+		local data = Dictionary.copyDeep(self.data)
+		data = Dictionary.freezeDeep(data :: any)
 		return Promise.resolve(data)
 	end)
 end
@@ -459,7 +463,7 @@ function KeyEntry:update<T>(transformFunction: (data: T) -> T?): Promise.Promise
 		end
 
 		local currentData = self.data
-		local nextData = Sift.Dictionary.copyDeep(currentData)
+		local nextData = Dictionary.copyDeep(currentData)
 		local transformOk, result = pcall(noYield, transformFunction, nextData :: any)
 		if not transformOk then
 			return Promise.reject(`Store:update transformFunction failed: {result}`)
@@ -471,7 +475,7 @@ function KeyEntry:update<T>(transformFunction: (data: T) -> T?): Promise.Promise
 		end
 		nextData = result
 
-		if Sift.Dictionary.equalsDeep(nextData :: any, currentData :: any) then
+		if Dictionary.equalsDeep(nextData :: any, currentData :: any) then
 			return nil :: any
 		end
 
@@ -505,7 +509,7 @@ function KeyEntry:save(): Promise.Promise
 
 			snapshot = self:getSnapshot()
 
-			local data = Sift.Dictionary.copyDeep(self.data)
+			local data = Dictionary.copyDeep(self.data)
 			local txInfo = { committedData = data }
 
 			return self:writeRecord(txInfo):andThen(function()

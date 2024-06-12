@@ -17,6 +17,9 @@ local t = require(ReplicatedStorage.Packages.t)
 local Types = require(script.Parent.Types)
 local noYield = require(script.Parent.noYield)
 
+local Dictionary = Sift.Dictionary
+local Array = Sift.Array
+
 export type StoreConfig<T> = {
 	name: string,
 	template: T,
@@ -139,8 +142,8 @@ function Store:_processOrphanedFile(item: Types.OrphanedFileQueueItem): boolean
 	Promise.all(promises)
 		:andThen(function()
 			local keyEntry = self._keyEntries[item.key]
-			keyEntry.orphanedFiles = Sift.Array.filter(keyEntry.orphanedFiles, function(file)
-				return not Sift.Dictionary.equals(file, item.file)
+			keyEntry.orphanedFiles = Array.filter(keyEntry.orphanedFiles, function(file)
+				return not Dictionary.equals(file, item.file)
 			end)
 		end)
 		:finally(function()
@@ -212,7 +215,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 
 	local isClosed = false
 	local isLocked = true
-	local queues = Sift.Array.map(keys, function(key)
+	local queues = Array.map(keys, function(key)
 		local keyEntry = self._keyEntries[key]
 
 		if keyEntry.closed then
@@ -242,7 +245,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			currentState[key] = keyEntry.data
 		end
 
-		local nextState = Sift.Dictionary.copyDeep(currentState)
+		local nextState = Dictionary.copyDeep(currentState)
 		local transformOk, result = pcall(noYield, transformFunction, nextState :: any)
 		if not transformOk then
 			error(`Store:tx transformFunction failed: {result}`)
@@ -253,7 +256,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 		end
 		nextState = result
 
-		if Sift.Dictionary.equalsDeep(nextState, currentState) then
+		if Dictionary.equalsDeep(nextState, currentState) then
 			return
 		end
 
@@ -264,14 +267,14 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			end
 		end
 
-		local currentKeys = Sift.Dictionary.keys(currentState)
-		local nextKeys = Sift.Dictionary.keys(nextState)
-		assert(#Sift.Array.differenceSymmetric(currentKeys, nextKeys) == 0, "Keys changed in transaction")
+		local currentKeys = Dictionary.keys(currentState)
+		local nextKeys = Dictionary.keys(nextState)
+		assert(#Array.differenceSymmetric(currentKeys, nextKeys) == 0, "Keys changed in transaction")
 
 		-- If no keys changed we can exit early, and if only one key changed, we
 		-- can treat it as a normal :update.
-		local changedKeys = Sift.Array.filter(keys, function(key)
-			return not Sift.Dictionary.equalsDeep(currentState[key] :: any, nextState[key] :: any)
+		local changedKeys = Array.filter(keys, function(key)
+			return not Dictionary.equalsDeep(currentState[key] :: any, nextState[key] :: any)
 		end)
 
 		if #changedKeys == 0 then
@@ -285,7 +288,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 		self._lastTxId = HttpService:GenerateGUID(false)
 		local txId = self._lastTxId :: string
 
-		local promises = Sift.Array.map(keys, function(key)
+		local promises = Array.map(keys, function(key)
 			local txInfo = {
 				txId = txId,
 				committedData = currentState[key],
