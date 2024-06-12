@@ -31,7 +31,7 @@ type KeyEntryImpl<T> = {
 
 	writeLargeFile: (
 		self: KeyEntry<T>,
-		data: T,
+		data: any,
 		metadata: { [string]: any }?
 	) -> Promise.TypedPromise<Types.File>,
 	readLargeFile: (self: KeyEntry<T>, file: Types.File) -> Promise.TypedPromise<any>,
