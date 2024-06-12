@@ -411,6 +411,11 @@ function KeyEntry:lock(): Promise.Promise
 			self.data = data
 			self.locked = true
 
+			local newData = Sift.Dictionary.freezeDeep(data)
+			for _, callback in self.ctx.changedCallbacks do
+				task.spawn(callback, self.key, newData, nil)
+			end
+
 			self:startAutosaving()
 
 			return data
