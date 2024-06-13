@@ -473,7 +473,7 @@ function KeyEntry:update<T>(transformFunction: (data: T) -> T?): Promise.Promise
 			print(`Skipping update for key {self.key}`)
 			return nil :: any
 		end
-		nextData = result
+		nextData = Dictionary.copyDeep(result)
 
 		if Dictionary.equalsDeep(nextData :: any, currentData :: any) then
 			return nil :: any

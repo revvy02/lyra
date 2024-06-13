@@ -254,7 +254,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 		if result == nil then
 			return
 		end
-		nextState = result
+		nextState = Dictionary.copyDeep(result)
 
 		if Dictionary.equalsDeep(nextState, currentState) then
 			return
