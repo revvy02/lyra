@@ -1,6 +1,6 @@
 {
   "name": "@paradoxum-games/lyra",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A DataStoreService wrapper",
   "scripts": {
     "test": "exit 0"
@@ -20,5 +20,10 @@
     "!src/__tests__/**/*",
     "!src/jest.config.luau",
     "default.project.json"
-  ]
+  ],
+  "dependencies": {
+    "@paradoxum-games/sift": "0.0.9",
+    "@paradoxum-games/promise": "4.0.1",
+    "@paradoxum-games/t": "3.1.1"
+  }
 }
