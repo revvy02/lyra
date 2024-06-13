@@ -35,6 +35,7 @@ local storeConfigCheck = t.strictInterface({
 	template = t.any,
 	schema = t.callback,
 	migrations = t.optional(t.array(t.callback)),
+	migrateFromOtherSystem = t.optional(t.callback),
 	dataStoreInterface = t.optional(t.table),
 	useMock = t.optional(t.boolean),
 	changedCallbacks = t.optional(t.array(t.callback)),
