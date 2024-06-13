@@ -19,6 +19,7 @@ type PlayerStoreImpl<T> = {
 		transformFunction: (state: { [number]: T }) -> { [number]: T }?
 	) -> Promise.Promise,
 	save: (self: PlayerStore<T>, userId: number) -> Promise.Promise,
+	close: (self: PlayerStore<T>) -> Promise.Promise,
 }
 
 type PlayerStoreProps<T> = {
@@ -85,6 +86,10 @@ end
 function PlayerStore:save(userId: number)
 	local userIdKey = assertUserId(userId)
 	return self._store:save(userIdKey)
+end
+
+function PlayerStore:close()
+	return self._store:close()
 end
 
 return createPlayerStore
