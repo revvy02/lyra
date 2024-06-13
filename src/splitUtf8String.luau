@@ -1,6 +1,7 @@
 --!strict
 
 local function splitUtf8String(str: string, maxSizeBytes: number): { string }
+	-- TODO: Add t check for arg types
 	if str == "" then
 		return {}
 	end

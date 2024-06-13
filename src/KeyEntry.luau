@@ -29,6 +29,7 @@ type KeyEntryImpl<T> = {
 
 	new: (config: KeyEntryConfig<T>) -> KeyEntry<T>,
 
+	-- TODO: Update data: any to a more specific type
 	writeLargeFile: (
 		self: KeyEntry<T>,
 		data: any,
@@ -129,6 +130,7 @@ function KeyEntry.new<T>(config: KeyEntryConfig<T>): KeyEntry<T>
 end
 KeyEntry.new = t.wrap(KeyEntry.new, t.tuple(keyEntryConfigCheck))
 
+-- TODO: Update data: any to a more specific type
 function KeyEntry:writeLargeFile(data: any, metadata: { [string]: any }?): Promise.TypedPromise<Types.File>
 	local str = HttpService:JSONEncode(data)
 	if #str <= Constants.MAX_CHUNK_SIZE then
@@ -136,6 +138,7 @@ function KeyEntry:writeLargeFile(data: any, metadata: { [string]: any }?): Promi
 	end
 
 	local shardId = HttpService:GenerateGUID(false)
+	-- TODO: Add a test case ensuring that splitUtf8String is called with the correct arguments
 	local shards = splitUtf8String(str, Constants.MAX_CHUNK_SIZE)
 
 	local promises = Array.map(shards, function(shard, index)
@@ -152,6 +155,7 @@ function KeyEntry:writeLargeFile(data: any, metadata: { [string]: any }?): Promi
 
 	return p
 end
+-- TODO: Update data: any to a more specific type
 KeyEntry.writeLargeFile = t.wrap(KeyEntry.writeLargeFile, t.tuple(t.any, t.any, t.optional(t.map(t.string, t.any))))
 
 function KeyEntry:readLargeFile(file: Types.File): Promise.TypedPromise<any>
