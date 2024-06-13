@@ -136,7 +136,7 @@ function KeyEntry:writeLargeFile(data: any, metadata: { [string]: any }?): Promi
 	end
 
 	local shardId = HttpService:GenerateGUID(false)
-	local shards = splitUtf8String(data, Constants.MAX_CHUNK_SIZE)
+	local shards = splitUtf8String(str, Constants.MAX_CHUNK_SIZE)
 
 	local promises = Array.map(shards, function(shard, index)
 		return self.ctx.dataStoreInterface:set(self.shardScope, `{shardId}-{index}`, shard, self.userIds, metadata)
