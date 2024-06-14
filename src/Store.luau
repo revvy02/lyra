@@ -362,7 +362,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			}
 
 			Log.trace(`Store {self._ctx.name}: Writing record for key {key} in transaction {txId}`)
-			return self._keyEntries[key]:writeRecord(txInfo)
+			return self._keyEntries[key]:updateRecord({ txInfo = txInfo })
 		end)
 
 		local commitPromise = Promise.all(promises)

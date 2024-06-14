@@ -25,6 +25,11 @@ local function isLargeFile(file: Types.File): boolean
 	return file.shard ~= nil
 end
 
+type UpdateRecordParams = {
+	txInfo: Types.TxInfo?,
+	releaseLock: boolean?,
+}
+
 type KeyEntryImpl<T> = {
 	__index: KeyEntryImpl<T>,
 
@@ -38,7 +43,7 @@ type KeyEntryImpl<T> = {
 	) -> Promise.TypedPromise<Types.File>,
 	readLargeFile: (self: KeyEntry<T>, file: Types.File) -> Promise.TypedPromise<any>,
 	readTx: (self: KeyEntry<T>, txInfo: Types.TxInfo) -> Promise.TypedPromise<any>,
-	writeRecord: (self: KeyEntry<T>, txInfo: Types.TxInfo, releaseLock: boolean?) -> Promise.TypedPromise<any>,
+	updateRecord: (self: KeyEntry<T>, params: UpdateRecordParams) -> Promise.TypedPromise<any>,
 
 	getLock: (self: KeyEntry<T>) -> Types.Lock,
 
@@ -80,6 +85,7 @@ type KeyEntryProps<T> = {
 	closed: boolean,
 	locked: boolean,
 	acquireLockPromise: Promise.Promise?,
+	refreshLock: boolean,
 
 	recordScope: string,
 	shardScope: string,
@@ -124,6 +130,7 @@ function KeyEntry.new<T>(config: KeyEntryConfig<T>): KeyEntry<T>
 		closed = false,
 		locked = false,
 		acquireLockPromise = nil,
+		refreshLock = false,
 
 		recordScope = `{Constants.RECORD_SCOPE}/{config.storeContext.name}`,
 		shardScope = `{Constants.SHARD_SCOPE}/{config.storeContext.name}`,
@@ -214,61 +221,102 @@ function KeyEntry:readTx(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 end
 KeyEntry.readTx = t.wrap(KeyEntry.readTx, t.tuple(t.any, Types.txInfoCheck))
 
-function KeyEntry:writeRecord(txInfo: Types.TxInfo, releaseLock: boolean?): Promise.TypedPromise<any>
-	Log.trace(`KeyEntry:writeRecord called for key {self.key} with releaseLock={releaseLock}`)
-	return self:writeLargeFile(txInfo):andThen(function(file)
-		Log.trace(`KeyEntry:writeRecord - Wrote large file for key {self.key}`)
-		local orphanedFiles = Array.push(self.orphanedFiles, self.currentFile :: any)
+-- This method is complex and does multiple things.
+-- It is responsible for writing the DataStoreRecord. It does different things
+-- depending on the parameters passed to it.
+--
+-- * If `params.releaseLock` is true, it releases the lock and verifies that it
+--   was released.
+--
+-- * If `params.txInfo` is provided, it will write it and handles it correctly
+--   in the case it's a large file.
+--
+-- * If `params.txInfo` is not provided, then:
+--   * If the key is not saved: It will write the latest data and handle the
+--     large file case correctly.
+--   * If the key is saved: It will attempt to reuse the current file if it's a
+--     large file, in order to avoid writing it again unnecessarily.
+function KeyEntry:updateRecord(params: UpdateRecordParams): Promise.TypedPromise<any>
+	Log.trace(`KeyEntry:updateRecord called for key {self.key}`)
+	local releaseLock = params.releaseLock
+	local txInfo = params.txInfo
 
-		local record = {
-			version = self.version,
-			lock = if releaseLock then {} else self:getLock(),
-			file = file,
-			orphanedFiles = orphanedFiles,
-		}
+	local function writeRecord(record: Types.DataStoreRecord)
 		local metadata = self.metadata
 
-		Log.debug(`KeyEntry:writeRecord - Updating record for key {self.key}`)
 		return self.ctx.dataStoreInterface
 			:update(self.recordScope, self.key, function(previousValue, keyInfo)
 				if previousValue.lock.id ~= self.ctx.lockId then
-					Log.warn(`KeyEntry:writeRecord - Lock violation detected for key {self.key}, aborting update`)
+					Log.warn(`KeyEntry:updateRecord - Lock violation detected for key {self.key}, aborting update`)
 					return nil :: any, keyInfo:GetUserIds(), keyInfo:GetMetadata()
 				end
 
-				Log.trace(`KeyEntry:writeRecord - Successfully validated lock for key {self.key}`)
+				Log.trace(`KeyEntry:updateRecord - Successfully validated lock for key {self.key}`)
 				return record, self.userIds, metadata
 			end)
 			:andThen(function(value)
 				if releaseLock and (value == nil or value.lock.id ~= nil) then
-					Log.error(`KeyEntry:writeRecord - Failed to release lock for key {self.key}`)
+					Log.error(`KeyEntry:updateRecord - Failed to release lock for key {self.key}`)
 					return Promise.reject("Failed to release lock")
 				elseif not releaseLock and (value == nil or value.lock.id ~= self.ctx.lockId) then
-					Log.error(`KeyEntry:writeRecord - Lock violation detected for key {self.key}`)
+					Log.error(`KeyEntry:updateRecord - Lock violation detected for key {self.key}`)
 					return Promise.reject("Lock violation")
 				end
 
-				Log.debug(`KeyEntry:writeRecord - Successfully updated record for key {self.key}`)
-				self.orphanedFiles = orphanedFiles
-				self.currentFile = if isLargeFile(file) then file else nil
-				if self.currentFile then
-					self.ctx.orphanedFileQueue:markFile(self.key, self.currentFile)
-				end
+				self.refreshLock = false
 
 				return value
 			end)
-			:catch(function(err)
-				Log.error(`KeyEntry:writeRecord - Failed to update record for key {self.key}: {err}`)
-				if isLargeFile(file) then
-					self.orphanedFiles = Array.push(self.orphanedFiles, file)
-					self.ctx.orphanedFileQueue:markFile(self.key, file)
-				end
+	end
 
-				return Promise.reject(err)
-			end)
-	end)
+	local needsUpdate = not self:isSaved()
+	if needsUpdate or txInfo ~= nil then
+		if txInfo == nil then
+			txInfo = { committedData = Dictionary.copyDeep(self.data) }
+		end
+
+		return self:writeLargeFile(txInfo):andThen(function(file)
+			local orphanedFiles = Array.push(self.orphanedFiles, self.currentFile :: any)
+
+			local record = {
+				version = self.version,
+				lock = if releaseLock then {} else self:getLock(),
+				file = file,
+				orphanedFiles = orphanedFiles,
+			}
+
+			return writeRecord(record)
+				:andThen(function(value)
+					Log.debug(`KeyEntry:updateRecord - Successfully updated record for key {self.key}`)
+					self.orphanedFiles = orphanedFiles
+					self.currentFile = if isLargeFile(file) then file else nil
+					if self.currentFile then
+						self.ctx.orphanedFileQueue:markFile(self.key, self.currentFile)
+					end
+
+					return value
+				end)
+				:catch(function(err)
+					Log.error(`KeyEntry:updateRecord - Failed to update record for key {self.key}: {err}`)
+					if isLargeFile(file) then
+						self.orphanedFiles = Array.push(self.orphanedFiles, file)
+						self.ctx.orphanedFileQueue:markFile(self.key, file)
+					end
+
+					return Promise.reject(err)
+				end)
+		end)
+	else
+		local file = if self.currentFile then self.currentFile else { data = self.data } :: any
+		return writeRecord({
+			version = self.version,
+			lock = if releaseLock then {} else self:getLock(),
+			file = file,
+			orphanedFiles = self.orphanedFiles,
+		})
+	end
 end
-KeyEntry.writeRecord = t.wrap(KeyEntry.writeRecord, t.tuple(t.any, Types.txInfoCheck, t.optional(t.boolean)))
+KeyEntry.updateRecord = t.wrap(KeyEntry.updateRecord, t.tuple(t.any, Types.txInfoCheck, t.optional(t.boolean)))
 
 function KeyEntry:getLock(): Types.Lock
 	Log.trace(`KeyEntry:getLock called for key {self.key}`)
@@ -305,7 +353,7 @@ KeyEntry.isSaved = t.wrap(KeyEntry.isSaved, t.tuple(t.any))
 
 function KeyEntry:mutateKey(newData: any): ()
 	Log.trace(`KeyEntry:mutateKey called for key {self.key}`)
-	local oldData = Dictionary.freezeDeep(self.data :: any)
+	local oldData = if self.data then Dictionary.freezeDeep(self.data :: any) else nil
 
 	local mutationId = HttpService:GenerateGUID(false)
 	self.unsavedMutations = Set.add(self.unsavedMutations, mutationId)
@@ -363,6 +411,7 @@ function KeyEntry:startAutosaving(): ()
 			end
 
 			Log.trace(`KeyEntry:startAutosaving - Autosaving key {self.key}`)
+			self.refreshLock = true
 			local ok, err = self:save():await()
 			if not ok then
 				Log.warn(`KeyEntry:startAutosaving - Failed to autosave key {self.key}: {err}`)
@@ -486,13 +535,8 @@ function KeyEntry:lock(): Promise.Promise
 			end
 
 			Log.debug(`KeyEntry:lock - Successfully loaded data for key {self.key}, version {self.version}`)
-			self.data = data
 			self.locked = true
-
-			local newData = Dictionary.freezeDeep(data)
-			for _, callback in self.ctx.changedCallbacks do
-				task.spawn(callback, self.key, newData, nil)
-			end
+			self:mutateKey(data)
 
 			self:startAutosaving()
 
@@ -514,11 +558,8 @@ function KeyEntry:unlock(): Promise.Promise
 		self.closed = true
 
 		return self.queue:add(function()
-			local data = Dictionary.copyDeep(self.data)
-			local txInfo = { committedData = data }
-
 			Log.trace(`KeyEntry:unlock - Writing final record for key {self.key}`)
-			return self:writeRecord(txInfo, true):andThen(function(latestValue)
+			return self:updateRecord({ releaseLock = true }):andThen(function(latestValue)
 				self.ctx.orphanedFileQueue:markFiles(self.key, latestValue.orphanedFiles)
 			end)
 		end)
@@ -581,7 +622,7 @@ KeyEntry.update = t.wrap(KeyEntry.update, t.tuple(t.any, t.callback))
 function KeyEntry:save(): Promise.Promise
 	Log.trace(`KeyEntry:save called for key {self.key}`)
 	return self:waitUntilLocked():andThen(function()
-		if self:isSaved() then
+		if self:isSaved() and not self.refreshLock then
 			Log.trace(`KeyEntry:save - Key {self.key} is already saved`)
 			return Promise.resolve()
 		end
@@ -589,23 +630,15 @@ function KeyEntry:save(): Promise.Promise
 
 		Log.trace(`KeyEntry:save - Queueing save operation for key {self.key}`)
 		return self.queue:add(function()
-			if self:isSnapshotCommitted(snapshot) then
-				Log.trace(`KeyEntry:save - Snapshot for key {self.key} is already committed`)
-				return
-			end
-
-			if self:isSaved() then
-				Log.trace(`KeyEntry:save - Key {self.key} is already saved`)
-				return
+			if self:isSnapshotCommitted(snapshot) and not self.refreshLock then
+				Log.trace(`KeyEntry:save - Key {self.key} is already committed, skipping save`)
+				return Promise.resolve()
 			end
 
 			snapshot = self:getSnapshot()
 
-			local data = Dictionary.copyDeep(self.data)
-			local txInfo = { committedData = data }
-
 			Log.trace(`KeyEntry:save - Writing record for key {self.key}`)
-			return self:writeRecord(txInfo):andThen(function()
+			return self:updateRecord({}):andThen(function()
 				Log.debug(`KeyEntry:save - Successfully wrote record for key {self.key}, committing snapshot`)
 				self:commitSnapshot(snapshot)
 			end)
