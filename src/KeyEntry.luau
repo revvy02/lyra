@@ -29,6 +29,10 @@ type UpdateRecordParams = {
 	txInfo: Types.TxInfo?,
 	releaseLock: boolean?,
 }
+local updateRecordParamsCheck = t.strictInterface({
+	txInfo = t.optional(Types.txInfoCheck),
+	releaseLock = t.boolean,
+})
 
 type KeyEntryImpl<T> = {
 	__index: KeyEntryImpl<T>,
@@ -316,7 +320,7 @@ function KeyEntry:updateRecord(params: UpdateRecordParams): Promise.TypedPromise
 		})
 	end
 end
-KeyEntry.updateRecord = t.wrap(KeyEntry.updateRecord, t.tuple(t.any, Types.txInfoCheck, t.optional(t.boolean)))
+KeyEntry.updateRecord = t.wrap(KeyEntry.updateRecord, t.tuple(t.any, updateRecordParamsCheck))
 
 function KeyEntry:getLock(): Types.Lock
 	Log.trace(`KeyEntry:getLock called for key {self.key}`)
