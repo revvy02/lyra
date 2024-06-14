@@ -46,7 +46,7 @@ type StoreImpl<T> = {
 
 	_processOrphanedFile: (self: Store<T>, item: Types.OrphanedFileQueueItem) -> boolean,
 
-	lock: (self: Store<T>, key: string) -> Promise.Promise,
+	lock: (self: Store<T>, key: string, userIds: { number }?) -> Promise.Promise,
 	unlock: (self: Store<T>, key: string) -> Promise.Promise,
 	get: (self: Store<T>, key: string) -> Promise.TypedPromise<T>,
 	update: (self: Store<T>, key: string, transformFunction: (data: T) -> T?) -> Promise.Promise,
