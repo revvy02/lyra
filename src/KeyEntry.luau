@@ -462,15 +462,15 @@ function KeyEntry:lock(): Promise.Promise
 			Log.trace(
 				`KeyEntry:lock - Attempting to acquire lock for key {self.key}, attempt {i}/{Constants.LOCK_ACQUIRE_ATTEMPTS}`
 			)
-			local record, keyInfo =
-				self.ctx.dataStoreInterface:update(self.recordScope, self.key, transformFunction):expect()
+			local resolved, record, keyInfo =
+				self.ctx.dataStoreInterface:update(self.recordScope, self.key, transformFunction):await()
 
-			if record ~= nil and record.lock.id == self.ctx.lockId then
+			if resolved and record ~= nil and record.lock.id == self.ctx.lockId then
 				Log.debug(`KeyEntry:lock - Successfully acquired lock for key {self.key}`)
 				return record, keyInfo
 			end
 
-			Log.trace(`KeyEntry:lock - Failed to acquire lock for key {self.key}, retrying...`)
+			Log.trace(`KeyEntry:lock - Failed to acquire lock for key {self.key}, retrying soon. Error: {record}`)
 			if i ~= Constants.LOCK_ACQUIRE_ATTEMPTS then
 				task.wait(getBackoffTime(Constants.LOCK_DURATION_SECONDS + 5, Constants.LOCK_ACQUIRE_ATTEMPTS - 1, i))
 			end
