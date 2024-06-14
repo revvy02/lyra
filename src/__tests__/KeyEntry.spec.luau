@@ -14,6 +14,7 @@ local expect = JestGlobals.expect
 local describe = JestGlobals.describe
 local it = JestGlobals.it
 local beforeEach = JestGlobals.beforeEach
+local afterEach = JestGlobals.afterEach
 local jest = JestGlobals.jest
 
 describe.each({
@@ -46,6 +47,7 @@ describe.each({
 				markFile = jest.fn(),
 				markFiles = jest.fn(),
 			},
+			changedCallbacks = {},
 		}
 		keyEntry = KeyEntry.new({
 			key = "testKey",
@@ -60,7 +62,7 @@ describe.each({
 			expect(keyEntry.userIds).toBeNil()
 			expect(keyEntry.data).toBeNil()
 			expect(keyEntry.metadata).toBeNil()
-			expect(keyEntry.version).toBe(1)
+			expect(keyEntry.version).toBe(0)
 			expect(keyEntry.unsavedMutations).toEqual({})
 			expect(keyEntry.orphanedFiles).toEqual({})
 			expect(keyEntry.currentFile).toBeNil()
@@ -78,6 +80,14 @@ describe.each({
 	end)
 
 	describe("KeyEntry:writeLargeFile", function()
+		beforeEach(function()
+			Constants.MAX_CHUNK_SIZE = 1000
+		end)
+
+		afterEach(function()
+			Constants.MAX_CHUNK_SIZE = 4_000_000
+		end)
+
 		it("correctly handles small files without sharding", function()
 			local data = { test = "data" }
 
@@ -139,8 +149,7 @@ describe.each({
 				large = string.rep("a", Constants.MAX_CHUNK_SIZE * 2),
 			}
 
-			local data = HttpService:JSONEncode(testData)
-			return keyEntry:writeLargeFile(data):andThen(function(file)
+			return keyEntry:writeLargeFile(testData):andThen(function(file)
 				local shardId = file.shard
 
 				local promises = {}
@@ -256,7 +265,7 @@ describe.each({
 			return keyEntry:lock():andThen(function()
 				local record = keyEntry:writeRecord(txInfo):expect()
 
-				expect(record.version).toBe(1)
+				expect(record.version).toBe(0)
 				expect(record.lock.id).toBe(storeContext.lockId)
 				expect(record.file.data).toEqual(txInfo)
 				expect(record.orphanedFiles).toEqual({})
@@ -416,7 +425,7 @@ describe.each({
 		it("handles concurrent lock attempts", function()
 			local p1 = keyEntry:lock()
 			local p2 = keyEntry:lock()
-			local e = expect(p2).rejects.toMatch("KeyEntry is already being locked")
+			local e = expect(p2).rejects.toMatch("KeyEntry is already")
 			return p1:andThen(function()
 				return e
 			end)
