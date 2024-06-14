@@ -316,13 +316,6 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 		end
 		nextState = Dictionary.copyDeep(result)
 
-		if Dictionary.equalsDeep(nextState, currentState) then
-			Log.trace(
-				`Store {self._ctx.name}: Transaction for keys {table.concat(keys, ", ")} resulted in no changes, skipping update`
-			)
-			return
-		end
-
 		for _, key in keys do
 			local schemaOk, err = self._ctx.schema(nextState[key] :: any)
 			if not schemaOk then
