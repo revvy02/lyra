@@ -306,6 +306,8 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			error(`Store:tx transformFunction failed: {result}`)
 		end
 
+		assert(typeof(result) == "table", "Transaction transform function must return a table")
+
 		if result == nil then
 			Log.trace(
 				`Store {self._ctx.name}: Transaction transform function for keys {table.concat(keys, ", ")} returned nil, skipping update`

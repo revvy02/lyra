@@ -556,17 +556,18 @@ function KeyEntry:update<T>(transformFunction: (data: T) -> T?): Promise.Promise
 			Log.trace(`KeyEntry:update - Skipping update for key {self.key}, transform function returned nil`)
 			return nil :: any
 		end
+
+		local schemaOk, err = self.ctx.schema(result :: any)
+		if not schemaOk then
+			Log.error(`KeyEntry:update - Schema validation failed for key {self.key}: {err}`)
+			return Promise.reject(`Store:update schema validation failed: {err}`)
+		end
+
 		nextData = Dictionary.copyDeep(result)
 
 		if Dictionary.equalsDeep(nextData :: any, currentData :: any) then
 			Log.trace(`KeyEntry:update - Skipping update for key {self.key}, data is unchanged`)
 			return nil :: any
-		end
-
-		local schemaOk, err = self.ctx.schema(nextData :: any)
-		if not schemaOk then
-			Log.error(`KeyEntry:update - Schema validation failed for key {self.key}: {err}`)
-			return Promise.reject(`Store:update schema validation failed: {err}`)
 		end
 
 		Log.trace(`KeyEntry:update - Applying update for key {self.key}`)
