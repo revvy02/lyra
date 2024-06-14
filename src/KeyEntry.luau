@@ -31,7 +31,7 @@ type UpdateRecordParams = {
 }
 local updateRecordParamsCheck = t.strictInterface({
 	txInfo = t.optional(Types.txInfoCheck),
-	releaseLock = t.boolean,
+	releaseLock = t.optional(t.boolean),
 })
 
 type KeyEntryImpl<T> = {
