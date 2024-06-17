@@ -26,7 +26,14 @@ for _, level in levels do
 		if table.find(levels, level) > table.find(levels, Log.level) then
 			return
 		end
-		print(`[Lyra] [{level}] {message}`)
+		local formatted = `[Lyra] [{level}] {message}`
+		if level == "fatal" or level == "error" then
+			task.spawn(error, formatted)
+		elseif level == "warn" then
+			warn(formatted)
+		else
+			print(formatted)
+		end
 	end
 end
 
