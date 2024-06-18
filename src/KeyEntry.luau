@@ -311,7 +311,7 @@ function KeyEntry:updateRecord(params: UpdateRecordParams): Promise.TypedPromise
 				end)
 		end)
 	else
-		local file = if self.currentFile then self.currentFile else { data = self.data } :: any
+		local file = if self.currentFile then self.currentFile else { data = { committedData = self.data } } :: any
 		return writeRecord({
 			version = self.version,
 			lock = if releaseLock then {} else self:getLock(),
