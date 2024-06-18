@@ -254,8 +254,7 @@ describe.each({
 		end)
 	end)
 
-	-- TODO: Update these to use updateRecord.
-	describe.skip("KeyEntry:writeRecord", function()
+	describe("KeyEntry:updateRecord", function()
 		it("correctly writes a record with transaction info", function()
 			local txInfo = {
 				txId = "tx123",
@@ -264,7 +263,7 @@ describe.each({
 			} :: Types.TxInfo
 
 			return keyEntry:lock():andThen(function()
-				local record = keyEntry:writeRecord(txInfo):expect()
+				local record = keyEntry:updateRecord({ txInfo = txInfo }):expect()
 
 				expect(record.version).toBe(0)
 				expect(record.lock.id).toBe(storeContext.lockId)
@@ -281,8 +280,8 @@ describe.each({
 			} :: Types.TxInfo
 
 			return keyEntry:lock():andThen(function()
-				local record1 = keyEntry:writeRecord(txInfo, false):expect()
-				local record2 = keyEntry:writeRecord(txInfo, true):expect()
+				local record1 = keyEntry:updateRecord({ txInfo = txInfo, releaseLock = false }):expect()
+				local record2 = keyEntry:updateRecord({ txInfo = txInfo, releaseLock = true }):expect()
 
 				expect(record1.lock.id).never.toBeNil()
 				expect(record2.lock.id).toBeNil()
@@ -304,7 +303,7 @@ describe.each({
 					},
 				})
 				:andThen(function()
-					return expect(keyEntry:writeRecord(txInfo)).rejects.toMatch("Lock violation")
+					return expect(keyEntry:updateRecord({ txInfo = txInfo })).rejects.toMatch("Lock violation")
 				end)
 		end)
 
@@ -320,7 +319,7 @@ describe.each({
 			keyEntry.currentFile = toBeOrphaned
 
 			return keyEntry:lock():andThen(function()
-				keyEntry:writeRecord(txInfo):expect()
+				keyEntry:updateRecord({ txInfo = txInfo }):expect()
 				expect(#keyEntry.orphanedFiles).toBe(1)
 				expect(keyEntry.orphanedFiles[1]).toBe(toBeOrphaned)
 			end)
@@ -337,7 +336,7 @@ describe.each({
 				return Promise.reject("Record write error")
 			end
 
-			return keyEntry:writeRecord(txInfo):catch(function(err)
+			return keyEntry:updateRecord({ txInfo = txInfo }):catch(function(err)
 				expect(err).toBe("Record write error")
 			end)
 		end)
@@ -351,9 +350,32 @@ describe.each({
 			keyEntry.metadata = { old = "metadata" }
 
 			return keyEntry:lock():andThen(function()
-				local record = keyEntry:writeRecord(txInfo):expect()
+				local record = keyEntry:updateRecord({ txInfo = txInfo }):expect()
 				expect(record.file.data).toEqual(txInfo)
 				expect(record.orphanedFiles).toEqual({ keyEntry.currentFile })
+			end)
+		end)
+
+		it("correctly writes a record with empty table and no currentFile", function()
+			return keyEntry:lock():andThen(function()
+				keyEntry:save():expect()
+				keyEntry:updateRecord({}):expect()
+				local record = dataStoreInterface:get(keyEntry.recordScope, "testKey"):expect()
+				expect(record).toMatchObject(expect.objectContaining({
+					version = 0,
+					lock = {
+						id = storeContext.lockId,
+						expiry = expect.any("number"),
+					},
+					file = {
+						data = {
+							txId = nil,
+							committedData = expect.any("table"),
+							txData = nil,
+						},
+					},
+					orphanedFiles = {},
+				}))
 			end)
 		end)
 	end)
@@ -638,9 +660,12 @@ describe.each({
 		end)
 
 		it("skips save if no unsaved mutations exist", function()
-			local updateMock, fn = jest.fn()
+			local updateMock, fn = jest.fn(function()
+				return Promise.resolve()
+			end)
 
 			return keyEntry:lock():andThen(function()
+				keyEntry:save():expect()
 				dataStoreInterface.update = fn
 				keyEntry:save():expect()
 				expect(updateMock).toHaveBeenCalledTimes(0)
