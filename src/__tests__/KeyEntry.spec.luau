@@ -461,7 +461,7 @@ describe.each({
 				keyEntry
 					:update(function(data)
 						data.foo = "bar"
-						return data
+						return true
 					end)
 					:expect()
 
@@ -475,7 +475,7 @@ describe.each({
 				keyEntry
 					:update(function(data)
 						data.foo = "bar"
-						return data
+						return true
 					end)
 					:expect()
 
@@ -540,7 +540,7 @@ describe.each({
 				}
 				local transformFunction = function(data)
 					data.count = data.count + 5
-					return data
+					return true
 				end
 
 				keyEntry:update(transformFunction):expect()
@@ -561,9 +561,9 @@ describe.each({
 			end)
 		end)
 
-		it("handles cases where transform function returns nil", function()
+		it("handles cases where transform function returns false", function()
 			local mock, fn = jest.fn(function()
-				return nil
+				return false
 			end)
 
 			return keyEntry:lock():andThen(function()
@@ -573,7 +573,6 @@ describe.each({
 				keyEntry:update(fn):expect()
 
 				expect(mock).toHaveBeenCalledTimes(1)
-				expect(keyEntry:getSnapshot()).toEqual({})
 				expect(keyEntry.data.count).toBe(10)
 			end)
 		end)
@@ -586,16 +585,16 @@ describe.each({
 			return keyEntry:lock():andThen(function()
 				local invalidUpdate = keyEntry
 					:update(function(data)
-						data = 123 -- Invalid update according to schema
-						return data
+						data.value = nil
+						return true
 					end)
 					:andThen(function()
 						error("Invalid update should not be allowed")
 					end)
 
 				local validUpdate = keyEntry:update(function(data)
-					data = { value = "valid" }
-					return data
+					data.value = "valid"
+					return true
 				end)
 
 				local e = expect(invalidUpdate).rejects.toMatch("schema validation failed")
@@ -604,8 +603,8 @@ describe.each({
 		end)
 
 		it("skips update if data is unchanged after applying transform function", function()
-			local mock, transformFn = jest.fn(function(data)
-				return data
+			local mock, transformFn = jest.fn(function()
+				return true
 			end)
 
 			return keyEntry:lock():andThen(function()
@@ -625,14 +624,14 @@ describe.each({
 				keyEntry.data = { count = 0 }
 				keyEntry
 					:update(function(data)
-						data.count = data.count + 1
-						return data
+						data.count += 1
+						return true
 					end)
 					:expect()
 				keyEntry
 					:update(function(data)
-						data.count = data.count + 5
-						return data
+						data.count += 5
+						return true
 					end)
 					:expect()
 
