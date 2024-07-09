@@ -384,7 +384,6 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			:catch(function(err)
 				Log.error(`Store {self._ctx.name}: Transaction {txId} failed: {err}`)
 				self._ctx.dataStoreInterface:set(Constants.TX_SCOPE, txId, false):catch(function(_abortErr)
-					-- TODO: log this
 					Log.fatal(`Store {self._ctx.name}: Failed to mark transaction {txId} as aborted: {_abortErr}`)
 				end)
 
