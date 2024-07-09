@@ -29,10 +29,11 @@ type PlayerStoreProps<T> = {
 type PlayerStore<T> = typeof(setmetatable({} :: PlayerStoreProps<T>, {} :: PlayerStoreImpl<T>))
 
 local function assertUserId(userId: number): string
-	local userIdKey = tostring(userId)
+	assert(typeof(userId) == "number", "userId must be a number")
 
-	assert(userIdKey ~= nil, "userId must be a number")
-	assert(string.match(userIdKey, "^%d+$"), "userId must be an integer")
+	local userIdKey = tostring(userId)
+	assert(userIdKey ~= nil, "userId must be a valid number")
+	assert(string.match(userIdKey, "^%-?%d+$"), "userId must be an integer")
 
 	return userIdKey
 end
