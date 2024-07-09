@@ -50,11 +50,11 @@ type StoreImpl<T> = {
 	lock: (self: Store<T>, key: string, userIds: { number }?) -> Promise.Promise,
 	unlock: (self: Store<T>, key: string) -> Promise.Promise,
 	get: (self: Store<T>, key: string) -> Promise.TypedPromise<T>,
-	update: (self: Store<T>, key: string, transformFunction: (data: T) -> T?) -> Promise.Promise,
+	update: (self: Store<T>, key: string, transformFunction: (data: T) -> boolean) -> Promise.Promise,
 	tx: (
 		self: Store<T>,
 		keys: { string },
-		transformFunction: (state: { [string]: T }) -> { [string]: T }?
+		transformFunction: (state: { [string]: T }) -> boolean
 	) -> Promise.Promise,
 	save: (self: Store<T>, key: string) -> Promise.Promise,
 	close: (self: Store<T>) -> Promise.Promise,
@@ -235,7 +235,7 @@ function Store:get<T>(key: string): Promise.TypedPromise<T>
 end
 Store.get = t.wrap(Store.get, t.tuple(t.any, t.string))
 
-function Store:update<T>(key: string, transformFunction: (data: T) -> T?): Promise.Promise
+function Store:update<T>(key: string, transformFunction: (data: T) -> boolean): Promise.Promise
 	Log.trace(`Store {self._ctx.name}: Updating data for key {key}`)
 	if self._closed then
 		Log.warn(`Store {self._ctx.name}: Attempted to update data for key {key} while store is closed`)
@@ -245,7 +245,7 @@ function Store:update<T>(key: string, transformFunction: (data: T) -> T?): Promi
 end
 Store.update = t.wrap(Store.update, t.tuple(t.any, t.string, t.callback))
 
-function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T }) -> { [string]: T }?): Promise.Promise
+function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T }) -> boolean): Promise.Promise
 	Log.trace(`Store {self._ctx.name}: Beginning transaction for keys {table.concat(keys, ", ")}`)
 	if self._closed then
 		Log.warn(
@@ -306,15 +306,19 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			error(`Store:tx transformFunction failed: {result}`)
 		end
 
-		assert(typeof(result) == "table", "Transaction transform function must return a table")
+		assert(typeof(result) == "boolean", "Transaction transform function must return a boolean")
 
-		if result == nil then
+		if result == false then
 			Log.trace(
-				`Store {self._ctx.name}: Transaction transform function for keys {table.concat(keys, ", ")} returned nil, skipping update`
+				`Store {self._ctx.name}: Transaction transform function for keys {table.concat(keys, ", ")} returned false, skipping update`
 			)
 			return
 		end
-		nextState = Dictionary.copyDeep(result)
+
+		-- We deep copy here to prevent references to internal state from being
+		-- leaked. If we didn't, the transform function could modify the state
+		-- after it runs, which shouldn't be allowed.
+		nextState = Dictionary.copyDeep(nextState)
 
 		for _, key in keys do
 			local schemaOk, err = self._ctx.schema(nextState[key] :: any)

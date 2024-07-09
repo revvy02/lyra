@@ -12,11 +12,11 @@ type PlayerStoreImpl<T> = {
 	get: (self: PlayerStore<T>, userId: number) -> Promise.TypedPromise<T>,
 	lock: (self: PlayerStore<T>, userId: number) -> Promise.Promise,
 	unlock: (self: PlayerStore<T>, userId: number) -> Promise.Promise,
-	update: (self: PlayerStore<T>, userId: number, transformFunction: (data: T) -> T?) -> Promise.Promise,
+	update: (self: PlayerStore<T>, userId: number, transformFunction: (data: T) -> boolean) -> Promise.Promise,
 	tx: (
 		self: PlayerStore<T>,
 		userIds: { number },
-		transformFunction: (state: { [number]: T }) -> { [number]: T }?
+		transformFunction: (state: { [number]: T }) -> boolean
 	) -> Promise.Promise,
 	save: (self: PlayerStore<T>, userId: number) -> Promise.Promise,
 	close: (self: PlayerStore<T>) -> Promise.Promise,
@@ -61,24 +61,32 @@ function PlayerStore:unlock(userId: number)
 	return self._store:unlock(userIdKey)
 end
 
-function PlayerStore:update<T>(userId: number, transformFunction: (data: T) -> T?)
+function PlayerStore:update<T>(userId: number, transformFunction: (data: T) -> boolean)
 	local userIdKey = assertUserId(userId)
 	return self._store:update(userIdKey, transformFunction)
 end
 
-function PlayerStore:tx<T>(userIds: { number }, transformFunction: (state: { [number]: T }) -> { [number]: T }?)
+function PlayerStore:tx<T>(userIds: { number }, transformFunction: (state: { [number]: T }) -> boolean)
 	local userIdKeys = Sift.Array.map(userIds, assertUserId)
 
 	local function wrapped(state)
 		local userIdState: { [number]: any } = mapKeys(state, tonumber) :: any
 
-		local newUserIdState = transformFunction(userIdState)
-		if newUserIdState == nil then
-			return nil :: any
+		local success = transformFunction(userIdState)
+		if success == false then
+			return false
 		end
 
-		local newState = mapKeys(newUserIdState, assertUserId)
-		return newState
+		for key in state do
+			state[key] = nil
+		end
+
+		for userIdKey, value in userIdState do
+			local stringKey = assertUserId(userIdKey)
+			state[stringKey] = value
+		end
+
+		return success
 	end
 
 	return self._store:tx(userIdKeys, wrapped)

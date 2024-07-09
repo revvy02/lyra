@@ -65,7 +65,7 @@ type KeyEntryImpl<T> = {
 	lock: (self: KeyEntry<T>) -> Promise.Promise,
 	unlock: (self: KeyEntry<T>) -> Promise.Promise,
 	get: (self: KeyEntry<T>) -> Promise.TypedPromise<T>,
-	update: (self: KeyEntry<T>, transformFunction: (data: T) -> T?) -> Promise.Promise,
+	update: (self: KeyEntry<T>, transformFunction: (data: T) -> boolean) -> Promise.Promise,
 	save: (self: KeyEntry<T>) -> Promise.Promise,
 }
 
@@ -597,18 +597,23 @@ function KeyEntry:update<T>(transformFunction: (data: T) -> T?): Promise.Promise
 			return Promise.reject(`Store:update transformFunction failed: {result}`)
 		end
 
-		if result == nil then
-			Log.trace(`KeyEntry:update - Skipping update for key {self.key}, transform function returned nil`)
+		assert(typeof(result) == "boolean", "Transform function must return a boolean")
+
+		if result == false then
+			Log.trace(`KeyEntry:update - Skipping update for key {self.key}, transform function returned false`)
 			return nil :: any
 		end
 
-		local schemaOk, err = self.ctx.schema(result :: any)
+		-- We deep copy here to prevent references to internal state from being
+		-- leaked. If we didn't, the transform function could modify the state
+		-- after it runs, which shouldn't be allowed.
+		nextData = Dictionary.copyDeep(nextData)
+
+		local schemaOk, err = self.ctx.schema(nextData :: any)
 		if not schemaOk then
 			Log.error(`KeyEntry:update - Schema validation failed for key {self.key}: {err}`)
 			return Promise.reject(`Store:update schema validation failed: {err}`)
 		end
-
-		nextData = Dictionary.copyDeep(result)
 
 		if Dictionary.equalsDeep(nextData :: any, currentData :: any) then
 			Log.trace(`KeyEntry:update - Skipping update for key {self.key}, data is unchanged`)
