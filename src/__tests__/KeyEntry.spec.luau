@@ -85,7 +85,7 @@ describe.each({
 		end)
 
 		afterEach(function()
-			Constants.MAX_CHUNK_SIZE = 4_000_000
+			Constants.MAX_CHUNK_SIZE = 4_000_000 - 10_000
 		end)
 
 		it("correctly handles small files without sharding", function()
