@@ -62,6 +62,12 @@ export type StoreContext<T> = {
 	orphanedFileQueue: OrphanedFileQueue,
 	latestVersion: number,
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () },
+	log: (level: "fatal" | "error" | "warn" | "info" | "debug" | "trace", message: string) -> (),
+}
+
+export type LogMessage = {
+	message: string,
+	level: "fatal" | "error" | "warn" | "info" | "debug" | "trace",
 }
 
 local txInfoCheck = t.some(
