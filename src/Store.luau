@@ -31,6 +31,7 @@ export type StoreConfig<T> = {
 	useMock: boolean?,
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () }?,
 	logCallback: ((logMessage: Types.LogMessage) -> ())?,
+	stopOutput: boolean?,
 }
 local storeConfigCheck = t.strictInterface({
 	name = t.string,
@@ -42,6 +43,7 @@ local storeConfigCheck = t.strictInterface({
 	useMock = t.optional(t.boolean),
 	changedCallbacks = t.optional(t.array(t.callback)),
 	logCallback = t.optional(t.callback),
+	stopOutput = t.optional(t.boolean),
 })
 
 type StoreImpl<T> = {
@@ -77,7 +79,9 @@ Store.__index = Store
 
 local function createStore<T>(config: StoreConfig<T>): Store<T>
 	local function log(level: "fatal" | "error" | "warn" | "info" | "debug" | "trace", message: string)
-		Log[level](message)
+		if not config.stopOutput then
+			Log[level](message)
+		end
 
 		if config.logCallback ~= nil then
 			config.logCallback({
