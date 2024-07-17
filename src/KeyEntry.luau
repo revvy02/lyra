@@ -413,13 +413,13 @@ function KeyEntry:waitUntilLocked(): Promise.Promise
 end
 
 function KeyEntry:startAutosaving(): ()
-	self.ctx.log("info", `KeyEntry:startAutosaving - Starting autosave for key {self.key}`)
+	self.ctx.log("trace", `KeyEntry:startAutosaving - Starting autosave for key {self.key}`)
 	task.spawn(function()
 		while true do
 			task.wait(Constants.AUTOSAVE_INTERVAL_SECONDS)
 			if self.closed then
 				self.ctx.log(
-					"info",
+					"trace",
 					`KeyEntry:startAutosaving - Autosave loop for key {self.key} exiting, KeyEntry is closed`
 				)
 				break
