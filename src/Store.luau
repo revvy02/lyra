@@ -2,11 +2,13 @@
 
 local DataStoreService = game:GetService("DataStoreService")
 local HttpService = game:GetService("HttpService")
+local MemoryStoreService = game:GetService("MemoryStoreService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Constants = require(script.Parent.Constants)
 local DataStoreInterface = require(script.Parent.DataStoreInterface)
+local HashMapInterface = require(script.Parent.HashMapInterface)
 local KeyEntry = require(script.Parent.KeyEntry)
 local Log = require(script.Parent.Log)
 local MockDataStoreService = require(script.Parent.MockDataStoreService)
@@ -51,8 +53,8 @@ type StoreImpl<T> = {
 
 	_processOrphanedFile: (self: Store<T>, item: Types.OrphanedFileQueueItem) -> boolean,
 
-	lock: (self: Store<T>, key: string, userIds: { number }?) -> Promise.Promise,
-	unlock: (self: Store<T>, key: string) -> Promise.Promise,
+	load: (self: Store<T>, key: string, userIds: { number }?) -> Promise.Promise,
+	unload: (self: Store<T>, key: string) -> Promise.Promise,
 	get: (self: Store<T>, key: string) -> Promise.TypedPromise<T>,
 	update: (self: Store<T>, key: string, transformFunction: (data: T) -> boolean) -> Promise.Promise,
 	tx: (
@@ -69,7 +71,7 @@ type StoreProps<T> = {
 	_closed: boolean,
 	_keyEntries: { [string]: KeyEntry.KeyEntry<T> },
 	_lastTxId: string?,
-	_unlockPromises: { [string]: Promise.Promise },
+	_unloadPromises: { [string]: Promise.Promise },
 }
 
 export type Store<T> = typeof(setmetatable({} :: StoreProps<T>, {} :: StoreImpl<T>))
@@ -108,6 +110,8 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 	end
 	assert(dataStoreInterface, "luau")
 
+	local hashMapInterface = HashMapInterface.new(MemoryStoreService)
+
 	local orphanedFileQueue = OrphanedFileQueue.new()
 
 	local migrations = config.migrations or {}
@@ -120,6 +124,7 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		migrations = migrations,
 		migrateFromOtherSystem = config.migrateFromOtherSystem,
 		dataStoreInterface = dataStoreInterface,
+		hashMapInterface = hashMapInterface,
 		lockId = HttpService:GenerateGUID(false),
 		orphanedFileQueue = orphanedFileQueue,
 		latestVersion = #migrations,
@@ -137,7 +142,7 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		_closed = false,
 		_keyEntries = {},
 		_lastTxId = nil,
-		_unlockPromises = {},
+		_unloadPromises = {},
 	}, Store)
 
 	orphanedFileQueue.processQueueItem = function(item)
@@ -206,47 +211,47 @@ function Store:_processOrphanedFile(item: Types.OrphanedFileQueueItem): boolean
 	return true
 end
 
-function Store:lock(key: string, userIds: { number }?): Promise.Promise
-	self._ctx.log("trace", `Store {self._ctx.name}: Attempting to lock key {key}`)
+function Store:load(key: string, userIds: { number }?): Promise.Promise
+	self._ctx.log("trace", `Store {self._ctx.name}: Attempting to load key {key}`)
 	if self._closed then
-		self._ctx.log("warn", `Store {self._ctx.name}: Attempted to lock key {key} while store is closed`)
+		self._ctx.log("warn", `Store {self._ctx.name}: Attempted to load key {key} while store is closed`)
 		return Promise.reject("Store is closed")
 	end
 
-	return (self._unlockPromises[key] :: any or Promise.resolve()):finally(function()
+	return (self._unloadPromises[key] :: any or Promise.resolve()):finally(function()
 		local keyEntry = KeyEntry.new({
 			key = key,
 			storeContext = self._ctx,
 			userIds = userIds,
 		})
 		self._keyEntries[key] = keyEntry
-		self._ctx.log("trace", `Store {self._ctx.name}: Locking key {key}`)
-		return keyEntry:lock()
+		self._ctx.log("trace", `Store {self._ctx.name}: Loading key {key}`)
+		return keyEntry:load()
 	end)
 end
-Store.lock = t.wrap(Store.lock, t.tuple(t.any, t.string, t.optional(t.array(t.number))))
+Store.load = t.wrap(Store.load, t.tuple(t.any, t.string, t.optional(t.array(t.number))))
 
-function Store:unlock(key: string): Promise.Promise
-	self._ctx.log("trace", `Store {self._ctx.name}: Attempting to unlock key {key}`)
+function Store:unload(key: string): Promise.Promise
+	self._ctx.log("trace", `Store {self._ctx.name}: Attempting to unload key {key}`)
 	if self._closed then
-		self._ctx.log("warn", `Store {self._ctx.name}: Attempted to unlock key {key} while store is closed`)
+		self._ctx.log("warn", `Store {self._ctx.name}: Attempted to unload key {key} while store is closed`)
 		return Promise.reject("Store is closed")
 	end
-	if self._unlockPromises[key] then
-		self._ctx.log("trace", `Store {self._ctx.name}: Unlock for key {key} is already in progress`)
-		return Promise.reject("Unlock already in progress")
+	if self._unloadPromises[key] then
+		self._ctx.log("trace", `Store {self._ctx.name}: Unload for key {key} is already in progress`)
+		return Promise.reject("Unload already in progress")
 	end
 
-	self._ctx.log("trace", `Store {self._ctx.name}: Unlocking key {key}`)
-	self._unlockPromises[key] = self._keyEntries[key]:unlock():tap(function()
+	self._ctx.log("trace", `Store {self._ctx.name}: Unloading key {key}`)
+	self._unloadPromises[key] = self._keyEntries[key]:unload():tap(function()
 		self._keyEntries[key] = nil
-		self._unlockPromises[key] = nil
-		self._ctx.log("trace", `Store {self._ctx.name}: Key {key} unlocked successfully`)
+		self._unloadPromises[key] = nil
+		self._ctx.log("trace", `Store {self._ctx.name}: Key {key} unloaded successfully`)
 	end)
 
-	return self._unlockPromises[key]
+	return self._unloadPromises[key]
 end
-Store.unlock = t.wrap(Store.unlock, t.tuple(t.any, t.string))
+Store.unload = t.wrap(Store.unload, t.tuple(t.any, t.string))
 
 function Store:get<T>(key: string): Promise.TypedPromise<T>
 	self._ctx.log("trace", `Store {self._ctx.name}: Getting data for key {key}`)
@@ -284,15 +289,15 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 	end)
 
 	local isClosed = false
-	local isLocked = true
+	local isLoaded = true
 	local queues = Array.map(keys, function(key)
 		local keyEntry = self._keyEntries[key]
 
 		if keyEntry.closed then
 			isClosed = true
 		end
-		if not keyEntry.locked then
-			isLocked = false
+		if not keyEntry.loaded then
+			isLoaded = false
 		end
 
 		return keyEntry.queue
@@ -306,12 +311,12 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 		return Promise.reject("One or more KeyEntries are closed")
 	end
 
-	if not isLocked then
+	if not isLoaded then
 		self._ctx.log(
 			"error",
-			`Store {self._ctx.name}: Cannot start transaction for keys {table.concat(keys, ", ")}: one or more KeyEntries are not locked`
+			`Store {self._ctx.name}: Cannot start transaction for keys {table.concat(keys, ", ")}: one or more KeyEntries are not loaded`
 		)
-		return Promise.reject("One or more KeyEntries are not locked")
+		return Promise.reject("One or more KeyEntries are not loaded")
 	end
 
 	self._ctx.log("trace", `Store {self._ctx.name}: Acquiring transaction lock for keys {table.concat(keys, ", ")}`)
@@ -399,7 +404,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			}
 
 			self._ctx.log("trace", `Store {self._ctx.name}: Writing record for key {key} in transaction {txId}`)
-			return self._keyEntries[key]:updateRecord({ txInfo = txInfo })
+			return self._keyEntries[key]:writeRecord(txInfo)
 		end)
 
 		local commitPromise = Promise.all(promises)
@@ -457,15 +462,15 @@ function Store:close(): Promise.Promise
 	self._ctx.log("info", `Store {self._ctx.name}: Closing store`)
 	local promises = {}
 	for key in self._keyEntries do
-		if self._unlockPromises[key] then
+		if self._unloadPromises[key] then
 			self._ctx.log(
 				"trace",
-				`Store {self._ctx.name}: Key {key} is currently being unlocked, adding unlock promise to closing sequence`
+				`Store {self._ctx.name}: Key {key} is currently being unloaded, adding unload promise to closing sequence`
 			)
-			table.insert(promises, self._unlockPromises[key])
+			table.insert(promises, self._unloadPromises[key])
 		else
-			self._ctx.log("trace", `Store {self._ctx.name}: Key {key} is locked, unlocking as part of closing sequence`)
-			table.insert(promises, self:unlock(key))
+			self._ctx.log("trace", `Store {self._ctx.name}: Key {key} is loaded, unloading as part of closing sequence`)
+			table.insert(promises, self:unload(key))
 		end
 	end
 

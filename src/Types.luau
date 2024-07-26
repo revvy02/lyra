@@ -3,6 +3,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DataStoreInterface = require(script.Parent.DataStoreInterface)
+local HashMapInterface = require(script.Parent.HashMapInterface)
 local t = require(ReplicatedStorage.Packages.t)
 
 export type TxInfo = {
@@ -18,14 +19,13 @@ export type File = {
 	count: number,
 }
 
-export type Lock = {
-	id: string?,
-	expiry: number?,
+export type LockInfo = {
+	id: string,
+	expiry: number,
 }
 
 export type DataStoreRecord = {
 	version: number,
-	lock: Lock,
 	file: File,
 	orphanedFiles: {},
 }
@@ -58,6 +58,7 @@ export type StoreContext<T> = {
 	migrations: { [number]: (value: any) -> any },
 	migrateFromOtherSystem: ((key: string) -> T?)?,
 	dataStoreInterface: DataStoreInterface.DataStoreInterface,
+	hashMapInterface: HashMapInterface.HashMapInterface,
 	lockId: string,
 	orphanedFileQueue: OrphanedFileQueue,
 	latestVersion: number,

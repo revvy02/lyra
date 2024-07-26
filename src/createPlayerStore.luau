@@ -10,8 +10,8 @@ local mapKeys = require(script.Parent.mapKeys)
 type PlayerStoreImpl<T> = {
 	__index: PlayerStoreImpl<T>,
 	get: (self: PlayerStore<T>, userId: number) -> Promise.TypedPromise<T>,
-	lock: (self: PlayerStore<T>, userId: number) -> Promise.Promise,
-	unlock: (self: PlayerStore<T>, userId: number) -> Promise.Promise,
+	load: (self: PlayerStore<T>, userId: number) -> Promise.Promise,
+	unload: (self: PlayerStore<T>, userId: number) -> Promise.Promise,
 	update: (self: PlayerStore<T>, userId: number, transformFunction: (data: T) -> boolean) -> Promise.Promise,
 	tx: (
 		self: PlayerStore<T>,
@@ -51,14 +51,14 @@ function PlayerStore:get(userId: number)
 	return self._store:get(userIdKey)
 end
 
-function PlayerStore:lock(userId: number)
+function PlayerStore:load(userId: number)
 	local userIdKey = assertUserId(userId)
-	return self._store:lock(userIdKey)
+	return self._store:load(userIdKey)
 end
 
-function PlayerStore:unlock(userId: number)
+function PlayerStore:unload(userId: number)
 	local userIdKey = assertUserId(userId)
-	return self._store:unlock(userIdKey)
+	return self._store:unload(userIdKey)
 end
 
 function PlayerStore:update<T>(userId: number, transformFunction: (data: T) -> boolean)
