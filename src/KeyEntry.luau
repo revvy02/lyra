@@ -259,7 +259,7 @@ function KeyEntry:writeRecord(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 
 		return self.ctx.dataStoreInterface
 			:set(self.recordScope, self.key, record, self.userIds)
-			:andThen(function(value)
+			:andThen(function()
 				self.ctx.log("debug", `KeyEntry:writeRecord - Successfully wrote record for key {self.key}`)
 				self.orphanedFiles = orphanedFiles
 				self.currentFile = if isLargeFile(file) then file else nil
@@ -267,7 +267,7 @@ function KeyEntry:writeRecord(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 					self.ctx.orphanedFileQueue:markFile(self.key, self.currentFile)
 				end
 
-				return value
+				return record
 			end)
 			:catch(function(err)
 				self.ctx.log("error", `KeyEntry:writeRecord - Failed to write record for key {self.key}: {err}`)
