@@ -24,7 +24,6 @@ type KeyEntryImpl<T> = {
 
 	new: (config: KeyEntryConfig<T>) -> KeyEntry<T>,
 
-	-- TODO: Update data: any to a more specific type
 	readTx: (self: KeyEntry<T>, txInfo: Types.TxInfo) -> Promise.TypedPromise<any>,
 	updateRecord: (self: KeyEntry<T>) -> Promise.TypedPromise<any>,
 	writeRecord: (self: KeyEntry<T>, txInfo: Types.TxInfo) -> Promise.TypedPromise<any>,
