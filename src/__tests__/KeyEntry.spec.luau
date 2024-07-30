@@ -1,9 +1,11 @@
 local HttpService = game:GetService("HttpService")
+local MemoryStoreService = game:GetService("MemoryStoreService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local Constants = require(ReplicatedStorage.Packages.Lyra.Constants)
 local DataStoreInterface = require(ReplicatedStorage.Packages.Lyra.DataStoreInterface)
+local HashMapInterface = require(ReplicatedStorage.Packages.Lyra.HashMapInterface)
 local KeyEntry = require(ReplicatedStorage.Packages.Lyra.KeyEntry)
 local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataStoreService)
 local Types = require(ReplicatedStorage.Packages.Lyra.Types)
@@ -28,14 +30,17 @@ describe.each({
 	},
 })("KeyEntry with $name", function(services)
 	local dataStoreInterface
+	local hashMapInterface
 	local storeContext
 	local keyEntry
 
 	beforeEach(function()
 		dataStoreInterface = DataStoreInterface.new(services.dataStoreService)
+		hashMapInterface = HashMapInterface.new(MemoryStoreService)
 		storeContext = {
 			name = `test-{string.sub(HttpService:GenerateGUID(false), 1, 8)}`,
 			dataStoreInterface = dataStoreInterface,
+			hashMapInterface = hashMapInterface,
 			latestVersion = 0,
 			migrations = {},
 			template = {},
@@ -48,6 +53,7 @@ describe.each({
 				markFiles = jest.fn(),
 			},
 			changedCallbacks = {},
+			log = print,
 		}
 		keyEntry = KeyEntry.new({
 			key = "testKey",
@@ -262,49 +268,13 @@ describe.each({
 				txData = { foo = "baz" },
 			} :: Types.TxInfo
 
-			return keyEntry:lock():andThen(function()
-				local record = keyEntry:updateRecord({ txInfo = txInfo }):expect()
+			return keyEntry:load():andThen(function()
+				local record = keyEntry:writeRecord(txInfo):expect()
 
 				expect(record.version).toBe(0)
-				expect(record.lock.id).toBe(storeContext.lockId)
 				expect(record.file.data).toEqual(txInfo)
 				expect(record.orphanedFiles).toEqual({})
 			end)
-		end)
-
-		it("handles releaseLock flag correctly", function()
-			local txInfo = {
-				txId = "tx123",
-				committedData = { foo = "bar" },
-				txData = { foo = "baz" },
-			} :: Types.TxInfo
-
-			return keyEntry:lock():andThen(function()
-				local record1 = keyEntry:updateRecord({ txInfo = txInfo, releaseLock = false }):expect()
-				local record2 = keyEntry:updateRecord({ txInfo = txInfo, releaseLock = true }):expect()
-
-				expect(record1.lock.id).never.toBeNil()
-				expect(record2.lock.id).toBeNil()
-			end)
-		end)
-
-		it("ensures lock status is properly verified", function()
-			local txInfo = {
-				txId = "tx123",
-				committedData = { foo = "bar" },
-				txData = { foo = "baz" },
-			} :: Types.TxInfo
-
-			return dataStoreInterface
-				:set(keyEntry.recordScope, "testKey", {
-					lock = {
-						id = "wrongLockId",
-						expiry = DateTime.now().UnixTimestamp + Constants.LOCK_DURATION_SECONDS,
-					},
-				})
-				:andThen(function()
-					return expect(keyEntry:updateRecord({ txInfo = txInfo })).rejects.toMatch("Lock violation")
-				end)
 		end)
 
 		it("tracks and updates orphaned files accurately", function()
@@ -318,8 +288,8 @@ describe.each({
 			} :: Types.File
 			keyEntry.currentFile = toBeOrphaned
 
-			return keyEntry:lock():andThen(function()
-				keyEntry:updateRecord({ txInfo = txInfo }):expect()
+			return keyEntry:load():andThen(function()
+				keyEntry:writeRecord(txInfo):expect()
 				expect(#keyEntry.orphanedFiles).toBe(1)
 				expect(keyEntry.orphanedFiles[1]).toBe(toBeOrphaned)
 			end)
@@ -332,13 +302,11 @@ describe.each({
 				txData = { foo = "baz" },
 			} :: Types.TxInfo
 
-			dataStoreInterface.update = function(_, _, _)
+			dataStoreInterface.set = function(_, _, _)
 				return Promise.reject("Record write error")
 			end
 
-			return keyEntry:updateRecord({ txInfo = txInfo }):catch(function(err)
-				expect(err).toBe("Record write error")
-			end)
+			return expect(keyEntry:writeRecord(txInfo)).rejects.toBe("Record write error")
 		end)
 
 		it("ensures data and metadata are updated correctly", function()
@@ -349,24 +317,20 @@ describe.each({
 			} :: Types.TxInfo
 			keyEntry.metadata = { old = "metadata" }
 
-			return keyEntry:lock():andThen(function()
-				local record = keyEntry:updateRecord({ txInfo = txInfo }):expect()
+			return keyEntry:load():andThen(function()
+				local record = keyEntry:writeRecord(txInfo):expect()
 				expect(record.file.data).toEqual(txInfo)
 				expect(record.orphanedFiles).toEqual({ keyEntry.currentFile })
 			end)
 		end)
 
 		it("correctly writes a record with empty table and no currentFile", function()
-			return keyEntry:lock():andThen(function()
+			return keyEntry:load():andThen(function()
 				keyEntry:save():expect()
 				keyEntry:updateRecord({}):expect()
 				local record = dataStoreInterface:get(keyEntry.recordScope, "testKey"):expect()
 				expect(record).toMatchObject(expect.objectContaining({
 					version = 0,
-					lock = {
-						id = storeContext.lockId,
-						expiry = expect.any("number"),
-					},
 					file = {
 						data = {
 							txId = nil,
@@ -390,27 +354,48 @@ describe.each({
 		end)
 	end)
 
-	describe("KeyEntry:lock", function()
-		it("correctly acquires lock for the key", function()
-			return keyEntry:lock():andThen(function(data)
+	describe("KeyEntry:load", function()
+		it("correctly locks and loads key", function()
+			return keyEntry:load():andThen(function(data)
 				expect(data).never.toBeNil()
 				expect(keyEntry.locked).toBe(true)
+				expect(keyEntry.loaded).toBe(true)
 			end)
 		end)
 
 		it("verifies and handles lock expiry", function()
 			local oldTime = DateTime.now().UnixTimestamp - (Constants.LOCK_DURATION_SECONDS * 2)
-			return dataStoreInterface
-				:set(keyEntry.recordScope, "testKey", {
-					lock = {
-						id = "someOtherLock",
-						expiry = oldTime,
-					},
-				})
+			return hashMapInterface
+				:set(keyEntry.lockScope, "testKey", {
+					id = "other server",
+					expiry = oldTime,
+				}, 1000)
 				:andThen(function()
-					local data = keyEntry:lock():expect()
+					local data = keyEntry:load():expect()
 					expect(data).never.toBeNil()
 					expect(keyEntry.locked).toBe(true)
+					expect(keyEntry.loaded).toBe(true)
+				end)
+		end)
+
+		it("waits for lock to expire correctly", function()
+			local now = DateTime.now().UnixTimestamp
+			local expiry = now + 2
+
+			return hashMapInterface
+				:set(keyEntry.lockScope, keyEntry.key, {
+					id = "other server",
+					expiry = expiry,
+				}, Constants.LOCK_DURATION_SECONDS)
+				:andThen(function()
+					return keyEntry:load()
+				end)
+				:andThen(function(data)
+					local now2 = DateTime.now().UnixTimestamp
+					expect(now2 - now).toBeGreaterThan(1)
+					expect(data).never.toBeNil()
+					expect(keyEntry.locked).toBe(true)
+					expect(keyEntry.loaded).toBe(true)
 				end)
 		end)
 
@@ -427,13 +412,12 @@ describe.each({
 				foo = "bar",
 			}
 			return dataStoreInterface
-				:set(keyEntry.recordScope, "testKey", {
+				:set(keyEntry.recordScope, keyEntry.key, {
 					version = 0,
-					lock = {},
 					file = { data = { committedData = data } } :: Types.File,
 				})
 				:andThen(function()
-					local record = keyEntry:lock():expect()
+					local record = keyEntry:load():expect()
 					expect(record).toEqual({
 						foo = "bar",
 						migrated = true,
@@ -445,9 +429,9 @@ describe.each({
 				end)
 		end)
 
-		it("handles concurrent lock attempts", function()
-			local p1 = keyEntry:lock()
-			local p2 = keyEntry:lock()
+		it("handles concurrent load attempts", function()
+			local p1 = keyEntry:load()
+			local p2 = keyEntry:load()
 			local e = expect(p2).rejects.toMatch("KeyEntry is already")
 			return p1:andThen(function()
 				return e
@@ -457,7 +441,7 @@ describe.each({
 
 	describe("KeyEntry:get", function()
 		it("correctly returns cached data", function()
-			return keyEntry:lock():andThen(function()
+			return keyEntry:load():andThen(function()
 				keyEntry
 					:update(function(data)
 						data.foo = "bar"
@@ -471,7 +455,7 @@ describe.each({
 		end)
 
 		it("freezes and deep copies cached data", function()
-			return keyEntry:lock():andThen(function()
+			return keyEntry:load():andThen(function()
 				keyEntry
 					:update(function(data)
 						data.foo = "bar"
@@ -486,26 +470,20 @@ describe.each({
 		end)
 	end)
 
-	describe("KeyEntry:unlock", function()
+	describe("KeyEntry:unload", function()
 		it("correctly releases lock for the key", function()
-			local data = {
-				test = "data",
-			}
-			return keyEntry:lock():andThen(function()
-				keyEntry.data = data
-				keyEntry:unlock():expect()
+			return keyEntry:load():andThen(function()
+				keyEntry:unload():expect()
 
-				local record = dataStoreInterface:get(keyEntry.recordScope, "testKey"):expect()
-
-				expect(record.lock).toEqual({})
-				expect(record.file.data.committedData).toEqual(data)
+				expect(keyEntry.locked).toBe(false)
+				expect(keyEntry.closed).toBe(true)
 			end)
 		end)
 
 		it("handles cases where the KeyEntry is already closed", function()
-			return keyEntry:lock():andThen(function()
+			return keyEntry:load():andThen(function()
 				keyEntry.closed = true
-				return expect(keyEntry:unlock()).rejects.toMatch("KeyEntry is closed")
+				return expect(keyEntry:unload()).rejects.toMatch("KeyEntry is closed")
 			end)
 		end)
 
@@ -514,9 +492,9 @@ describe.each({
 				test = "data",
 			}
 
-			return keyEntry:lock():andThen(function()
+			return keyEntry:load():andThen(function()
 				keyEntry:mutateKey(data)
-				keyEntry:unlock():expect()
+				keyEntry:unload():expect()
 
 				local record = dataStoreInterface:get(keyEntry.recordScope, "testKey"):expect()
 
@@ -524,17 +502,17 @@ describe.each({
 			end)
 		end)
 
-		it("handles concurrent unlock attempts gracefully", function()
-			return keyEntry:lock():andThen(function()
-				keyEntry:unlock():expect()
-				return expect(keyEntry:unlock()).rejects.toMatch("KeyEntry is closed")
+		it("handles concurrent unload attempts gracefully", function()
+			return keyEntry:load():andThen(function()
+				keyEntry:unload():expect()
+				return expect(keyEntry:unload()).rejects.toMatch("KeyEntry is closed")
 			end)
 		end)
 	end)
 
 	describe("KeyEntry:update", function()
 		it("correctly applies transform function to key data", function()
-			return keyEntry:lock():andThen(function()
+			return keyEntry:load():andThen(function()
 				keyEntry.data = {
 					count = 10,
 				}
@@ -549,7 +527,7 @@ describe.each({
 		end)
 
 		it("propagates errors from transform function correctly", function()
-			return keyEntry:lock():andThen(function()
+			return keyEntry:load():andThen(function()
 				local transformFunction = function(_)
 					error("Transform error")
 				end
@@ -566,7 +544,7 @@ describe.each({
 				return false
 			end)
 
-			return keyEntry:lock():andThen(function()
+			return keyEntry:load():andThen(function()
 				keyEntry.data = {
 					count = 10,
 				}
@@ -582,7 +560,7 @@ describe.each({
 				return typeof(data) == "table" and data.value ~= nil
 			end
 
-			return keyEntry:lock():andThen(function()
+			return keyEntry:load():andThen(function()
 				local invalidUpdate = keyEntry
 					:update(function(data)
 						data.value = nil
@@ -607,7 +585,7 @@ describe.each({
 				return true
 			end)
 
-			return keyEntry:lock():andThen(function()
+			return keyEntry:load():andThen(function()
 				keyEntry.data = { value = "initial" }
 
 				local before = keyEntry:getSnapshot()
@@ -620,7 +598,7 @@ describe.each({
 		end)
 
 		it("handles concurrent update attempts and ensures data consistency", function()
-			return keyEntry:lock():andThen(function()
+			return keyEntry:load():andThen(function()
 				keyEntry.data = { count = 0 }
 				keyEntry
 					:update(function(data)
@@ -645,7 +623,7 @@ describe.each({
 
 	describe("KeyEntry:save", function()
 		it("correctly saves data if there are unsaved mutations", function()
-			return keyEntry:lock():andThen(function()
+			return keyEntry:load():andThen(function()
 				keyEntry:mutateKey({
 					foo = "bar",
 				})
@@ -659,20 +637,20 @@ describe.each({
 		end)
 
 		it("skips save if no unsaved mutations exist", function()
-			local updateMock, fn = jest.fn(function()
+			local mock, fn = jest.fn(function()
 				return Promise.resolve()
 			end)
 
-			return keyEntry:lock():andThen(function()
+			return keyEntry:load():andThen(function()
 				keyEntry:save():expect()
-				dataStoreInterface.update = fn
+				dataStoreInterface.set = fn
 				keyEntry:save():expect()
-				expect(updateMock).toHaveBeenCalledTimes(0)
+				expect(mock).toHaveBeenCalledTimes(0)
 			end)
 		end)
 
 		it("commits snapshot after successful save", function()
-			return keyEntry:lock():andThen(function()
+			return keyEntry:load():andThen(function()
 				keyEntry:mutateKey({
 					foo = "bar",
 				})
@@ -684,12 +662,12 @@ describe.each({
 		end)
 
 		it("handles errors during save operation gracefully", function()
-			return keyEntry:lock():andThen(function()
+			return keyEntry:load():andThen(function()
 				keyEntry:mutateKey({
 					foo = "bar",
 				})
 
-				dataStoreInterface.update = function()
+				dataStoreInterface.set = function()
 					return Promise.reject("Save error")
 				end
 
