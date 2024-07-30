@@ -71,7 +71,10 @@ function FileManager.read(opts: ReadOptions): Promise.TypedPromise<any>
 	end
 
 	return Promise.all(promises):andThen(function(shards)
-		return HttpService:JSONDecode(table.concat(shards))
+		local ok, result = pcall(function()
+			return HttpService:JSONDecode(table.concat(shards))
+		end)
+		return if ok then result else Promise.reject(`Error decoding file: {result}`)
 	end)
 end
 
