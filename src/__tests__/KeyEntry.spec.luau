@@ -69,7 +69,7 @@ describe.each({
 			expect(keyEntry.data).toBeNil()
 			expect(keyEntry.metadata).toBeNil()
 			expect(keyEntry.version).toBe(0)
-			expect(keyEntry.unsavedMutations).toEqual({})
+			expect(keyEntry.changeSet).toEqual({})
 			expect(keyEntry.orphanedFiles).toEqual({})
 			expect(keyEntry.currentFile).toBeNil()
 		end)
@@ -622,7 +622,7 @@ describe.each({
 	end)
 
 	describe("KeyEntry:save", function()
-		it("correctly saves data if there are unsaved mutations", function()
+		it("correctly saves data if there are unsaved changes", function()
 			return keyEntry:load():andThen(function()
 				keyEntry:mutateKey({
 					foo = "bar",
@@ -632,11 +632,11 @@ describe.each({
 				local record = dataStoreInterface:get(keyEntry.recordScope, "testKey"):expect()
 
 				expect(record.file.data.committedData).toEqual(keyEntry.data)
-				expect(#keyEntry.unsavedMutations).toBe(0)
+				expect((next(keyEntry.changeSet))).toBeNil()
 			end)
 		end)
 
-		it("skips save if no unsaved mutations exist", function()
+		it("skips save if no unsaved changes exist", function()
 			local mock, fn = jest.fn(function()
 				return Promise.resolve()
 			end)
