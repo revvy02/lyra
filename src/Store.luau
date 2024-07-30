@@ -319,8 +319,22 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 		return Promise.reject("One or more KeyEntries are not loaded")
 	end
 
+	local txId = HttpService:GenerateGUID(false)
+
+	-- Normally we'd consider a tx committed if its value is `true`, and failed
+	-- if its value is `false`. But, to save on storage space, we invert it such
+	-- that `nil` is committed and `false` is failed/in-progress.
+	-- Therefore, to prevent an untouched tx from being considered committed, we
+	-- set the value to `false` before we start the tx.
+	local txStatusPromise = self._ctx.dataStoreInterface:set(Constants.TX_SCOPE, txId, false)
+
 	self._ctx.log("trace", `Store {self._ctx.name}: Acquiring transaction lock for keys {table.concat(keys, ", ")}`)
 	return PromiseQueue.multiQueueAdd(queues, function()
+		if txStatusPromise:awaitStatus() ~= (Promise :: any).Status.Resolved then
+			self._ctx.log("error", `Store {self._ctx.name}: Failed to pre-set tx {txId}`)
+			error("Failed to pre-set tx")
+		end
+
 		local currentState = {}
 		for _, key in keys do
 			local keyEntry = self._keyEntries[key]
@@ -393,8 +407,6 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			"debug",
 			`Store {self._ctx.name}: Transaction for keys {table.concat(keys, ", ")} changed multiple keys, beginning multi-key update`
 		)
-		self._lastTxId = HttpService:GenerateGUID(false)
-		local txId = self._lastTxId :: string
 
 		local promises = Array.map(keys, function(key)
 			local txInfo = {
@@ -410,7 +422,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 		local commitPromise = Promise.all(promises)
 			:andThen(function()
 				self._ctx.log("trace", `Store {self._ctx.name}: Committing transaction {txId}`)
-				return self._ctx.dataStoreInterface:set(Constants.TX_SCOPE, txId, true)
+				return self._ctx.dataStoreInterface:remove(Constants.TX_SCOPE, txId)
 			end)
 			:andThen(function()
 				self._ctx.log("debug", `Store {self._ctx.name}: Transaction {txId} committed successfully`)
@@ -424,12 +436,6 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			end)
 			:catch(function(err)
 				self._ctx.log("error", `Store {self._ctx.name}: Transaction {txId} failed: {err}`)
-				self._ctx.dataStoreInterface:set(Constants.TX_SCOPE, txId, false):catch(function(_abortErr)
-					self._ctx.log(
-						"fatal",
-						`Store {self._ctx.name}: Failed to mark transaction {txId} as aborted: {_abortErr}`
-					)
-				end)
 
 				return Promise.reject(err)
 			end)

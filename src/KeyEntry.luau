@@ -141,7 +141,9 @@ function KeyEntry:readTx(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 
 	self.ctx.log("debug", `KeyEntry:readTx - Reading transaction data for key {self.key} with ID {txId}`)
 	return self.ctx.dataStoreInterface:get(self.txScope, txId):andThen(function(committed)
-		if committed == true then
+		-- To save on storage space, we consider a tx to be committed if its
+		-- value is `nil`. Failed or in-progress txs are stored as `false`.
+		if committed == nil then
 			self.ctx.log(
 				"trace",
 				`KeyEntry:readTx - Transaction {txId} for key {self.key} is committed, returning txData`
