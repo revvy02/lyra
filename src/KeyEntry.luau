@@ -4,13 +4,13 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Constants = require(script.Parent.Constants)
+local FileManager = require(script.Parent.FileManager)
 local PromiseQueue = require(script.Parent.PromiseQueue)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 local Sift = require(ReplicatedStorage.Packages.Sift)
 local t = require(ReplicatedStorage.Packages.t)
 local Types = require(script.Parent.Types)
 local noYield = require(script.Parent.noYield)
-local splitUtf8String = require(script.Parent.splitUtf8String)
 
 local Dictionary = Sift.Dictionary
 local Array = Sift.Array
@@ -19,22 +19,12 @@ local Set = Sift.Set
 type UnsavedMutationsSnapshot = { [string]: boolean }
 local unsavedMutationsSnapshotCheck = t.map(t.string, t.boolean)
 
-local function isLargeFile(file: Types.File): boolean
-	return file.shard ~= nil
-end
-
 type KeyEntryImpl<T> = {
 	__index: KeyEntryImpl<T>,
 
 	new: (config: KeyEntryConfig<T>) -> KeyEntry<T>,
 
 	-- TODO: Update data: any to a more specific type
-	writeLargeFile: (
-		self: KeyEntry<T>,
-		data: any,
-		metadata: { [string]: any }?
-	) -> Promise.TypedPromise<Types.File>,
-	readLargeFile: (self: KeyEntry<T>, file: Types.File) -> Promise.TypedPromise<any>,
 	readTx: (self: KeyEntry<T>, txInfo: Types.TxInfo) -> Promise.TypedPromise<any>,
 	updateRecord: (self: KeyEntry<T>) -> Promise.TypedPromise<any>,
 	writeRecord: (self: KeyEntry<T>, txInfo: Types.TxInfo) -> Promise.TypedPromise<any>,
@@ -146,65 +136,6 @@ function KeyEntry.new<T>(config: KeyEntryConfig<T>): KeyEntry<T>
 end
 KeyEntry.new = t.wrap(KeyEntry.new, t.tuple(keyEntryConfigCheck))
 
--- TODO: Update data: any to a more specific type
-function KeyEntry:writeLargeFile(data: any): Promise.TypedPromise<Types.File>
-	self.ctx.log("trace", `KeyEntry:writeLargeFile called for key {self.key}`)
-	local str = HttpService:JSONEncode(data)
-	if #str <= Constants.MAX_CHUNK_SIZE then
-		self.ctx.log("trace", `KeyEntry:writeLargeFile - Data for key {self.key} is small, not sharding`)
-		return Promise.resolve({ data = data } :: Types.File)
-	end
-
-	local shardId = HttpService:GenerateGUID(false)
-	self.ctx.log("debug", `KeyEntry:writeLargeFile - Data for key {self.key} is large, sharding with ID {shardId}`)
-
-	-- TODO: Add a test case ensuring that splitUtf8String is called with the correct arguments
-	local shards = splitUtf8String(str, Constants.MAX_CHUNK_SIZE)
-	self.ctx.log("debug", `KeyEntry:writeLargeFile - Split data for key {self.key} into {#shards} shards`)
-
-	local promises = Array.map(shards, function(shard, index)
-		self.ctx.log("trace", `KeyEntry:writeLargeFile - Writing shard {index} for key {self.key}`)
-		return self.ctx.dataStoreInterface:set(self.shardScope, `{shardId}-{index}`, shard, self.userIds)
-	end)
-
-	local file = { shard = shardId, count = #shards }
-
-	local p = Promise.all(promises):andThenReturn(file):catch(function(err)
-		self.ctx.log("error", `KeyEntry:writeLargeFile - Failed to write shards for key {self.key}: {err}`)
-		table.insert(self.orphanedFiles, file)
-		self.ctx.orphanedFileQueue:markFile(self.key, file)
-		return Promise.reject(err)
-	end)
-
-	return p
-end
--- TODO: Update data: any to a more specific type
-KeyEntry.writeLargeFile = t.wrap(KeyEntry.writeLargeFile, t.tuple(t.any, t.any, t.optional(t.map(t.string, t.any))))
-
-function KeyEntry:readLargeFile(file: Types.File): Promise.TypedPromise<any>
-	self.ctx.log("trace", `KeyEntry:readLargeFile called for key {self.key}`)
-	if not isLargeFile(file) then
-		self.ctx.log("trace", `KeyEntry:readLargeFile - File for key {self.key} is not sharded`)
-		return Promise.resolve(file.data)
-	end
-
-	local shardId = file.shard
-	self.ctx.log("debug", `KeyEntry:readLargeFile - Reading sharded file for key {self.key} with ID {shardId}`)
-
-	local promises = {}
-
-	for i = 1, file.count do
-		self.ctx.log("trace", `KeyEntry:readLargeFile - Reading shard {i} for key {self.key}`)
-		table.insert(promises, self.ctx.dataStoreInterface:get(self.shardScope, `{shardId}-{i}`))
-	end
-
-	return Promise.all(promises):andThen(function(shards)
-		self.ctx.log("trace", `KeyEntry:readLargeFile - Assembling {file.count} shards for key {self.key}`)
-		return HttpService:JSONDecode(table.concat(shards))
-	end)
-end
-KeyEntry.readLargeFile = t.wrap(KeyEntry.readLargeFile, t.tuple(t.any, Types.fileCheck))
-
 function KeyEntry:readTx(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 	self.ctx.log("trace", `KeyEntry:readTx called for key {self.key}`)
 	local txId = txInfo.txId
@@ -248,37 +179,53 @@ KeyEntry.updateRecord = t.wrap(KeyEntry.updateRecord, t.tuple(t.any))
 function KeyEntry:writeRecord(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 	self.ctx.log("trace", `KeyEntry:writeRecord called for key {self.key}`)
 
-	return self:writeLargeFile(txInfo):andThen(function(file)
-		local orphanedFiles = Array.push(self.orphanedFiles, self.currentFile :: any)
+	local function orphanFile(file: Types.File?)
+		if file ~= nil and FileManager.isLargeFile(file) then
+			table.insert(self.orphanedFiles, file)
+			self.ctx.orphanedFileQueue:markFile(self.key, file)
+		end
+	end
 
-		local record = {
-			version = self.version,
-			file = file,
-			orphanedFiles = orphanedFiles,
-		}
+	local writeOptions: FileManager.WriteOptions = {
+		dataStoreInterface = self.ctx.dataStoreInterface,
+		data = txInfo,
+		maxShardSize = Constants.MAX_CHUNK_SIZE,
+		key = self.key,
+		scope = self.shardScope,
+		userIds = self.userIds,
+	}
 
-		return self.ctx.dataStoreInterface
-			:set(self.recordScope, self.key, record, self.userIds)
-			:andThen(function()
-				self.ctx.log("debug", `KeyEntry:writeRecord - Successfully wrote record for key {self.key}`)
-				self.orphanedFiles = orphanedFiles
-				self.currentFile = if isLargeFile(file) then file else nil
-				if self.currentFile then
-					self.ctx.orphanedFileQueue:markFile(self.key, self.currentFile)
-				end
+	return FileManager.write(writeOptions)
+		:catch(function(err: FileManager.WriteError)
+			self.ctx.log("error", `KeyEntry:writeRecord - Failed to write shards for key {self.key}: {err.error}`)
 
-				return record
-			end)
-			:catch(function(err)
-				self.ctx.log("error", `KeyEntry:writeRecord - Failed to write record for key {self.key}: {err}`)
-				if isLargeFile(file) then
-					table.insert(self.orphanedFiles, file)
-					self.ctx.orphanedFileQueue:markFile(self.key, file)
-				end
+			orphanFile(err.file)
 
-				return Promise.reject(err)
-			end)
-	end)
+			return Promise.reject(err.error)
+		end)
+		:andThen(function(file)
+			local record = {
+				version = self.version,
+				file = file,
+				orphanedFiles = Array.push(self.orphanedFiles, self.currentFile :: any),
+			}
+
+			return self.ctx.dataStoreInterface
+				:set(self.recordScope, self.key, record, self.userIds)
+				:andThen(function()
+					self.ctx.log("debug", `KeyEntry:writeRecord - Successfully wrote record for key {self.key}`)
+					orphanFile(self.currentFile)
+					self.currentFile = if FileManager.isLargeFile(file) then file else nil
+
+					return record
+				end)
+				:catch(function(err)
+					self.ctx.log("error", `KeyEntry:writeRecord - Failed to write record for key {self.key}: {err}`)
+					orphanFile(file)
+
+					return Promise.reject(err)
+				end)
+		end)
 end
 KeyEntry.writeRecord = t.wrap(KeyEntry.writeRecord, t.tuple(t.any))
 
@@ -534,12 +481,17 @@ function KeyEntry:load(): Promise.Promise
 
 			local file = record.file
 			if file then
-				if isLargeFile(file) then
+				if FileManager.isLargeFile(file) then
 					self.currentFile = file
 				end
 
 				self.ctx.log("trace", `KeyEntry:lock - Reading data for key {self.key} from file`)
-				return self:readLargeFile(file)
+				local readOptions: FileManager.ReadOptions = {
+					dataStoreInterface = self.ctx.dataStoreInterface,
+					scope = self.shardScope,
+					file = file,
+				}
+				return FileManager.read(readOptions)
 			end
 
 			self.ctx.log("trace", `KeyEntry:lock - No file found for key {self.key}`)
