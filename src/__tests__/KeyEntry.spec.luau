@@ -588,9 +588,9 @@ describe.each({
 			return keyEntry:load():andThen(function()
 				keyEntry.data = { value = "initial" }
 
-				local before = keyEntry:getSnapshot()
+				local before = table.clone(keyEntry.changeSet)
 				keyEntry:update(transformFn):expect()
-				local after = keyEntry:getSnapshot()
+				local after = table.clone(keyEntry.changeSet)
 
 				expect(mock).toHaveBeenCalledTimes(1)
 				expect(before).toEqual(after)
@@ -649,14 +649,14 @@ describe.each({
 			end)
 		end)
 
-		it("commits snapshot after successful save", function()
+		it("tracks changes correctly", function()
 			return keyEntry:load():andThen(function()
 				keyEntry:mutateKey({
 					foo = "bar",
 				})
-				local snapshot = keyEntry:getSnapshot()
+				expect((next(keyEntry.changeSet))).never.toBeNil()
 				return keyEntry:save():andThen(function()
-					expect(keyEntry:isSnapshotCommitted(snapshot)).toBe(true)
+					expect(keyEntry.changeSet).toEqual({})
 				end)
 			end)
 		end)

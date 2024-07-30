@@ -16,8 +16,7 @@ local Dictionary = Sift.Dictionary
 local Array = Sift.Array
 local Set = Sift.Set
 
-type UnsavedMutationsSnapshot = { [string]: boolean }
-local unsavedMutationsSnapshotCheck = t.map(t.string, t.boolean)
+type Set = { [string]: boolean }
 
 type KeyEntryImpl<T> = {
 	__index: KeyEntryImpl<T>,
@@ -30,9 +29,6 @@ type KeyEntryImpl<T> = {
 
 	getLock: (self: KeyEntry<T>) -> Types.LockInfo,
 
-	getSnapshot: (self: KeyEntry<T>) -> UnsavedMutationsSnapshot,
-	isSnapshotCommitted: (self: KeyEntry<T>, snapshot: UnsavedMutationsSnapshot) -> boolean,
-	commitSnapshot: (self: KeyEntry<T>, snapshot: UnsavedMutationsSnapshot) -> (),
 	isSaved: (self: KeyEntry<T>) -> boolean,
 
 	mutateKey: (self: KeyEntry<T>, newData: T) -> (),
@@ -63,7 +59,7 @@ type KeyEntryProps<T> = {
 	frozenData: T?,
 	version: number,
 
-	unsavedMutations: UnsavedMutationsSnapshot,
+	changeSet: Set,
 
 	orphanedFiles: { Types.File },
 	currentFile: Types.File?,
@@ -113,7 +109,7 @@ function KeyEntry.new<T>(config: KeyEntryConfig<T>): KeyEntry<T>
 		frozenData = nil,
 		version = config.storeContext.latestVersion,
 
-		unsavedMutations = {},
+		changeSet = {},
 
 		orphanedFiles = {},
 		currentFile = nil,
@@ -237,28 +233,9 @@ function KeyEntry:getLock(): Types.LockInfo
 end
 KeyEntry.getLock = t.wrap(KeyEntry.getLock, t.tuple(t.any))
 
-function KeyEntry:getSnapshot(): UnsavedMutationsSnapshot
-	self.ctx.log("trace", `KeyEntry:getSnapshot called for key {self.key}`)
-	return Set.copy(self.unsavedMutations)
-end
-KeyEntry.getSnapshot = t.wrap(KeyEntry.getSnapshot, t.tuple(t.any))
-
-function KeyEntry:isSnapshotCommitted(snapshot: UnsavedMutationsSnapshot): boolean
-	self.ctx.log("trace", `KeyEntry:isSnapshotCommitted called for key {self.key}`)
-	local intersection = Set.intersection(snapshot, self.unsavedMutations)
-	return Set.count(intersection) == 0
-end
-KeyEntry.isSnapshotCommitted = t.wrap(KeyEntry.isSnapshotCommitted, t.tuple(t.any, unsavedMutationsSnapshotCheck))
-
-function KeyEntry:commitSnapshot(snapshot: UnsavedMutationsSnapshot): ()
-	self.ctx.log("trace", `KeyEntry:commitSnapshot called for key {self.key}`)
-	self.unsavedMutations = Set.difference(self.unsavedMutations, snapshot)
-end
-KeyEntry.commitSnapshot = t.wrap(KeyEntry.commitSnapshot, t.tuple(t.any, unsavedMutationsSnapshotCheck))
-
 function KeyEntry:isSaved(): boolean
 	self.ctx.log("trace", `KeyEntry:isSaved called for key {self.key}`)
-	return Set.count(self.unsavedMutations) == 0
+	return Set.count(self.changeSet) == 0
 end
 KeyEntry.isSaved = t.wrap(KeyEntry.isSaved, t.tuple(t.any))
 
@@ -267,7 +244,7 @@ function KeyEntry:mutateKey(newData: any): ()
 	local oldData = if self.data then Dictionary.freezeDeep(self.data :: any) else nil
 
 	local mutationId = HttpService:GenerateGUID(false)
-	self.unsavedMutations = Set.add(self.unsavedMutations, mutationId)
+	self.changeSet = Set.add(self.changeSet, mutationId)
 	self.data = newData
 	self.frozenData = Dictionary.freezeDeep(newData :: any)
 
@@ -634,24 +611,25 @@ function KeyEntry:save(): Promise.Promise
 			self.ctx.log("trace", `KeyEntry:save - Key {self.key} is already saved`)
 			return Promise.resolve()
 		end
-		local snapshot = self:getSnapshot()
+		local changes = Set.copy(self.changeSet)
 
 		self.ctx.log("trace", `KeyEntry:save - Queueing save operation for key {self.key}`)
 		return self.queue:add(function()
-			if self:isSnapshotCommitted(snapshot) then
-				self.ctx.log("trace", `KeyEntry:save - Key {self.key} is already committed, skipping save`)
+			local changesWereSaved = Set.count(Set.intersection(changes, self.changeSet)) == 0
+			if changesWereSaved then
+				self.ctx.log("trace", `KeyEntry:save - Key {self.key} is already saved, skipping save`)
 				return Promise.resolve()
 			end
 
-			snapshot = self:getSnapshot()
+			changes = Set.copy(self.changeSet)
 
 			self.ctx.log("trace", `KeyEntry:save - Writing record for key {self.key}`)
 			return self:updateRecord():andThen(function()
 				self.ctx.log(
 					"debug",
-					`KeyEntry:save - Successfully wrote record for key {self.key}, committing snapshot`
+					`KeyEntry:save - Successfully wrote record for key {self.key}, updating changeSet`
 				)
-				self:commitSnapshot(snapshot)
+				self.changeSet = Set.difference(self.changeSet, changes)
 			end)
 		end)
 	end)

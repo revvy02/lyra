@@ -418,8 +418,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 					-- :tx is required to save, so we commit all unsaved
 					-- mutations here
 					local keyEntry = self._keyEntries[key]
-					local snapshot = keyEntry:getSnapshot()
-					keyEntry:commitSnapshot(snapshot)
+					keyEntry.changeSet = {}
 					keyEntry.data = nextState[key]
 				end
 			end)
