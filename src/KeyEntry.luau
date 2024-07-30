@@ -355,13 +355,17 @@ KeyEntry.migrateData = t.wrap(KeyEntry.migrateData, t.tuple(t.any, t.any))
 function KeyEntry:waitUntilLoaded(): Promise.Promise
 	self.ctx.log("trace", `KeyEntry:waitUntilLoaded called for key {self.key}`)
 	return Promise.resolve(self.loadPromise):andThen(function()
-		if not self.locked then
-			self.ctx.log("error", `KeyEntry:waitUntilLoaded - KeyEntry for key {self.key} is not loaded`)
-			return Promise.reject("KeyEntry is not loaded")
-		end
 		if self.closed then
 			self.ctx.log("error", `KeyEntry:waitUntilLoaded - KeyEntry for key {self.key} is closed`)
 			return Promise.reject("KeyEntry is closed")
+		end
+		if not self.locked then
+			self.ctx.log("error", `KeyEntry:waitUntilLoaded - KeyEntry for key {self.key} is not locked`)
+			return Promise.reject("KeyEntry is not locked")
+		end
+		if not self.loaded then
+			self.ctx.log("error", `KeyEntry:waitUntilLoaded - KeyEntry for key {self.key} is not loaded`)
+			return Promise.reject("KeyEntry is not loaded")
 		end
 	end)
 end
