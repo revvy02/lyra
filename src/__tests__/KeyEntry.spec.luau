@@ -85,144 +85,6 @@ describe.each({
 		end)
 	end)
 
-	describe("KeyEntry:writeLargeFile", function()
-		beforeEach(function()
-			Constants.MAX_CHUNK_SIZE = 1000
-		end)
-
-		afterEach(function()
-			Constants.MAX_CHUNK_SIZE = 4_000_000 - 10_000
-		end)
-
-		it("correctly handles small files without sharding", function()
-			local data = { test = "data" }
-
-			return keyEntry:writeLargeFile(data):andThen(function(file)
-				expect(file.data).toBe(data)
-				expect(file.shard).toBeNil()
-				expect(file.count).toBeNil()
-			end)
-		end)
-
-		it("correctly shards and writes large files", function()
-			local data = string.rep("a", Constants.MAX_CHUNK_SIZE + 1)
-
-			return keyEntry:writeLargeFile(data):andThen(function(file)
-				expect(file.shard).never.toBeNil()
-				expect(file.count).toBe(2)
-			end)
-		end)
-
-		it("handles errors during shard writing by marking files as orphaned", function()
-			local data = string.rep("a", Constants.MAX_CHUNK_SIZE + 1)
-
-			local n = 0
-			local set = dataStoreInterface.set
-			dataStoreInterface.set = function(...)
-				n += 1
-				if n == 2 then
-					return Promise.reject("Shard write error")
-				end
-				return set(...)
-			end
-
-			return keyEntry
-				:writeLargeFile(data)
-				:andThen(function()
-					error("Shard write should have errored")
-				end)
-				:catch(function(err)
-					expect(err).toMatch("Shard write error")
-					expect(n).toBe(2)
-					expect(#keyEntry.orphanedFiles).toBe(1)
-					expect(storeContext.orphanedFileQueue.markFile).toHaveBeenCalledTimes(1)
-				end)
-		end)
-
-		it("validates type of returned file", function()
-			local data = string.rep("a", Constants.MAX_CHUNK_SIZE + 1)
-
-			return keyEntry:writeLargeFile(data):andThen(function(file)
-				expect(typeof(file.shard)).toBe("string")
-				expect(typeof(file.count)).toBe("number")
-			end)
-		end)
-
-		it("ensures no data loss during sharding and writing", function()
-			local testData = {
-				foo = "bar",
-				baz = { 1, 2, 3 },
-				large = string.rep("a", Constants.MAX_CHUNK_SIZE * 2),
-			}
-
-			return keyEntry:writeLargeFile(testData):andThen(function(file)
-				local shardId = file.shard
-
-				local promises = {}
-				for i = 1, file.count do
-					table.insert(promises, dataStoreInterface:get(keyEntry.shardScope, `{shardId}-{i}`))
-				end
-				local shards = Promise.all(promises):expect()
-
-				local reconstructedData = HttpService:JSONDecode(table.concat(shards))
-				expect(reconstructedData).toEqual(testData)
-			end)
-		end)
-	end)
-
-	describe("KeyEntry:readLargeFile", function()
-		it("correctly reads small files without sharding", function()
-			local data = { test = "data" }
-			local file = { data = data }
-
-			return keyEntry:readLargeFile(file :: Types.File):andThen(function(readData)
-				expect(readData).toBe(data)
-			end)
-		end)
-
-		it("correctly reads and reassembles large files from shards", function()
-			local data = { data = string.rep("a", Constants.MAX_CHUNK_SIZE + 100) }
-			local encoded = HttpService:JSONEncode(data)
-			local shards = splitUtf8String(encoded, Constants.MAX_CHUNK_SIZE)
-			local shardId = HttpService:GenerateGUID(false)
-			local file = { shard = shardId, count = 2 } :: Types.File
-
-			return Promise.all({
-				dataStoreInterface:set(keyEntry.shardScope, `{shardId}-1`, shards[1]),
-				dataStoreInterface:set(keyEntry.shardScope, `{shardId}-2`, shards[2]),
-			}):andThen(function()
-				local readData = keyEntry:readLargeFile(file):expect()
-				expect(readData).toEqual(data)
-			end)
-		end)
-
-		it("ensures complete and correct reassembly of large files", function()
-			local testData = {
-				foo = "bar",
-				baz = { 1, 2, 3 },
-			}
-			local data = HttpService:JSONEncode(testData)
-			local shardId = HttpService:GenerateGUID(false)
-			local file = { shard = shardId, count = 2 } :: Types.File
-
-			return Promise.all({
-				dataStoreInterface:set(
-					keyEntry.shardScope,
-					`{shardId}-1`,
-					string.sub(data, 1, Constants.MAX_CHUNK_SIZE)
-				),
-				dataStoreInterface:set(
-					keyEntry.shardScope,
-					`{shardId}-2`,
-					string.sub(data, Constants.MAX_CHUNK_SIZE + 1)
-				),
-			}):andThen(function()
-				local readData = keyEntry:readLargeFile(file):expect()
-				expect(readData).toEqual(testData)
-			end)
-		end)
-	end)
-
 	describe("KeyEntry:readTx", function()
 		it("returns committed data if no transaction ID is provided", function()
 			local txInfo = {
@@ -248,7 +110,6 @@ describe.each({
 			} :: Types.TxInfo
 
 			return Promise.all({
-				dataStoreInterface:set(keyEntry.txScope, "tx123", true),
 				dataStoreInterface:set(keyEntry.txScope, "tx456", false),
 			}):andThen(function()
 				local data1 = keyEntry:readTx(txInfo1):expect()
@@ -284,11 +145,12 @@ describe.each({
 				txData = { foo = "baz" },
 			} :: Types.TxInfo
 			local toBeOrphaned = {
-				data = "old data",
+				shard = "a",
+				count = 2,
 			} :: Types.File
-			keyEntry.currentFile = toBeOrphaned
 
 			return keyEntry:load():andThen(function()
+				keyEntry.currentFile = toBeOrphaned
 				keyEntry:writeRecord(txInfo):expect()
 				expect(#keyEntry.orphanedFiles).toBe(1)
 				expect(keyEntry.orphanedFiles[1]).toBe(toBeOrphaned)
