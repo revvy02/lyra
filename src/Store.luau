@@ -424,21 +424,48 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 				self._ctx.log("trace", `Store {self._ctx.name}: Committing transaction {txId}`)
 				return self._ctx.dataStoreInterface:remove(Constants.TX_SCOPE, txId)
 			end)
+			:catch(function(err)
+				self._ctx.log("error", `Store {self._ctx.name}: Transaction {txId} errored: {err}`)
+
+				-- To guard against edge cases, we don't assume we know what the
+				-- tx status is. We check it first, then cleanup if we need to.
+				return self._ctx.dataStoreInterface
+					:get(Constants.TX_SCOPE, txId)
+					:andThen(function(txStatus)
+						if txStatus ~= false then
+							-- Tx was committed successfully, just pass down the
+							-- error.
+							return Promise.reject(err)
+						end
+						self._ctx.log("trace", `Store {self._ctx.name}: Transaction {txId} failed, cleaning up`)
+
+						local cleanupPromises = Array.map(keys, function(key)
+							local txInfo = { committedData = currentState[key] }
+							return self._keyEntries[key]:writeRecord(txInfo)
+						end)
+
+						return Promise.all(cleanupPromises)
+					end)
+					:andThen(function()
+						self._ctx.log("trace", `Store {self._ctx.name}: Removing transaction {txId}`)
+						return self._ctx.dataStoreInterface:remove(Constants.TX_SCOPE, txId)
+					end)
+					:andThen(function()
+						self._ctx.log("trace", `Store {self._ctx.name}: Transaction {txId} cleaned up`)
+						return Promise.reject(err)
+					end)
+			end)
 			:andThen(function()
 				self._ctx.log("debug", `Store {self._ctx.name}: Transaction {txId} committed successfully`)
 				for _, key in keys do
-					-- :tx is required to save, so we commit all unsaved
-					-- mutations here
+					-- We just technically performed a save, so let's reset the
+					-- changeSet.
 					local keyEntry = self._keyEntries[key]
 					keyEntry.changeSet = {}
 					keyEntry.data = nextState[key]
 				end
 			end)
-			:catch(function(err)
-				self._ctx.log("error", `Store {self._ctx.name}: Transaction {txId} failed: {err}`)
 
-				return Promise.reject(err)
-			end)
 		return commitPromise
 	end):finally(function()
 		self._ctx.log("trace", `Store {self._ctx.name}: Releasing transaction lock for keys {table.concat(keys, ", ")}`)
