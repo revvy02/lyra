@@ -9,14 +9,12 @@ local HashMapInterface = require(ReplicatedStorage.Packages.Lyra.HashMapInterfac
 local KeyEntry = require(ReplicatedStorage.Packages.Lyra.KeyEntry)
 local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataStoreService)
 local Types = require(ReplicatedStorage.Packages.Lyra.Types)
-local splitUtf8String = require(ReplicatedStorage.Packages.Lyra.splitUtf8String)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 
 local expect = JestGlobals.expect
 local describe = JestGlobals.describe
 local it = JestGlobals.it
 local beforeEach = JestGlobals.beforeEach
-local afterEach = JestGlobals.afterEach
 local jest = JestGlobals.jest
 
 describe.each({
