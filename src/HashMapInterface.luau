@@ -7,6 +7,8 @@ local Promise = require(ReplicatedStorage.Packages.Promise)
 local MAX_RETRIES = 5
 local RETRY_ERROR_CODES = {
 	"TotalRequestsOverLimit",
+	"InternalError",
+	"Throttled",
 }
 
 type HashMapInterfaceImpl = {
