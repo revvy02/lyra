@@ -98,6 +98,11 @@ KeyEntry.__index = KeyEntry
 function KeyEntry.new<T>(config: KeyEntryConfig<T>): KeyEntry<T>
 	local ctx = config.storeContext
 
+	local queue = PromiseQueue.new()
+	queue.onTimeout = function(e)
+		ctx.log("error", `PromiseQueue timed out: {e}`)
+	end
+
 	ctx.log("trace", `Creating new KeyEntry for key {config.key}`)
 	return setmetatable({
 		key = config.key,
@@ -113,7 +118,7 @@ function KeyEntry.new<T>(config: KeyEntryConfig<T>): KeyEntry<T>
 
 		orphanedFiles = {},
 		currentFile = nil,
-		queue = PromiseQueue.new(),
+		queue = queue,
 		txLockPromise = nil,
 
 		closed = false,

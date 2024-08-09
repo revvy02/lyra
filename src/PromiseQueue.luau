@@ -13,6 +13,7 @@ type PromiseQueueImpl = {
 
 type PromiseQueueProps = {
 	_queue: { () -> () },
+	onTimeout: ((error: any) -> ())?,
 }
 
 export type PromiseQueue = typeof(setmetatable({} :: PromiseQueueProps, {} :: PromiseQueueImpl))
@@ -44,13 +45,22 @@ function PromiseQueue:_processQueue()
 			warn("Potential PromiseQueue deadlock")
 		end)
 
-		item():finallyCall(function()
-			table.remove(self._queue, 1)
+		item()
+			:timeout(60)
+			:catch(function(e)
+				if Promise.Error.isKind(e, Promise.Error.Kind.TimedOut) and self.onTimeout ~= nil then
+					task.spawn(self.onTimeout, e)
+				end
+				return e
+			end)
+			:finally(function()
+				table.remove(self._queue, 1)
 
-			if coroutine.status(deadlockWarn) == "suspended" then
-				task.cancel(deadlockWarn)
-			end
-		end):await()
+				if coroutine.status(deadlockWarn) == "suspended" then
+					task.cancel(deadlockWarn)
+				end
+			end)
+			:await()
 	end
 end
 
