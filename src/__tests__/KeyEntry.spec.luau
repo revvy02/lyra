@@ -340,13 +340,6 @@ describe.each({
 			end)
 		end)
 
-		it("handles cases where the KeyEntry is already closed", function()
-			return keyEntry:load():andThen(function()
-				keyEntry.closed = true
-				return expect(keyEntry:unload()).rejects.toMatch("KeyEntry is closed")
-			end)
-		end)
-
 		it("ensures proper saving of data", function()
 			local data = {
 				test = "data",
@@ -359,13 +352,6 @@ describe.each({
 				local record = dataStoreInterface:get(keyEntry.recordScope, "testKey"):expect()
 
 				expect(record.file.data.committedData).toEqual(data)
-			end)
-		end)
-
-		it("handles concurrent unload attempts gracefully", function()
-			return keyEntry:load():andThen(function()
-				keyEntry:unload():expect()
-				return expect(keyEntry:unload()).rejects.toMatch("KeyEntry is closed")
 			end)
 		end)
 	end)

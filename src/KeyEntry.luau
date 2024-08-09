@@ -72,6 +72,7 @@ type KeyEntryProps<T> = {
 	loadPromise: Promise.Promise?,
 	refreshLock: boolean,
 	lockExpiryThread: thread?,
+	unloading: boolean?,
 
 	recordScope: string,
 	shardScope: string,
@@ -284,19 +285,23 @@ KeyEntry.migrateData = t.wrap(KeyEntry.migrateData, t.tuple(t.any, t.any))
 
 function KeyEntry:waitUntilLoaded(): Promise.Promise
 	self.ctx.log("trace", `KeyEntry:waitUntilLoaded called for key {self.key}`)
-	return Promise.resolve(self.loadPromise):andThen(function()
+	return Promise.new(function(resolve, reject)
+		if self.loadPromise then
+			self.loadPromise:await()
+		end
 		if self.closed then
 			self.ctx.log("error", `KeyEntry:waitUntilLoaded - KeyEntry for key {self.key} is closed`)
-			return Promise.reject("KeyEntry is closed")
+			return reject("KeyEntry is closed")
 		end
 		if not self.locked then
 			self.ctx.log("error", `KeyEntry:waitUntilLoaded - KeyEntry for key {self.key} is not locked`)
-			return Promise.reject("KeyEntry is not locked")
+			return reject("KeyEntry is not locked")
 		end
 		if not self.loaded then
 			self.ctx.log("error", `KeyEntry:waitUntilLoaded - KeyEntry for key {self.key} is not loaded`)
-			return Promise.reject("KeyEntry is not loaded")
+			return reject("KeyEntry is not loaded")
 		end
+		resolve()
 	end)
 end
 KeyEntry.waitUntilLoaded = t.wrap(KeyEntry.waitUntilLoaded, t.tuple(t.any))
@@ -403,7 +408,8 @@ function KeyEntry:lock(): Promise.Promise
 		end
 
 		self.lockExpiryThread = task.delay(Constants.LOCK_DURATION_SECONDS, function()
-			self.ctx.log("trace", `KeyEntry:lock - Lock for key {self.key} expired, releasing lock`)
+			self.ctx.log("trace", `KeyEntry:lock - Lock for key {self.key} expired`)
+			self.locked = false
 			self:unlock()
 		end)
 
@@ -415,11 +421,21 @@ KeyEntry.lock = t.wrap(KeyEntry.lock, t.tuple(t.any))
 function KeyEntry:unlock(): Promise.Promise
 	self.ctx.log("trace", `KeyEntry:unlock called for key {self.key}`)
 
-	if not self.locked then
-		return Promise.reject("KeyEntry is not locked")
+	local function transformFunction(lock: Types.LockInfo?): Types.LockInfo?
+		if lock == nil then
+			return { id = "", expiry = 0 }
+		end
+
+		if lock.id ~= self.ctx.lockId and lock.expiry > DateTime.now().UnixTimestamp then
+			self.ctx.log("trace", `KeyEntry:unlock - Key {self.key} not owned by us`)
+			return nil
+		end
+
+		self.ctx.log("trace", `KeyEntry:unlock - Unlocking key {self.key}`)
+		return { id = "", expiry = 0 }
 	end
 
-	return self.ctx.hashMapInterface:remove(self.lockScope, self.key):tap(function()
+	return self.ctx.hashMapInterface:update(self.lockScope, self.key, transformFunction, 0):finally(function()
 		if self.lockExpiryThread then
 			task.cancel(self.lockExpiryThread)
 			self.lockExpiryThread = nil
@@ -435,6 +451,10 @@ function KeyEntry:load(): Promise.Promise
 	if self.loaded then
 		self.ctx.log("warn", `KeyEntry:load - KeyEntry for key {self.key} is already loaded`)
 		return Promise.reject("KeyEntry is already loaded")
+	end
+	if self.locked then
+		self.ctx.log("warn", `KeyEntry:load - KeyEntry for key {self.key} is already locked`)
+		return Promise.reject("KeyEntry is already locked")
 	end
 	if self.closed then
 		self.ctx.log("warn", `KeyEntry:load - KeyEntry for key {self.key} is closed`)
@@ -525,7 +545,6 @@ function KeyEntry:load(): Promise.Promise
 			return data
 		end)
 		:finally(function()
-			self.ctx.log("trace", `KeyEntry:lock - Lock acquisition for key {self.key} finished`)
 			self.loadPromise = nil
 		end)
 
@@ -535,18 +554,33 @@ KeyEntry.load = t.wrap(KeyEntry.load, t.tuple(t.any))
 
 function KeyEntry:unload(): Promise.Promise
 	self.ctx.log("trace", `KeyEntry:unload called for key {self.key}`)
-	return self:waitUntilLoaded()
-		:andThen(function()
-			self.ctx.log("debug", `KeyEntry:unload - Unlocking key {self.key}`)
-			self.closed = true
 
-			return self.queue:add(function()
+	if self.unloading then
+		self.ctx.log("trace", `KeyEntry:unload - KeyEntry for key {self.key} is already being unloaded`)
+		return Promise.reject("KeyEntry is already being unloaded")
+	end
+
+	return Promise.new(function(resolve)
+		self.unloading = true
+		if self.loadPromise then
+			self.loadPromise:timeout(30):await()
+		end
+
+		self.closed = true
+
+		if self.loaded and self.locked then
+			return resolve(self.queue:add(function()
 				self.ctx.log("trace", `KeyEntry:unload - Writing final record for key {self.key}`)
 				return self:updateRecord()
-			end)
-		end)
-		:andThen(function()
+			end))
+		end
+	end)
+		:finally(function()
 			return self:unlock()
+		end)
+		:finally(function()
+			self.unloading = nil
+			self.loaded = false
 		end)
 end
 KeyEntry.unload = t.wrap(KeyEntry.unload, t.tuple(t.any))

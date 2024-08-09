@@ -243,10 +243,9 @@ function Store:unload(key: string): Promise.Promise
 	end
 
 	self._ctx.log("trace", `Store {self._ctx.name}: Unloading key {key}`)
-	self._unloadPromises[key] = self._keyEntries[key]:unload():tap(function()
+	self._unloadPromises[key] = self._keyEntries[key]:unload():finally(function()
 		self._keyEntries[key] = nil
 		self._unloadPromises[key] = nil
-		self._ctx.log("trace", `Store {self._ctx.name}: Key {key} unloaded successfully`)
 	end)
 
 	return self._unloadPromises[key]
