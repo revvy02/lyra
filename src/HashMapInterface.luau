@@ -9,6 +9,7 @@ local RETRY_ERROR_CODES = {
 	"TotalRequestsOverLimit",
 	"InternalError",
 	"Throttled",
+	"PartitionRequestsOverLimit",
 }
 
 type HashMapInterfaceImpl = {
