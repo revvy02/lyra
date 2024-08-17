@@ -15,7 +15,7 @@ function FileManager.isLargeFile(file: Types.File): boolean
 	return file.shard ~= nil
 end
 
-export type WriteOptions = {
+export type WriteParams = {
 	dataStoreInterface: DataStoreInterface.DataStoreInterface,
 	data: any,
 	maxShardSize: number,
@@ -28,19 +28,19 @@ export type WriteError = {
 	file: Types.File,
 }
 
-function FileManager.write(opts: WriteOptions): Promise.TypedPromise<Types.File>
-	local str = HttpService:JSONEncode(opts.data)
-	if #str <= opts.maxShardSize then
-		return Promise.resolve({ data = opts.data } :: Types.File)
+function FileManager.write(params: WriteParams): Promise.TypedPromise<Types.File>
+	local str = HttpService:JSONEncode(params.data)
+	if #str <= params.maxShardSize then
+		return Promise.resolve({ data = params.data } :: Types.File)
 	end
 
 	local shardId = HttpService:GenerateGUID(false)
 	-- TODO: Add a test case ensuring that splitUtf8String is called with the correct arguments
-	local shards = splitUtf8String(str, opts.maxShardSize)
+	local shards = splitUtf8String(str, params.maxShardSize)
 	local file = { shard = shardId, count = #shards }
 
 	local shardPromises = Array.map(shards, function(shard, index)
-		return opts.dataStoreInterface:set(opts.scope, `{shardId}-{index}`, shard, opts.userIds)
+		return params.dataStoreInterface:set(params.scope, `{shardId}-{index}`, shard, params.userIds)
 	end)
 
 	return Promise.all(shardPromises):andThenReturn(file):catch(function(err)
@@ -51,23 +51,23 @@ function FileManager.write(opts: WriteOptions): Promise.TypedPromise<Types.File>
 	end)
 end
 
-export type ReadOptions = {
+export type ReadParams = {
 	dataStoreInterface: DataStoreInterface.DataStoreInterface,
 	scope: string,
 	file: Types.File,
 }
 
-function FileManager.read(opts: ReadOptions): Promise.TypedPromise<any>
-	if not FileManager.isLargeFile(opts.file) then
-		return Promise.resolve(opts.file.data)
+function FileManager.read(params: ReadParams): Promise.TypedPromise<any>
+	if not FileManager.isLargeFile(params.file) then
+		return Promise.resolve(params.file.data)
 	end
 
-	local shardId = opts.file.shard
+	local shardId = params.file.shard
 
 	local promises = {}
 
-	for i = 1, opts.file.count do
-		table.insert(promises, opts.dataStoreInterface:get(opts.scope, `{shardId}-{i}`))
+	for i = 1, params.file.count do
+		table.insert(promises, params.dataStoreInterface:get(params.scope, `{shardId}-{i}`))
 	end
 
 	return Promise.all(promises):andThen(function(shards)

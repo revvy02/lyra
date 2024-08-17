@@ -52,6 +52,7 @@ type StoreImpl<T> = {
 	__index: StoreImpl<T>,
 
 	_processOrphanedFile: (self: Store<T>, item: Types.OrphanedFileQueueItem) -> boolean,
+	_withKeyEntry: (self: Store<T>, key: string, callback: (keyEntry: KeyEntry.KeyEntry<any>) -> ()) -> Promise.Promise,
 
 	load: (self: Store<T>, key: string, userIds: { number }?) -> Promise.Promise,
 	unload: (self: Store<T>, key: string) -> Promise.Promise,
@@ -71,6 +72,7 @@ type StoreProps<T> = {
 	_closed: boolean,
 	_keyEntries: { [string]: KeyEntry.KeyEntry<T> },
 	_lastTxId: string?,
+	_loadPromises: { [string]: Promise.Promise },
 	_unloadPromises: { [string]: Promise.Promise },
 }
 
@@ -93,7 +95,7 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		end
 	end
 
-	log("info", `Creating new Store with name {config.name}`)
+	log("debug", `Creating new Store with name {config.name}`)
 	local dataStoreInterface = config.dataStoreInterface
 	if dataStoreInterface == nil then
 		local service
@@ -111,7 +113,6 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 	assert(dataStoreInterface, "luau")
 
 	local hashMapInterface = HashMapInterface.new(MemoryStoreService)
-
 	local orphanedFileQueue = OrphanedFileQueue.new()
 
 	local migrations = config.migrations or {}
@@ -130,6 +131,11 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		latestVersion = #migrations,
 		changedCallbacks = config.changedCallbacks or {},
 		log = log,
+
+		recordScope = `{Constants.RECORD_SCOPE}/{config.name}`,
+		shardScope = `{Constants.SHARD_SCOPE}/{config.name}`,
+		txScope = `{Constants.TX_SCOPE}/{config.name}`,
+		lockScope = `{Constants.LOCK_SCOPE}/{config.name}`,
 	}
 
 	local ok, err = storeContext.schema(storeContext.template)
@@ -142,6 +148,7 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		_closed = false,
 		_keyEntries = {},
 		_lastTxId = nil,
+		_loadPromises = {},
 		_unloadPromises = {},
 	}, Store)
 
@@ -218,16 +225,35 @@ function Store:load(key: string, userIds: { number }?): Promise.Promise
 		return Promise.reject("Store is closed")
 	end
 
-	return (self._unloadPromises[key] :: any or Promise.resolve()):finally(function()
-		local keyEntry = KeyEntry.new({
-			key = key,
-			storeContext = self._ctx,
-			userIds = userIds,
-		})
-		self._keyEntries[key] = keyEntry
-		self._ctx.log("trace", `Store {self._ctx.name}: Loading key {key}`)
-		return keyEntry:load()
-	end)
+	if self._keyEntries[key] then
+		self._ctx.log("trace", `Store {self._ctx.name}: Key {key} is already loaded`)
+		return Promise.resolve()
+	end
+
+	if self._loadPromises[key] then
+		self._ctx.log("trace", `Store {self._ctx.name}: Load for key {key} is already in progress`)
+		return Promise.reject("Load already in progress")
+	end
+
+	local params = {
+		storeContext = self._ctx,
+		key = key,
+		userIds = userIds,
+	}
+	self._loadPromises[key] = KeyEntry.load(params)
+		:andThen(function(keyEntry)
+			self._keyEntries[key] = keyEntry
+
+			keyEntry:startAutosaving()
+			keyEntry.lockHandle.onLockLost(function()
+				self._keyEntries[key] = nil
+			end)
+		end)
+		:finally(function()
+			self._loadPromises[key] = nil
+		end)
+
+	return self._loadPromises[key] or Promise.resolve()
 end
 Store.load = t.wrap(Store.load, t.tuple(t.any, t.string, t.optional(t.array(t.number))))
 
@@ -242,33 +268,59 @@ function Store:unload(key: string): Promise.Promise
 		return Promise.reject("Unload already in progress")
 	end
 
+	if self._loadPromises[key] then
+		self._ctx.log("trace", `Store {self._ctx.name}: Key {key} is currently being loaded, cancelling load`)
+		self._loadPromises[key]:cancel()
+		self._loadPromises[key] = nil
+		return Promise.resolve()
+	end
+
 	self._ctx.log("trace", `Store {self._ctx.name}: Unloading key {key}`)
 	self._unloadPromises[key] = self._keyEntries[key]:unload():finally(function()
 		self._keyEntries[key] = nil
 		self._unloadPromises[key] = nil
 	end)
 
-	return self._unloadPromises[key]
+	return self._unloadPromises[key] or Promise.resolve()
 end
 Store.unload = t.wrap(Store.unload, t.tuple(t.any, t.string))
 
+function Store:_withKeyEntry(key: string, callback: (keyEntry: KeyEntry.KeyEntry<any>) -> any): Promise.Promise
+	return Promise.new(function(resolve, reject)
+		if self._closed then
+			self._ctx.log("warn", `Store {self._ctx.name}: Attempted to use key {key} while store is closed`)
+			return reject("Store is closed")
+		end
+
+		local loadPromise = self._loadPromises[key]
+		if loadPromise then
+			local loaded = loadPromise:await()
+			if not loaded then
+				return reject("Error while loading key")
+			end
+		end
+
+		local keyEntry = self._keyEntries[key]
+		if not keyEntry then
+			self._ctx.log("warn", `Store {self._ctx.name}: Key {key} not loaded`)
+			return reject("Key not loaded")
+		end
+
+		resolve(callback(keyEntry))
+	end)
+end
+
 function Store:get<T>(key: string): Promise.TypedPromise<T>
-	self._ctx.log("trace", `Store {self._ctx.name}: Getting data for key {key}`)
-	if self._closed then
-		self._ctx.log("warn", `Store {self._ctx.name}: Attempted to get data for key {key} while store is closed`)
-		return Promise.reject("Store is closed")
-	end
-	return self._keyEntries[key]:get()
+	return self:_withKeyEntry(key, function(keyEntry)
+		return keyEntry:get()
+	end)
 end
 Store.get = t.wrap(Store.get, t.tuple(t.any, t.string))
 
 function Store:update<T>(key: string, transformFunction: (data: T) -> boolean): Promise.Promise
-	self._ctx.log("trace", `Store {self._ctx.name}: Updating data for key {key}`)
-	if self._closed then
-		self._ctx.log("warn", `Store {self._ctx.name}: Attempted to update data for key {key} while store is closed`)
-		return Promise.reject("Store is closed")
-	end
-	return self._keyEntries[key]:update(transformFunction)
+	return self:_withKeyEntry(key, function(keyEntry)
+		return keyEntry:update(transformFunction)
+	end)
 end
 Store.update = t.wrap(Store.update, t.tuple(t.any, t.string, t.callback))
 
@@ -282,41 +334,27 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 		return Promise.reject("Store is closed")
 	end
 
+	for _, key in keys do
+		local keyEntry = self._keyEntries[key]
+		if not keyEntry then
+			return Promise.reject(`Key {key} not loaded`)
+		end
+		if keyEntry.txLockPromise then
+			return Promise.reject(`Key {key} is already locked by another transaction`)
+		end
+		if keyEntry.closed then
+			return Promise.reject(`Key {key} is closed`)
+		end
+	end
+
 	local txLockResolve
 	local txLockPromise = Promise.new(function(resolve)
 		txLockResolve = resolve
 	end)
 
-	local isClosed = false
-	local isLoaded = true
 	local queues = Array.map(keys, function(key)
-		local keyEntry = self._keyEntries[key]
-
-		if keyEntry.closed then
-			isClosed = true
-		end
-		if not keyEntry.loaded then
-			isLoaded = false
-		end
-
-		return keyEntry.queue
+		return self._keyEntries[key].queue
 	end)
-
-	if isClosed then
-		self._ctx.log(
-			"error",
-			`Store {self._ctx.name}: Cannot start transaction for keys {table.concat(keys, ", ")}: one or more KeyEntries are closed`
-		)
-		return Promise.reject("One or more KeyEntries are closed")
-	end
-
-	if not isLoaded then
-		self._ctx.log(
-			"error",
-			`Store {self._ctx.name}: Cannot start transaction for keys {table.concat(keys, ", ")}: one or more KeyEntries are not loaded`
-		)
-		return Promise.reject("One or more KeyEntries are not loaded")
-	end
 
 	local txId = HttpService:GenerateGUID(false)
 
@@ -480,17 +518,19 @@ end
 Store.tx = t.wrap(Store.tx, t.tuple(t.any, t.array(t.string), t.callback))
 
 function Store:save(key: string): Promise.Promise
-	self._ctx.log("trace", `Store {self._ctx.name}: Saving key {key}`)
-	if self._closed then
-		self._ctx.log("warn", `Store {self._ctx.name}: Attempted to save key {key} while store is closed`)
-		return Promise.reject("Store is closed")
-	end
-	return self._keyEntries[key]:save()
+	return self:_withKeyEntry(key, function(keyEntry)
+		return keyEntry:save()
+	end)
 end
 Store.save = t.wrap(Store.save, t.tuple(t.any, t.string))
 
 function Store:close(): Promise.Promise
 	self._ctx.log("info", `Store {self._ctx.name}: Closing store`)
+
+	for _, loadPromise in self._loadPromises do
+		(loadPromise :: any):cancel()
+	end
+
 	local promises = {}
 	for key in self._keyEntries do
 		if self._unloadPromises[key] then

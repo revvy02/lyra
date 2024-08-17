@@ -55,15 +55,22 @@ export type StoreContext<T> = {
 	name: string,
 	template: T,
 	schema: (value: any) -> (boolean, string?),
+
 	migrations: { [number]: (value: any) -> any },
 	migrateFromOtherSystem: ((key: string) -> T?)?,
+	latestVersion: number,
+
 	dataStoreInterface: DataStoreInterface.DataStoreInterface,
 	hashMapInterface: HashMapInterface.HashMapInterface,
-	lockId: string,
+
 	orphanedFileQueue: OrphanedFileQueue,
-	latestVersion: number,
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () },
 	log: (level: "fatal" | "error" | "warn" | "info" | "debug" | "trace", message: string) -> (),
+
+	recordScope: string,
+	shardScope: string,
+	txScope: string,
+	lockScope: string,
 }
 
 export type LogMessage = {
