@@ -34,6 +34,7 @@ export type StoreConfig<T> = {
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () }?,
 	logCallback: ((logMessage: Types.LogMessage) -> ())?,
 	stopOutput: boolean?,
+	onLockLost: ((key: string) -> ())?,
 }
 local storeConfigCheck = t.strictInterface({
 	name = t.string,
@@ -46,6 +47,7 @@ local storeConfigCheck = t.strictInterface({
 	changedCallbacks = t.optional(t.array(t.callback)),
 	logCallback = t.optional(t.callback),
 	stopOutput = t.optional(t.boolean),
+	onLockLost = t.optional(t.callback),
 })
 
 type StoreImpl<T> = {
@@ -135,6 +137,7 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		latestVersion = #migrations,
 		changedCallbacks = config.changedCallbacks or {},
 		log = log,
+		onLockLost = config.onLockLost,
 
 		recordScope = `{Constants.RECORD_SCOPE}/{config.name}`,
 		shardScope = `{Constants.SHARD_SCOPE}/{config.name}`,
@@ -250,6 +253,9 @@ function Store:load(key: string, userIds: { number }?): Promise.Promise
 
 			keyEntry:startAutosaving()
 			keyEntry.lockHandle.onLockLost(function()
+				if self._ctx.onlockLost then
+					self._ctx.onLockLost(key)
+				end
 				self._keyEntries[key] = nil
 			end)
 		end)

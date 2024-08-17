@@ -66,6 +66,7 @@ export type StoreContext<T> = {
 	orphanedFileQueue: OrphanedFileQueue,
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () },
 	log: (level: "fatal" | "error" | "warn" | "info" | "debug" | "trace", message: string) -> (),
+	onLockLost: ((key: string) -> ())?,
 
 	recordScope: string,
 	shardScope: string,
