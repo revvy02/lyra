@@ -28,7 +28,7 @@ export type StoreConfig<T> = {
 	template: T,
 	schema: (value: any) -> (boolean, string?),
 	migrations: { [number]: (value: any) -> any }?,
-	migrateFromOtherSystem: ((key: string) -> T?)?,
+	migrateFromOtherSystem: ((key: string) -> any?)?,
 	dataStoreInterface: DataStoreInterface.DataStoreInterface?,
 	useMock: boolean?,
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () }?,
