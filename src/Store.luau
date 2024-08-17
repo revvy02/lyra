@@ -253,7 +253,7 @@ function Store:load(key: string, userIds: { number }?): Promise.Promise
 
 			keyEntry:startAutosaving()
 			keyEntry.lockHandle.onLockLost(function()
-				if self._ctx.onlockLost then
+				if self._ctx.onLockLost then
 					self._ctx.onLockLost(key)
 				end
 				self._keyEntries[key] = nil
