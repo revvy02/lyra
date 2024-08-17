@@ -83,6 +83,10 @@ Store.__index = Store
 
 local function createStore<T>(config: StoreConfig<T>): Store<T>
 	local function log(level: "fatal" | "error" | "warn" | "info" | "debug" | "trace", message: string)
+		if level == "fatal" or level == "error" then
+			message = `{message}\nTrace:\n{debug.traceback(nil, 2)}`
+		end
+
 		if not config.stopOutput then
 			Log[level](message)
 		end
