@@ -304,9 +304,9 @@ function Store:_withKeyEntry(key: string, callback: (keyEntry: KeyEntry.KeyEntry
 
 		local loadPromise = self._loadPromises[key]
 		if loadPromise then
-			local loaded = loadPromise:await()
+			local loaded, result = loadPromise:await()
 			if not loaded then
-				return reject("Error while loading key")
+				return reject(`loadPromise did not resolve: {result}`)
 			end
 		end
 
