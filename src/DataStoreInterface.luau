@@ -74,6 +74,7 @@ end
 
 function DataStoreInterface:_retry(func: () -> any): Promise.TypedPromise<any>
 	return Promise.new(function(resolve, reject)
+		local lastError
 		for _ = 1, MAX_RETRIES do
 			local result = table.pack(pcall(func))
 			if result[1] == true then
@@ -83,12 +84,13 @@ function DataStoreInterface:_retry(func: () -> any): Promise.TypedPromise<any>
 			local errorCode = result[2]:match("(%d+)")
 			errorCode = if errorCode then tonumber(errorCode) else nil
 			if errorCode ~= nil and table.find(RETRY_ERROR_CODES, errorCode) then
+				lastError = result[2]
 				continue
 			else
 				return reject(`DataStore error: {result[2]}`)
 			end
 		end
-		return reject("DataStore error: too many retries")
+		return reject(`DataStore error: too many retries. Last error: {lastError}`)
 	end)
 end
 
