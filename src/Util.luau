@@ -64,6 +64,26 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 	local locked = false
 	local onLockLostCallbacks: { () -> () } = {}
 
+	local function release(): Promise.Promise
+		if lockRefreshThread then
+			task.cancel(lockRefreshThread)
+		end
+		if lockExpiryThread then
+			task.cancel(lockExpiryThread)
+		end
+
+		local function transformFunction(curLockId: string?): string?
+			if curLockId == nil or curLockId == lockId then
+				return ""
+			end
+			return nil
+		end
+
+		return ctx.hashMapInterface:update(scope, key, transformFunction, 0):finally(function()
+			locked = false
+		end)
+	end
+
 	local function lock()
 		local function transformFunction(otherLockId: string?): string?
 			if otherLockId == nil or otherLockId == lockId then
@@ -73,7 +93,9 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 			return nil
 		end
 
-		return Promise.new(function(resolve, reject)
+		return Promise.new(function(resolve, reject, onCancel)
+			onCancel(release)
+
 			for i = 1, params.acquireAttempts do
 				local resolved, lastValue =
 					ctx.hashMapInterface:update(scope, key, transformFunction, params.duration):await()
@@ -118,24 +140,6 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 				ctx.log("warn", `Failed to refresh lock for key {key}: {err}`)
 			end
 		end
-	end
-
-	local function release(): Promise.Promise
-		task.cancel(lockRefreshThread)
-		if lockExpiryThread then
-			task.cancel(lockExpiryThread)
-		end
-
-		local function transformFunction(curLockId: string?): string?
-			if curLockId == nil or curLockId == lockId then
-				return ""
-			end
-			return nil
-		end
-
-		return ctx.hashMapInterface:update(scope, key, transformFunction, 0):finally(function()
-			locked = false
-		end)
 	end
 
 	local function isLocked(): boolean
