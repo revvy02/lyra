@@ -1,6 +1,6 @@
 {
   "name": "@paradoxum-games/lyra",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "A DataStoreService wrapper",
   "scripts": {
     "test": "exit 0"
