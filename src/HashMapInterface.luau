@@ -62,6 +62,7 @@ end
 
 function HashMapInterface:_retry(func: () -> any): Promise.TypedPromise<any>
 	return Promise.new(function(resolve, reject)
+		local lastError
 		for i = 1, MAX_RETRIES do
 			if i > 1 then
 				local retryAfter = 2 ^ (i - 1)
@@ -73,15 +74,24 @@ function HashMapInterface:_retry(func: () -> any): Promise.TypedPromise<any>
 				return resolve(table.unpack(result, 2))
 			end
 
+			lastError = result[2]
+
+			local retry = false
+
 			for _, errorCode in RETRY_ERROR_CODES do
-				if result[2]:find(errorCode) then
-					continue
+				if result[2]:find(errorCode, 0, true) then
+					retry = true
+					break
 				end
+			end
+
+			if retry then
+				continue
 			end
 
 			return reject(`HashMap error: {result[2]}`)
 		end
-		return reject("HashMap error: too many retries")
+		return reject(`HashMap error: too many retries. Last error: {lastError}`)
 	end)
 end
 
