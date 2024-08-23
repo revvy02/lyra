@@ -27,9 +27,12 @@ end
 
 function PromiseQueue:add(callback: () -> ()): Promise.Promise
 	return Promise.new(function(resolve, reject)
-		table.insert(self._queue, function()
-			return Promise.try(callback):andThen(resolve, reject)
-		end)
+		table.insert(self._queue, {
+			fn = function()
+				return Promise.try(callback):andThen(resolve, reject)
+			end,
+			trace = debug.traceback(nil, 2),
+		})
 		if #self._queue == 1 then
 			self:_processQueue()
 		end
@@ -49,7 +52,10 @@ function PromiseQueue:_processQueue()
 			:timeout(60)
 			:catch(function(e)
 				if Promise.Error.isKind(e, Promise.Error.Kind.TimedOut) and self.onTimeout ~= nil then
-					task.spawn(self.onTimeout, e)
+					task.spawn(
+						self.onTimeout,
+						`PromiseQueue item timed out after 60 seconds\nQueue item added at:\n{item.trace}`
+					)
 				end
 				return e
 			end)
