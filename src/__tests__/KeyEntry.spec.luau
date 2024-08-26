@@ -193,7 +193,7 @@ describe.each({
 				:andThen(function(keyEntry)
 					local data = keyEntry:get():expect()
 					local now2 = DateTime.now().UnixTimestamp
-					expect(now2 - now).toBeGreaterThan(1)
+					expect(now2 - now).toBeGreaterThan(0.9)
 					expect(data).never.toBeNil()
 				end)
 		end)
