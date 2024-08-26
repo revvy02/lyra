@@ -48,7 +48,7 @@ function PromiseQueue:_processQueue()
 			warn("Potential PromiseQueue deadlock")
 		end)
 
-		item()
+		item.fn()
 			:timeout(60)
 			:catch(function(e)
 				if Promise.Error.isKind(e, Promise.Error.Kind.TimedOut) and self.onTimeout ~= nil then
