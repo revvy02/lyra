@@ -232,7 +232,7 @@ function Store:load(key: string, userIds: { number }?): Promise.Promise
 		return Promise.reject("Store is closed")
 	end
 
-	if self._keyEntries[key] then
+	if self._keyEntries[key] and not self._unloadPromises[key] then
 		self._ctx.log("trace", `Store {self._ctx.name}: Key {key} is already loaded`)
 		return Promise.resolve()
 	end
@@ -242,12 +242,20 @@ function Store:load(key: string, userIds: { number }?): Promise.Promise
 		return Promise.reject("Load already in progress")
 	end
 
+	local waitForUnload = Promise.try(function()
+		local unloadPromise = self._unloadPromises[key]
+		if unloadPromise then
+			unloadPromise:await()
+		end
+	end)
+
 	local params = {
 		storeContext = self._ctx,
 		key = key,
 		userIds = userIds,
 	}
-	self._loadPromises[key] = KeyEntry.load(params)
+	self._loadPromises[key] = waitForUnload
+		:andThenCall(KeyEntry.load, params)
 		:andThen(function(keyEntry)
 			self._keyEntries[key] = keyEntry
 
@@ -275,13 +283,18 @@ function Store:unload(key: string): Promise.Promise
 	end
 	if self._unloadPromises[key] then
 		self._ctx.log("trace", `Store {self._ctx.name}: Unload for key {key} is already in progress`)
-		return Promise.reject("Unload already in progress")
+		return self._unloadPromises[key]
 	end
 
 	if self._loadPromises[key] then
 		self._ctx.log("trace", `Store {self._ctx.name}: Key {key} is currently being loaded, cancelling load`)
 		self._loadPromises[key]:cancel()
 		self._loadPromises[key] = nil
+		return Promise.resolve()
+	end
+
+	if not self._keyEntries[key] then
+		self._ctx.log("trace", `Store {self._ctx.name}: Key {key} is not loaded`)
 		return Promise.resolve()
 	end
 
@@ -306,7 +319,13 @@ function Store:_withKeyEntry(key: string, callback: (keyEntry: KeyEntry.KeyEntry
 		if loadPromise then
 			local loaded, result = loadPromise:await()
 			if not loaded then
-				return reject(`loadPromise did not resolve: {result}`)
+				local status = loadPromise:awaitStatus()
+				self._ctx.log("warn", `Store {self._ctx.name}: Key {key} load failed: {result}, status: {status}`)
+				if status == (Promise :: any).Status.Cancelled then
+					return reject(`key {key} load was cancelled`)
+				else
+					return reject(`key {key} load failed: {result}`)
+				end
 			end
 		end
 

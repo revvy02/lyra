@@ -26,15 +26,26 @@ function PromiseQueue.new(): PromiseQueue
 end
 
 function PromiseQueue:add(callback: () -> ()): Promise.Promise
-	return Promise.new(function(resolve, reject)
-		table.insert(self._queue, {
+	return Promise.new(function(resolve, reject, onCancel)
+		local record = {
 			fn = function()
 				return Promise.try(callback):andThen(resolve, reject)
 			end,
 			trace = debug.traceback(nil, 2),
-		})
+		}
+		table.insert(self._queue, record)
+
+		onCancel(function()
+			local idx = table.find(self._queue, record)
+			if idx then
+				table.remove(self._queue, idx)
+			end
+		end)
+
 		if #self._queue == 1 then
-			self:_processQueue()
+			task.spawn(function()
+				self:_processQueue()
+			end)
 		end
 	end)
 end

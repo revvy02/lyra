@@ -284,6 +284,7 @@ function KeyEntry.load<T>(params: LoadKeyEntryParams<T>): Promise.TypedPromise<K
 			return keyEntry :: any
 		end):finally(function(status): ()
 			if status ~= (Promise :: any).Status.Resolved then
+				ctx.log("error", `KeyEntry:load - Failed to load key {params.key}: {status}, releasing`)
 				return lockHandle.release()
 			end
 		end)
@@ -436,7 +437,10 @@ function KeyEntry:unload(): Promise.Promise
 		:add(function()
 			return self:updateRecord()
 		end)
-		:finally(self.lockHandle.release)
+		:finally(function()
+			self.ctx.log("info", `KeyEntry:unload - Unloaded key {self.key}. Calling release`)
+			self.lockHandle.release()
+		end)
 
 	return self.unloadPromise :: any
 end
