@@ -13,27 +13,32 @@ local RETRY_ERROR_CODES = {
 }
 local ERROR_RATE = 0
 
+type RetryHandle<T> = {
+	promise: T,
+	cancel: () -> (),
+}
+
 type HashMapInterfaceImpl = {
 	__index: HashMapInterfaceImpl,
 	_getHashMap: (self: HashMapInterface, scope: string) -> MemoryStoreHashMap,
-	_retry: (self: HashMapInterface, func: () -> any) -> Promise.TypedPromise<any>,
+	_retry: (self: HashMapInterface, func: () -> any) -> RetryHandle<Promise.TypedPromise<any>>,
 	new: (memoryStoreService: MemoryStoreService) -> HashMapInterface,
-	get: (self: HashMapInterface, scope: string, key: string) -> Promise.TypedPromise<any?>,
+	get: (self: HashMapInterface, scope: string, key: string) -> RetryHandle<Promise.TypedPromise<any?>>,
 	set: (
 		self: HashMapInterface,
 		scope: string,
 		key: string,
 		value: any,
 		expiration: number
-	) -> Promise.TypedPromise<boolean>,
+	) -> RetryHandle<Promise.TypedPromise<boolean>>,
 	update: (
 		self: HashMapInterface,
 		scope: string,
 		key: string,
 		transformFunction: (currentValue: any?) -> any?,
 		expiration: number
-	) -> Promise.TypedPromise<any?>,
-	remove: (self: HashMapInterface, scope: string, key: string) -> Promise.Promise,
+	) -> RetryHandle<Promise.TypedPromise<any?>>,
+	remove: (self: HashMapInterface, scope: string, key: string) -> RetryHandle<Promise.Promise>,
 }
 
 type HashMapInterfaceProps = {
@@ -61,53 +66,71 @@ function HashMapInterface:_getHashMap(scope: string): MemoryStoreHashMap
 	return self._hashMaps[scope]
 end
 
-function HashMapInterface:_retry(func: () -> any): Promise.TypedPromise<any>
-	return Promise.new(function(resolve, reject)
-		local lastError
-		for i = 1, MAX_RETRIES do
-			if i > 1 then
-				local retryAfter = 2 ^ (i - 1)
-				task.wait(retryAfter)
-			end
+function HashMapInterface:_retry(func: () -> any): RetryHandle<Promise.TypedPromise<any>>
+	local cancel = false
 
-			if math.random() < ERROR_RATE then
-				return reject(`HashMap error: Simulated MemoryStore error`)
-			end
-
-			local result = table.pack(pcall(func))
-			if result[1] == true then
-				return resolve(table.unpack(result, 2))
-			end
-
-			lastError = result[2]
-
-			local retry = false
-
-			for _, errorCode in RETRY_ERROR_CODES do
-				if result[2]:find(errorCode, 0, true) then
-					retry = true
-					break
+	local handle: RetryHandle<Promise.TypedPromise<any>> = {
+		promise = Promise.new(function(resolve, reject)
+			local lastError
+			for i = 1, MAX_RETRIES do
+				if i > 1 and not cancel then
+					local retryAfter = 2 ^ (i - 1)
+					task.wait(retryAfter)
 				end
-			end
 
-			if retry then
-				continue
-			end
+				if cancel then
+					return reject(`HashMap error: operation cancelled`)
+				end
 
-			return reject(`HashMap error: {result[2]}`)
-		end
-		return reject(`HashMap error: too many retries. Last error: {lastError}`)
-	end)
+				if math.random() < ERROR_RATE then
+					return reject(`HashMap error: Simulated MemoryStore error`)
+				end
+
+				local result = table.pack(pcall(func))
+				if result[1] == true then
+					return resolve(table.unpack(result, 2))
+				end
+
+				lastError = result[2]
+
+				local retry = false
+
+				for _, errorCode in RETRY_ERROR_CODES do
+					if result[2]:find(errorCode, 0, true) then
+						retry = true
+						break
+					end
+				end
+
+				if retry then
+					continue
+				end
+
+				return reject(`HashMap error: {result[2]}`)
+			end
+			return reject(`HashMap error: too many retries. Last error: {lastError}`)
+		end),
+		cancel = function()
+			cancel = true
+		end,
+	}
+
+	return handle
 end
 
-function HashMapInterface:get(scope: string, key: string): Promise.TypedPromise<any?>
+function HashMapInterface:get(scope: string, key: string): RetryHandle<Promise.TypedPromise<any?>>
 	local hashMap = self:_getHashMap(scope)
 	return self:_retry(function()
 		return hashMap:GetAsync(key)
 	end)
 end
 
-function HashMapInterface:set(scope: string, key: string, value: any, expiration: number): Promise.TypedPromise<boolean>
+function HashMapInterface:set(
+	scope: string,
+	key: string,
+	value: any,
+	expiration: number
+): RetryHandle<Promise.TypedPromise<boolean>>
 	local hashMap = self:_getHashMap(scope)
 	return self:_retry(function()
 		return hashMap:SetAsync(key, value, expiration)
@@ -119,14 +142,14 @@ function HashMapInterface:update(
 	key: string,
 	transformFunction: (currentValue: any?) -> any?,
 	expiration: number
-): Promise.TypedPromise<any?>
+): RetryHandle<Promise.TypedPromise<any?>>
 	local hashMap = self:_getHashMap(scope)
 	return self:_retry(function()
 		return hashMap:UpdateAsync(key, transformFunction, expiration)
 	end) :: any
 end
 
-function HashMapInterface:remove(scope: string, key: string): Promise.Promise
+function HashMapInterface:remove(scope: string, key: string): RetryHandle<Promise.Promise>
 	local hashMap = self:_getHashMap(scope)
 	return self:_retry(function()
 		return hashMap:RemoveAsync(key)
