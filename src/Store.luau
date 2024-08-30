@@ -245,6 +245,10 @@ function Store:load(key: string, userIds: { number }?): Promise.Promise
 	local waitForUnload = Promise.try(function()
 		local unloadPromise = self._unloadPromises[key]
 		if unloadPromise then
+			self._ctx.log(
+				"trace",
+				`Store {self._ctx.name}: Key {key} is currently being unloaded, waiting for unload to complete`
+			)
 			unloadPromise:await()
 		end
 	end)
@@ -290,6 +294,7 @@ function Store:unload(key: string): Promise.Promise
 	if self._loadPromises[key] then
 		self._ctx.log("trace", `Store {self._ctx.name}: Key {key} is currently being loaded, cancelling load`)
 		self._loadPromises[key]:cancel()
+		return Promise.resolve()
 	end
 
 	if self._unloadPromises[key] then

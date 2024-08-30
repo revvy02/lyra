@@ -442,7 +442,7 @@ function KeyEntry:unload(): Promise.Promise
 		end)
 		:finally(function()
 			self.ctx.log("info", `KeyEntry:unload - Unloaded key {self.key}. Calling release`)
-			self.lockHandle.release():catch(function(e)
+			return self.lockHandle.release():catch(function(e)
 				self.ctx.log("warn", `KeyEntry:unload - Failed to release lock for key {self.key}: {e}`)
 			end)
 		end)
