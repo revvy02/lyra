@@ -76,7 +76,12 @@ end
 function DataStoreInterface:_retry(func: () -> any): Promise.TypedPromise<any>
 	return Promise.new(function(resolve, reject)
 		local lastError
-		for _ = 1, MAX_RETRIES do
+		for i = 1, MAX_RETRIES do
+			if i > 1 then
+				local retryAfter = 2 ^ (i - 1)
+				task.wait(retryAfter)
+			end
+
 			if math.random() < ERROR_RATE then
 				return reject(`DataStore error: Simulated DataStore error`)
 			end
