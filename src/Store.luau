@@ -254,24 +254,29 @@ function Store:load(key: string, userIds: { number }?): Promise.Promise
 		key = key,
 		userIds = userIds,
 	}
-	self._loadPromises[key] = waitForUnload
-		:andThenCall(KeyEntry.load, params)
-		:andThen(function(keyEntry)
-			self._keyEntries[key] = keyEntry
+	local loadPromise = waitForUnload:andThenCall(KeyEntry.load, params):andThen(function(keyEntry)
+		self._keyEntries[key] = keyEntry
 
-			keyEntry:startAutosaving()
-			keyEntry.lockHandle.onLockLost(function()
-				if self._ctx.onLockLost then
-					self._ctx.onLockLost(key)
-				end
-				self._keyEntries[key] = nil
-			end)
+		keyEntry:startAutosaving()
+		keyEntry.lockHandle.onLockLost(function()
+			if self._ctx.onLockLost then
+				self._ctx.onLockLost(key)
+			end
+			self._keyEntries[key] = nil
 		end)
-		:finally(function()
-			self._loadPromises[key] = nil
-		end)
+	end)
 
-	return self._loadPromises[key] or Promise.resolve()
+	self._loadPromises[key] = loadPromise
+	loadPromise:finally(function()
+		self._loadPromises[key] = nil
+	end)
+
+	return loadPromise:finally(function(status)
+		if status == (Promise :: any).Status.Cancelled then
+			self._ctx.log("trace", `Store {self._ctx.name}: Load for key {key} was cancelled`)
+			return Promise.reject("Load was cancelled")
+		end
+	end)
 end
 Store.load = t.wrap(Store.load, t.tuple(t.any, t.string, t.optional(t.array(t.number))))
 
@@ -281,16 +286,15 @@ function Store:unload(key: string): Promise.Promise
 		self._ctx.log("warn", `Store {self._ctx.name}: Attempted to unload key {key} while store is closed`)
 		return Promise.reject("Store is closed")
 	end
-	if self._unloadPromises[key] then
-		self._ctx.log("trace", `Store {self._ctx.name}: Unload for key {key} is already in progress`)
-		return self._unloadPromises[key]
-	end
 
 	if self._loadPromises[key] then
 		self._ctx.log("trace", `Store {self._ctx.name}: Key {key} is currently being loaded, cancelling load`)
 		self._loadPromises[key]:cancel()
-		self._loadPromises[key] = nil
-		return Promise.resolve()
+	end
+
+	if self._unloadPromises[key] then
+		self._ctx.log("error", `Store {self._ctx.name}: Unload for key {key} is already in progress`)
+		return self._unloadPromises[key]
 	end
 
 	if not self._keyEntries[key] then
@@ -300,6 +304,7 @@ function Store:unload(key: string): Promise.Promise
 
 	self._ctx.log("trace", `Store {self._ctx.name}: Unloading key {key}`)
 	self._unloadPromises[key] = self._keyEntries[key]:unload():finally(function()
+		self._ctx.log("trace", `Store {self._ctx.name}: Key {key} successfully unloaded`)
 		self._keyEntries[key] = nil
 		self._unloadPromises[key] = nil
 	end)
@@ -317,15 +322,14 @@ function Store:_withKeyEntry(key: string, callback: (keyEntry: KeyEntry.KeyEntry
 
 		local loadPromise = self._loadPromises[key]
 		if loadPromise then
-			local loaded, result = loadPromise:await()
+			local loaded = loadPromise:await()
 			if not loaded then
-				local status = loadPromise:awaitStatus()
-				self._ctx.log("warn", `Store {self._ctx.name}: Key {key} load failed: {result}, status: {status}`)
-				if status == (Promise :: any).Status.Cancelled then
-					return reject(`key {key} load was cancelled`)
-				else
-					return reject(`key {key} load failed: {result}`)
-				end
+				return loadPromise:finally(function(status)
+					if status == (Promise :: any).Status.Cancelled then
+						self._ctx.log("trace", `Store {self._ctx.name}: Load for key {key} was cancelled`)
+						return reject("Load was cancelled")
+					end
+				end)
 			end
 		end
 

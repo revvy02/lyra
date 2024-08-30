@@ -1,6 +1,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Util = require(ReplicatedStorage.Packages.Lyra.Util)
+local Promise = require(ReplicatedStorage.Packages.Promise)
 -- local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- _G.NOCOLOR = true
@@ -53,15 +54,19 @@ local function spawnServer(isClosed)
 
 	local players = {}
 
-	local function addPlayer()
+	local function addPlayer(id)
 		if #players >= 15 then
 			return
 		end
 
-		local id
+		-- local id
 		local isServerHopId = false
 		if #serverHopPlayers > 0 then
-			id = table.remove(serverHopPlayers, 1)
+			if id == nil or not table.find(serverHopPlayers, id) then
+				id = table.remove(serverHopPlayers, 1)
+			else
+				table.remove(serverHopPlayers, table.find(serverHopPlayers, id))
+			end
 			print(`Rejoining player {id}`)
 			isServerHopId = true
 		else
@@ -85,13 +90,12 @@ local function spawnServer(isClosed)
 		task.spawn(function()
 			store
 				:load(id)
+				:andThen(function()
+					return store:get(id)
+				end)
 				:catch(function(e)
 					warn(e)
 				end)
-				:andThen(function()
-					store:get(id):expect()
-				end)
-				:expect()
 		end)
 		print("Added player:", id)
 	end
@@ -163,19 +167,23 @@ local function spawnServer(isClosed)
 			end
 		end
 
-		if math.random() < 0.001 and #players > 0 and #serverHopPlayers < 3 then
+		if math.random() < 0.01 and #players > 0 and #serverHopPlayers < 10 then
 			local p = math.random(1, #players)
 			local id = players[p]
 			print("Doing player rejoin", id)
 			removePlayer(id, true)
+			-- task.wait(0.05)
+			-- addPlayer(id)
 		end
 
 		if math.random() < 0.01 then
 			local count = 0
-			for _ in Util.activeLocks do
-				count += 1
+			for _, list in Util.activeLocks do
+				if next(list) ~= nil then
+					count += 1
+				end
 			end
-			print("Active locks:", count, #players)
+			print("Active locks:", count, 1000 - #playerPool, #players, #serverHopPlayers)
 		end
 
 		task.wait(0.05)
@@ -192,7 +200,7 @@ local function spawnServer(isClosed)
 end
 
 task.spawn(function()
-	local maxServers = 25
+	local maxServers = 10
 	local servers = {}
 	local seed = 5
 	while true do
@@ -204,7 +212,7 @@ task.spawn(function()
 				table.remove(servers, index)
 			end
 		end
-		if math.random() < 0.1 or seed > 0 then
+		if math.random() < 0.15 or seed > 0 then
 			if #servers < maxServers then
 				seed -= 1
 				local closed = false

@@ -11,6 +11,7 @@ local RETRY_ERROR_CODES = {
 	"Throttled",
 	"PartitionRequestsOverLimit",
 }
+local ERROR_RATE = 0
 
 type HashMapInterfaceImpl = {
 	__index: HashMapInterfaceImpl,
@@ -67,6 +68,10 @@ function HashMapInterface:_retry(func: () -> any): Promise.TypedPromise<any>
 			if i > 1 then
 				local retryAfter = 2 ^ (i - 1)
 				task.wait(retryAfter)
+			end
+
+			if math.random() < ERROR_RATE then
+				return reject(`HashMap error: Simulated MemoryStore error`)
 			end
 
 			local result = table.pack(pcall(func))

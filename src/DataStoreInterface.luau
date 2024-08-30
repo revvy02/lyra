@@ -19,6 +19,7 @@ local RETRY_ERROR_CODES = {
 	504,
 	505,
 }
+local ERROR_RATE = 0
 
 type DataStoreInterfaceImpl = {
 	__index: DataStoreInterfaceImpl,
@@ -76,6 +77,10 @@ function DataStoreInterface:_retry(func: () -> any): Promise.TypedPromise<any>
 	return Promise.new(function(resolve, reject)
 		local lastError
 		for _ = 1, MAX_RETRIES do
+			if math.random() < ERROR_RATE then
+				return reject(`DataStore error: Simulated DataStore error`)
+			end
+
 			local result = table.pack(pcall(func))
 			if result[1] == true then
 				return resolve(table.unpack(result, 2))

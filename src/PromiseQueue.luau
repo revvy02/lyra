@@ -28,9 +28,9 @@ end
 function PromiseQueue:add(callback: () -> ()): Promise.Promise
 	return Promise.new(function(resolve, reject, onCancel)
 		local record = {
-			fn = function()
-				return Promise.try(callback):andThen(resolve, reject)
-			end,
+			fn = callback,
+			resolve = resolve,
+			reject = reject,
 			trace = debug.traceback(nil, 2),
 		}
 		table.insert(self._queue, record)
@@ -59,19 +59,15 @@ function PromiseQueue:_processQueue()
 			warn("Potential PromiseQueue deadlock")
 		end)
 
-		item.fn()
+		Promise.try(item.fn)
 			:timeout(60)
-			:catch(function(e)
-				if Promise.Error.isKind(e, Promise.Error.Kind.TimedOut) and self.onTimeout ~= nil then
-					task.spawn(
-						self.onTimeout,
-						`PromiseQueue item timed out after 60 seconds\nQueue item added at:\n{item.trace}`
-					)
-				end
-				return e
+			:andThen(item.resolve, function(e)
+				item.reject(`Queue item failed: {e}\nCreated at:\n{item.trace}`)
 			end)
 			:finally(function()
-				table.remove(self._queue, 1)
+				if self._queue[1] == item then
+					table.remove(self._queue, 1)
+				end
 
 				if coroutine.status(deadlockWarn) == "suspended" then
 					task.cancel(deadlockWarn)
