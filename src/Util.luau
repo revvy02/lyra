@@ -114,7 +114,7 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 			return nil
 		end
 
-		return ctx.hashMapInterface:update(scope, key, transformFunction, 0):finally(function()
+		return ctx.hashMapInterface:update(scope, key, transformFunction, 0).promise:finally(function()
 			table.remove(activeLocks[key], table.find(activeLocks[key], lockId))
 			locked = false
 		end)
@@ -161,61 +161,73 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 		end
 
 		curLockPromise = Promise.new(function(resolve, reject, onCancel)
-			local updatePromise: any
+			local retryHandle: any
+
 			onCancel(function()
-				ctx.log("info", `store({ctx.name}) key({key}) lockId({lockId}) curLockPromise cancelled`)
+				ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) curLockPromise cancelled`)
+				if retryHandle then
+					ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) cancelling retryHandle`)
+
+					retryHandle.cancel()
+
+					ctx.log(
+						"trace",
+						`store({ctx.name}) key({key}) lockId({lockId}) retryHandle cancelled, awaiting promise`
+					)
+
+					retryHandle.promise:await()
+				end
+
+				ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) releasing`)
+
 				release():catch(function(err)
 					ctx.log("error", `store({ctx.name}) key({key}) lockId({lockId}) Error releasing lock: {err}`)
 				end)
-				if updatePromise then
-					updatePromise:cancel()
-				end
 			end)
 
-			for i = 1, params.acquireAttempts do
-				updatePromise = ctx.hashMapInterface:update(scope, key, transformFunction, params.duration)
-				local resolved, lastValue = updatePromise:await()
-				local cachedUpdatePromise = updatePromise
-				updatePromise = nil
+			task.spawn(function()
+				for i = 1, params.acquireAttempts do
+					retryHandle = ctx.hashMapInterface:update(scope, key, transformFunction, params.duration)
+					local resolved, lastValue = retryHandle.promise:await()
+					retryHandle = nil
+
+					ctx.log(
+						"trace",
+						`store({ctx.name}) key({key}) lockId({lockId}) lastOtherLockId({lastOtherLockId}) resolved({resolved}) lastValue({lastValue}) ACQUIRE RETURNED`
+					)
+
+					if resolved and lastValue ~= nil then
+						lastUpdate = os.clock()
+						locked = true
+						if not table.find(activeLocks[key], lockId) then
+							table.insert(activeLocks[key], lockId)
+						end
+						return resolve()
+					end
+
+					if onCancel() then
+						ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) Lock acquisition cancelled`)
+						return reject("Lock acquisition cancelled")
+					end
+
+					if i ~= params.acquireAttempts then
+						ctx.log(
+							"trace",
+							`store({ctx.name}) key({key}) lockId({lockId}) lastOtherLockId({lastOtherLockId}) Retrying lock acquisition (attempt {i}). resolved({resolved}) lastValue({lastValue})`
+						)
+						local retryAfter = math.min(2 ^ (i - 1), 30)
+						task.wait(retryAfter)
+					end
+				end
 
 				ctx.log(
-					"info",
-					`store({ctx.name}) key({key}) lockId({lockId}) lastOtherLockId({lastOtherLockId}) resolved({resolved}) lastValue({lastValue}) ACQUIRE RETURNED`
+					"error",
+					`store({ctx.name}) key({key}) lockId({lockId}) Failed to acquire lock after {params.acquireAttempts} attempts`
 				)
-
-				if resolved and lastValue ~= nil then
-					lastUpdate = os.clock()
-					locked = true
-					if not table.find(activeLocks[key], lockId) then
-						table.insert(activeLocks[key], lockId)
-					end
-					return resolve()
-				end
-
-				local status = cachedUpdatePromise:awaitStatus()
-				if status == (Promise :: any).Status.Cancelled then
-					ctx.log("info", `store({ctx.name}) key({key}) lockId({lockId}) Lock acquisition cancelled`)
-					return reject("Lock acquisition cancelled")
-				end
-
-				if i ~= params.acquireAttempts then
-					ctx.log(
-						"info",
-						`store({ctx.name}) key({key}) lockId({lockId}) lastOtherLockId({lastOtherLockId}) Retrying lock acquisition (attempt {i}). resolved({resolved}) lastValue({lastValue})`
-					)
-					local retryAfter = math.min(2 ^ (i - 1), 30)
-					task.wait(retryAfter)
-				end
-			end
-
-			ctx.log(
-				"error",
-				`store({ctx.name}) key({key}) lockId({lockId}) Failed to acquire lock after {params.acquireAttempts} attempts`
-			)
-			return reject("Failed to acquire lock")
+				return reject("Failed to acquire lock")
+			end)
 		end):tap(function()
 			if lockExpiryThread then
-				lockCounter -= 1
 				task.cancel(lockExpiryThread)
 				lockExpiryThread = nil
 			end
