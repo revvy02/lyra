@@ -327,8 +327,13 @@ function Store:_withKeyEntry(key: string, callback: (keyEntry: KeyEntry.KeyEntry
 
 		local loadPromise = self._loadPromises[key]
 		if loadPromise then
+			self._ctx.log(
+				"trace",
+				`Store {self._ctx.name}: Key {key} is currently being loaded, waiting for load to complete`
+			)
 			local loaded = loadPromise:await()
 			if not loaded then
+				self._ctx.log("warn", `Store {self._ctx.name}: Load for key {key} failed, rejecting operation`)
 				return loadPromise:finally(function(status)
 					if status == (Promise :: any).Status.Cancelled then
 						self._ctx.log("trace", `Store {self._ctx.name}: Load for key {key} was cancelled`)
@@ -336,6 +341,10 @@ function Store:_withKeyEntry(key: string, callback: (keyEntry: KeyEntry.KeyEntry
 					end
 				end)
 			end
+		end
+
+		if self._unloadPromises[key] then
+			self._ctx.log("warn", `Store {self._ctx.name}: Key {key} is currently being unloaded`)
 		end
 
 		local keyEntry = self._keyEntries[key]
