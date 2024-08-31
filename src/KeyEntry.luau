@@ -93,6 +93,7 @@ export type LoadResult = {
 local function load(params: LoadParams): any
 	local ctx = params.storeContext
 	local key = params.key
+	ctx.log("trace", `load - start, store={ctx.name}, key={key}`)
 
 	local recordScope = ctx.recordScope
 	local shardScope = ctx.shardScope
@@ -105,6 +106,7 @@ local function load(params: LoadParams): any
 	return ctx.dataStoreInterface
 		:get(recordScope, key)
 		:andThen(function(record: Types.DataStoreRecord?)
+			ctx.log("trace", `load - get record, store={ctx.name}, key={key}`)
 			if record == nil then
 				record = {} :: Types.DataStoreRecord
 			end
@@ -128,9 +130,11 @@ local function load(params: LoadParams): any
 					scope = shardScope,
 					file = file,
 				}
+				ctx.log("trace", `load - read file, store={ctx.name}, key={key}, file={HttpService:JSONEncode(file)}`)
 				return FileManager.read(readParams)
 			end
 
+			ctx.log("trace", `load - no file to read, store={ctx.name}, key={key}`)
 			return nil :: any
 		end)
 		:andThen(function(txInfo: Types.TxInfo?): any?
@@ -140,20 +144,25 @@ local function load(params: LoadParams): any
 					scope = txScope,
 					txInfo = txInfo,
 				}
+				ctx.log("trace", `load - read tx, store={ctx.name}, key={key}, txInfo={HttpService:JSONEncode(txInfo)}`)
 				return Util.readTx(readTxParams)
 			end
+			ctx.log("trace", `load - no tx to read, store={ctx.name}, key={key}`)
 			return nil
 		end)
 		:andThen(function(data: any?)
 			if data ~= nil then
+				ctx.log("trace", `load - data loaded, store={ctx.name}, key={key}`)
 				return data
 			end
 
 			local migrateFromOtherSystem = ctx.migrateFromOtherSystem
 			if migrateFromOtherSystem == nil then
+				ctx.log("trace", `load - no data and no migration, store={ctx.name}, key={key}`)
 				return nil
 			end
 
+			ctx.log("trace", `load - migrating from other system, store={ctx.name}, key={key}`)
 			return Promise.try(migrateFromOtherSystem, key)
 				:tap(function(oldData: any?)
 					if oldData ~= nil then
@@ -166,6 +175,7 @@ local function load(params: LoadParams): any
 		end)
 		:andThen(function(data: any?)
 			if data == nil then
+				ctx.log("info", `load - no data, using template, store={ctx.name}, key={key}`)
 				data = Dictionary.copyDeep(ctx.template)
 				version = ctx.latestVersion
 			end
@@ -175,6 +185,10 @@ local function load(params: LoadParams): any
 				ctx.log("error", `KeyEntry:lock - Data for key {key} has newer version than this server supports`)
 				return Promise.reject("Data has newer version than this server supports")
 			elseif version < ctx.latestVersion then
+				ctx.log(
+					"info",
+					`load - migrating data, store={ctx.name}, key={key}, from={version}, to={ctx.latestVersion}`
+				)
 				local migrateDataParams: Util.MigrateDataParams = {
 					fromVersion = version,
 					toVersion = ctx.latestVersion,
@@ -186,6 +200,7 @@ local function load(params: LoadParams): any
 				end)
 			end
 
+			ctx.log("trace", `load - data ready, store={ctx.name}, key={key}`)
 			return data
 		end)
 		:andThen(function(data)
@@ -195,6 +210,7 @@ local function load(params: LoadParams): any
 				orphanedFiles = orphanedFiles,
 				currentFile = currentFile,
 			}
+			ctx.log("trace", `load - done, store={ctx.name}, key={key}`)
 			return loadResult
 		end)
 end
@@ -280,6 +296,7 @@ function KeyEntry.load<T>(params: LoadKeyEntryParams<T>): Promise.TypedPromise<K
 
 			local keyEntry = createKeyEntry(createParams)
 
+			ctx.log("info", `KeyEntry:load - Loaded key {params.key}, data: {HttpService:JSONEncode(loadResult.data)}`)
 			keyEntry:mutateKey(loadResult.data)
 
 			return keyEntry :: any
@@ -297,17 +314,24 @@ end
 KeyEntry.load = t.wrap(KeyEntry.load, t.tuple(loadKeyEntryParamsCheck))
 
 function KeyEntry:updateRecord(): Promise.TypedPromise<any>
+	self.ctx.log("trace", `updateRecord - start, store={self.ctx.name}, key={self.key}`)
 	if self:isSaved() then
+		self.ctx.log("trace", `updateRecord - no changes, store={self.ctx.name}, key={self.key}`)
 		return Promise.resolve()
 	end
 
 	local txInfo = { committedData = Dictionary.copyDeep(self.data) }
 
+	self.ctx.log(
+		"trace",
+		`updateRecord - txInfo created, store={self.ctx.name}, key={self.key}, txInfo={HttpService:JSONEncode(txInfo)}`
+	)
 	return self:writeRecord(txInfo)
 end
 KeyEntry.updateRecord = t.wrap(KeyEntry.updateRecord, t.tuple(t.any))
 
 function KeyEntry:writeRecord(txInfo: Types.TxInfo): Promise.TypedPromise<any>
+	self.ctx.log("trace", `writeRecord - start, store={self.ctx.name}, key={self.key}`)
 	local function orphanFile(file: Types.File?)
 		if file ~= nil and FileManager.isLargeFile(file) then
 			table.insert(self.orphanedFiles, file)
@@ -324,6 +348,12 @@ function KeyEntry:writeRecord(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 		userIds = self.userIds,
 	}
 
+	self.ctx.log(
+		"trace",
+		`writeRecord - writing file, store={self.ctx.name}, key={self.key}, writeParams={HttpService:JSONEncode(
+			writeParams
+		)}`
+	)
 	return FileManager.write(writeParams)
 		:catch(function(err: FileManager.WriteError)
 			self.ctx.log("error", `Failed to write shards for key {self.key}: {err.error}`)
@@ -333,6 +363,7 @@ function KeyEntry:writeRecord(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 			return Promise.reject(err.error)
 		end)
 		:andThen(function(file)
+			self.ctx.log("trace", `writeRecord - file written, store={self.ctx.name}, key={self.key}`)
 			local record = {
 				version = self.version,
 				file = file,
@@ -344,9 +375,16 @@ function KeyEntry:writeRecord(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 				return Promise.reject("KeyEntry lock was lost while writing record")
 			end
 
+			self.ctx.log(
+				"trace",
+				`writeRecord - writing record, store={self.ctx.name}, key={self.key}, record={HttpService:JSONEncode(
+					record
+				)}`
+			)
 			return self.ctx.dataStoreInterface
 				:set(self.ctx.recordScope, self.key, record, self.userIds)
 				:andThen(function()
+					self.ctx.log("trace", `writeRecord - record written, store={self.ctx.name}, key={self.key}`)
 					orphanFile(self.currentFile)
 					self.currentFile = if FileManager.isLargeFile(file) then file else nil
 
@@ -435,15 +473,19 @@ end
 KeyEntry.stopAutosaving = t.wrap(KeyEntry.stopAutosaving, t.tuple(t.any))
 
 function KeyEntry:unload(): Promise.Promise
+	self.ctx.log("trace", `KeyEntry:unload - start, key={self.key}`)
 	if self.unloadPromise then
+		self.ctx.log("warn", `KeyEntry:unload - Unload already in progress for key {self.key}`)
 		return self.unloadPromise
 	end
 
 	self.closed = true
 	self:stopAutosaving()
 
+	self.ctx.log("info", `KeyEntry:unload - Unloading key {self.key}`)
 	self.unloadPromise = self.queue
 		:add(function()
+			self.ctx.log("info", `KeyEntry:unload - Saving key {self.key}`)
 			return self:updateRecord()
 		end)
 		:finally(function()
@@ -463,7 +505,9 @@ end
 KeyEntry.get = t.wrap(KeyEntry.get, t.tuple(t.any))
 
 function KeyEntry:update<T>(transformFunction: (data: T) -> boolean): Promise.Promise
+	self.ctx.log("trace", `KeyEntry:update - start, key={self.key}`)
 	if self.closed then
+		self.ctx.log("warn", `KeyEntry:update - KeyEntry is closed, skipping update for key {self.key}`)
 		return Promise.reject("KeyEntry is closed")
 	end
 
