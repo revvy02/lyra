@@ -415,7 +415,7 @@ KeyEntry.setData = t.wrap(KeyEntry.setData, t.tuple(t.any))
 
 function KeyEntry:mutateKey(newData: any): ()
 	if self.closed then
-		self.ctx.log("warn", `KeyEntry:mutateKey - Key {self.key} is closed, skipping mutation`)
+		self.ctx.log("error", `KeyEntry:mutateKey - Key {self.key} is closed, skipping mutation`)
 		return
 	end
 
