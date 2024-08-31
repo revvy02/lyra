@@ -333,7 +333,6 @@ function Store:_withKeyEntry(key: string, callback: (keyEntry: KeyEntry.KeyEntry
 			)
 			local loaded = loadPromise:await()
 			if not loaded then
-				self._ctx.log("warn", `Store {self._ctx.name}: Load for key {key} failed, rejecting operation`)
 				return loadPromise:finally(function(status)
 					if status == (Promise :: any).Status.Cancelled then
 						self._ctx.log("trace", `Store {self._ctx.name}: Load for key {key} was cancelled`)
@@ -412,6 +411,29 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 	-- set the value to `false` before we start the tx.
 	local txStatusPromise = self._ctx.dataStoreInterface:set(Constants.TX_SCOPE, txId, false)
 
+	local function withTxLock(fn)
+		for _, key in keys do
+			local keyEntry = self._keyEntries[key]
+			keyEntry.txLockPromise = txLockPromise
+		end
+		self._ctx.log("trace", `Store {self._ctx.name}: Acquired transaction lock for keys {table.concat(keys, ", ")}`)
+
+		return Promise.try(fn):finally(function()
+			self._ctx.log(
+				"trace",
+				`Store {self._ctx.name}: Releasing transaction lock for keys {table.concat(keys, ", ")}`
+			)
+			for _, key in keys do
+				local keyEntry = self._keyEntries[key]
+				if keyEntry.txLockPromise == txLockPromise then
+					keyEntry.txLockPromise = nil :: any
+				end
+			end
+			self._ctx.log("trace", `RELEASING TX LOCK`)
+			txLockResolve()
+		end)
+	end
+
 	self._ctx.log("trace", `Store {self._ctx.name}: Acquiring transaction lock for keys {table.concat(keys, ", ")}`)
 	return PromiseQueue.multiQueueAdd(queues, function()
 		if txStatusPromise:awaitStatus() ~= (Promise :: any).Status.Resolved then
@@ -419,147 +441,137 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			return Promise.reject("Failed to pre-set tx")
 		end
 
-		local currentState = {}
-		for _, key in keys do
-			local keyEntry = self._keyEntries[key]
+		return withTxLock(function()
+			local currentState = {}
+			for _, key in keys do
+				local keyEntry = self._keyEntries[key]
+				currentState[key] = keyEntry.data
+			end
 
-			keyEntry.txLockPromise = txLockPromise
-			currentState[key] = keyEntry.data
-		end
-		self._ctx.log("trace", `Store {self._ctx.name}: Acquired transaction lock for keys {table.concat(keys, ", ")}`)
+			local nextState = Dictionary.copyDeep(currentState)
+			local transformOk, result = pcall(noYield, transformFunction, nextState :: any)
+			if not transformOk then
+				self._ctx.log("error", `Store {self._ctx.name}: Transaction transform function failed: {result}`)
+				return Promise.reject(`Store:tx transformFunction failed: {result}`)
+			end
 
-		local nextState = Dictionary.copyDeep(currentState)
-		local transformOk, result = pcall(noYield, transformFunction, nextState :: any)
-		if not transformOk then
-			self._ctx.log("error", `Store {self._ctx.name}: Transaction transform function failed: {result}`)
-			return Promise.reject(`Store:tx transformFunction failed: {result}`)
-		end
+			assert(typeof(result) == "boolean", "Transaction transform function must return a boolean")
 
-		assert(typeof(result) == "boolean", "Transaction transform function must return a boolean")
-
-		if result == false then
-			self._ctx.log(
-				"trace",
-				`Store {self._ctx.name}: Transaction transform function for keys {table.concat(keys, ", ")} returned false, skipping update`
-			)
-			return Promise.reject("Transaction transform function returned false")
-		end
-
-		-- We deep copy here to prevent references to internal state from being
-		-- leaked. If we didn't, the transform function could modify the state
-		-- after it runs, which shouldn't be allowed.
-		nextState = Dictionary.copyDeep(nextState)
-
-		for _, key in keys do
-			local schemaOk, err = self._ctx.schema(nextState[key] :: any)
-			if not schemaOk then
+			if result == false then
 				self._ctx.log(
-					"error",
-					`Store {self._ctx.name}: Schema validation failed for key {key} during transaction: {err}`
+					"trace",
+					`Store {self._ctx.name}: Transaction transform function for keys {table.concat(keys, ", ")} returned false, skipping update`
 				)
-				error(`Store:tx schema validation failed: {err}`)
+				return Promise.reject("Transaction transform function returned false")
 			end
-		end
 
-		local currentKeys = Dictionary.keys(currentState)
-		local nextKeys = Dictionary.keys(nextState)
-		assert(#Array.differenceSymmetric(currentKeys, nextKeys) == 0, "Keys changed in transaction")
+			-- We deep copy here to prevent references to internal state from being
+			-- leaked. If we didn't, the transform function could modify the state
+			-- after it runs, which shouldn't be allowed.
+			nextState = Dictionary.copyDeep(nextState)
 
-		-- If no keys changed we can exit early, and if only one key changed, we
-		-- can treat it as a normal :update.
-		local changedKeys = Array.filter(keys, function(key)
-			return not Dictionary.equalsDeep(currentState[key] :: any, nextState[key] :: any)
-		end)
-
-		if #changedKeys == 0 then
-			self._ctx.log(
-				"trace",
-				`Store {self._ctx.name}: Transaction for keys {table.concat(keys, ", ")} resulted in no changes, skipping update`
-			)
-			return Promise.resolve()
-		elseif #changedKeys == 1 then
-			local key = changedKeys[1]
-			self._ctx.log(
-				"trace",
-				`Store {self._ctx.name}: Transaction for keys {table.concat(keys, ", ")} only changed one key, treating as normal update`
-			)
-			self._keyEntries[key]:mutateKey(nextState[key])
-			return Promise.resolve()
-		end
-
-		self._ctx.log(
-			"debug",
-			`Store {self._ctx.name}: Transaction for keys {table.concat(keys, ", ")} changed multiple keys, beginning multi-key update`
-		)
-
-		local promises = Array.map(keys, function(key)
-			local txInfo = {
-				txId = txId,
-				committedData = currentState[key],
-				txData = nextState[key],
-			}
-
-			self._ctx.log("trace", `Store {self._ctx.name}: Writing record for key {key} in transaction {txId}`)
-			return self._keyEntries[key]:writeRecord(txInfo)
-		end)
-
-		local commitPromise = Promise.all(promises)
-			:andThen(function()
-				self._ctx.log("trace", `Store {self._ctx.name}: Committing transaction {txId}`)
-				return self._ctx.dataStoreInterface:remove(Constants.TX_SCOPE, txId)
-			end)
-			:catch(function(err)
-				self._ctx.log("error", `Store {self._ctx.name}: Transaction {txId} errored: {err}`)
-
-				-- To guard against edge cases, we don't assume we know what the
-				-- tx status is. We check it first, then cleanup if we need to.
-				return self._ctx.dataStoreInterface
-					:get(Constants.TX_SCOPE, txId)
-					:andThen(function(txStatus)
-						if txStatus ~= false then
-							-- Tx was committed successfully, just pass down the
-							-- error.
-							return Promise.reject(err)
-						end
-						self._ctx.log("trace", `Store {self._ctx.name}: Transaction {txId} failed, cleaning up`)
-
-						local cleanupPromises = Array.map(keys, function(key)
-							local txInfo = { committedData = currentState[key] }
-							return self._keyEntries[key]:writeRecord(txInfo)
-						end)
-
-						return Promise.all(cleanupPromises)
-					end)
-					:andThen(function()
-						self._ctx.log("trace", `Store {self._ctx.name}: Removing transaction {txId}`)
-						return self._ctx.dataStoreInterface:remove(Constants.TX_SCOPE, txId)
-					end)
-					:andThen(function()
-						self._ctx.log("trace", `Store {self._ctx.name}: Transaction {txId} cleaned up`)
-						return Promise.reject(err)
-					end)
-			end)
-			:andThen(function()
-				self._ctx.log("debug", `Store {self._ctx.name}: Transaction {txId} committed successfully`)
-				for _, key in keys do
-					-- We just technically performed a save, so let's reset the
-					-- changeSet.
-					local keyEntry = self._keyEntries[key]
-					keyEntry:setData(nextState[key])
-					keyEntry.changeSet = {}
+			for _, key in keys do
+				local schemaOk, err = self._ctx.schema(nextState[key] :: any)
+				if not schemaOk then
+					self._ctx.log(
+						"error",
+						`Store {self._ctx.name}: Schema validation failed for key {key} during transaction: {err}`
+					)
+					error(`Store:tx schema validation failed: {err}`)
 				end
+			end
+
+			local currentKeys = Dictionary.keys(currentState)
+			local nextKeys = Dictionary.keys(nextState)
+			assert(#Array.differenceSymmetric(currentKeys, nextKeys) == 0, "Keys changed in transaction")
+
+			-- If no keys changed we can exit early, and if only one key changed, we
+			-- can treat it as a normal :update.
+			local changedKeys = Array.filter(keys, function(key)
+				return not Dictionary.equalsDeep(currentState[key] :: any, nextState[key] :: any)
 			end)
 
-		return commitPromise
-	end):finally(function()
-		self._ctx.log("trace", `Store {self._ctx.name}: Releasing transaction lock for keys {table.concat(keys, ", ")}`)
-		for _, key in keys do
-			local keyEntry = self._keyEntries[key]
-			if keyEntry.txLockPromise == txLockPromise then
-				keyEntry.txLockPromise = nil :: any
+			if #changedKeys == 0 then
+				self._ctx.log(
+					"trace",
+					`Store {self._ctx.name}: Transaction for keys {table.concat(keys, ", ")} resulted in no changes, skipping update`
+				)
+				return Promise.resolve()
+			elseif #changedKeys == 1 then
+				local key = changedKeys[1]
+				self._ctx.log(
+					"trace",
+					`Store {self._ctx.name}: Transaction for keys {table.concat(keys, ", ")} only changed one key, treating as normal update`
+				)
+				self._keyEntries[key]:mutateKey(nextState[key])
+				return Promise.resolve()
 			end
-		end
-		txLockResolve()
+
+			self._ctx.log(
+				"debug",
+				`Store {self._ctx.name}: Transaction for keys {table.concat(keys, ", ")} changed multiple keys, beginning multi-key update`
+			)
+
+			local keyWritePromises = Array.map(keys, function(key)
+				local txInfo = {
+					txId = txId,
+					committedData = currentState[key],
+					txData = nextState[key],
+				}
+
+				self._ctx.log("trace", `Store {self._ctx.name}: Writing record for key {key} in transaction {txId}`)
+				return self._keyEntries[key]:writeRecord(txInfo)
+			end)
+
+			local commitPromise = Promise.all(keyWritePromises)
+				:andThen(function()
+					self._ctx.log("trace", `Store {self._ctx.name}: Committing transaction {txId}`)
+					return self._ctx.dataStoreInterface:remove(Constants.TX_SCOPE, txId)
+				end)
+				:catch(function(err)
+					self._ctx.log("error", `Store {self._ctx.name}: Transaction {txId} errored: {err}`)
+
+					-- To guard against edge cases, we don't assume we know what the
+					-- tx status is. We check it first, then cleanup if we need to.
+					return self._ctx.dataStoreInterface
+						:get(Constants.TX_SCOPE, txId)
+						:andThen(function(txStatus)
+							if txStatus ~= false then
+								-- Tx was committed successfully, just pass down the
+								-- error.
+								return Promise.reject(err)
+							end
+							self._ctx.log("trace", `Store {self._ctx.name}: Transaction {txId} failed, cleaning up`)
+
+							local cleanupPromises = Array.map(keys, function(key)
+								local txInfo = { committedData = currentState[key] }
+								return self._keyEntries[key]:writeRecord(txInfo)
+							end)
+
+							return Promise.all(cleanupPromises)
+						end)
+						:andThen(function()
+							self._ctx.log("trace", `Store {self._ctx.name}: Removing transaction {txId}`)
+							return self._ctx.dataStoreInterface:remove(Constants.TX_SCOPE, txId)
+						end)
+						:andThen(function()
+							self._ctx.log("trace", `Store {self._ctx.name}: Transaction {txId} cleaned up`)
+							return Promise.reject(err)
+						end)
+				end)
+				:andThen(function()
+					self._ctx.log("debug", `Store {self._ctx.name}: Transaction {txId} committed successfully`)
+					for _, key in keys do
+						-- We just technically performed a save, so let's reset the
+						-- changeSet.
+						local keyEntry = self._keyEntries[key]
+						keyEntry:setData(nextState[key])
+						keyEntry.changeSet = {}
+					end
+				end)
+
+			return commitPromise
+		end)
 	end)
 end
 Store.tx = t.wrap(Store.tx, t.tuple(t.any, t.array(t.string), t.callback))

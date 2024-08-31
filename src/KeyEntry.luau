@@ -302,11 +302,9 @@ function KeyEntry.load<T>(params: LoadKeyEntryParams<T>): Promise.TypedPromise<K
 			return keyEntry :: any
 		end):finally(function(status): ()
 			if status ~= (Promise :: any).Status.Resolved then
-				ctx.log("warn", `KeyEntry:load - Failed to load key {params.key}: {status}, releasing`)
 				lockHandle.release():catch(function(e)
 					ctx.log("warn", `KeyEntry:load - Failed to release lock for key {params.key}: {e}`)
 				end)
-				return Promise.reject("Failed to load key")
 			end
 		end)
 	end)
@@ -414,11 +412,6 @@ end
 KeyEntry.setData = t.wrap(KeyEntry.setData, t.tuple(t.any))
 
 function KeyEntry:mutateKey(newData: any): ()
-	if self.closed then
-		self.ctx.log("error", `KeyEntry:mutateKey - Key {self.key} is closed, skipping mutation`)
-		return
-	end
-
 	local oldData = if self.data then Dictionary.freezeDeep(self.data :: any) else nil
 
 	self:setData(newData)
@@ -507,7 +500,6 @@ KeyEntry.get = t.wrap(KeyEntry.get, t.tuple(t.any))
 function KeyEntry:update<T>(transformFunction: (data: T) -> boolean): Promise.Promise
 	self.ctx.log("trace", `KeyEntry:update - start, key={self.key}`)
 	if self.closed then
-		self.ctx.log("warn", `KeyEntry:update - KeyEntry is closed, skipping update for key {self.key}`)
 		return Promise.reject("KeyEntry is closed")
 	end
 
@@ -515,6 +507,7 @@ function KeyEntry:update<T>(transformFunction: (data: T) -> boolean): Promise.Pr
 		while self.txLockPromise ~= nil do
 			self.txLockPromise:await()
 		end
+		self.ctx.log("trace", `UPDATING KEY`)
 
 		local currentData = self.data
 		local nextData = Dictionary.copyDeep(currentData)
