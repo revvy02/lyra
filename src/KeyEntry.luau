@@ -505,25 +505,42 @@ end
 KeyEntry.update = t.wrap(KeyEntry.update, t.tuple(t.any, t.callback))
 
 function KeyEntry:save(): Promise.Promise
+	self.ctx.log("trace", `KeyEntry:save - start, key={self.key}`)
 	if self.closed then
+		self.ctx.log("warn", `KeyEntry:save - KeyEntry is closed, skipping save for key {self.key}`)
 		return Promise.reject("KeyEntry is closed")
 	end
 	if self:isSaved() then
+		self.ctx.log("trace", `KeyEntry:save - no changes, key={self.key}`)
 		return Promise.resolve()
 	end
 
 	local changes = Set.copy(self.changeSet)
 
+	self.ctx.log("trace", `KeyEntry:save - adding save to queue for key {self.key}`)
 	return self.queue:add(function()
+		self.ctx.log("trace", `KeyEntry:save - saving key {self.key}`)
 		local changesWereSaved = Set.count(Set.intersection(changes, self.changeSet)) == 0
 		if changesWereSaved then
+			self.ctx.log("trace", `KeyEntry:save - changes were saved by another task, key={self.key}`)
 			return Promise.resolve()
 		end
 
 		changes = Set.copy(self.changeSet)
 
+		self.ctx.log(
+			"trace",
+			`KeyEntry:save - saving changes for key {self.key}, changes={HttpService:JSONEncode(changes)}`
+		)
 		return self:updateRecord():andThen(function()
-			self.changeSet = Set.difference(changes, self.changeSet)
+			local newChangeSet = Set.difference(self.changeSet, changes)
+			self.ctx.log(
+				"trace",
+				`KeyEntry:save - changes saved for key {self.key}, latestChanges={HttpService:JSONEncode(self.changeSet)} new changes={HttpService:JSONEncode(
+					newChangeSet
+				)}`
+			)
+			self.changeSet = newChangeSet
 		end)
 	end)
 end
