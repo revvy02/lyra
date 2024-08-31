@@ -93,8 +93,10 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 			lockExpiryThread = nil
 		end
 
-		-- TODO: retry needs to be cancellable but without discarding whatever
-		-- the latest call returns
+		if not locked then
+			return Promise.resolve()
+		end
+
 		local function transformFunction(otherLockId: string?): string?
 			ctx.log(
 				"info",
