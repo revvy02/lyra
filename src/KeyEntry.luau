@@ -29,6 +29,7 @@ type KeyEntryImpl<T> = {
 
 	isSaved: (self: KeyEntry<T>) -> boolean,
 
+	setData: (self: KeyEntry<T>, data: T) -> (),
 	mutateKey: (self: KeyEntry<T>, newData: T) -> (),
 
 	startAutosaving: (self: KeyEntry<T>) -> (),
@@ -366,6 +367,14 @@ function KeyEntry:isSaved(): boolean
 end
 KeyEntry.isSaved = t.wrap(KeyEntry.isSaved, t.tuple(t.any))
 
+function KeyEntry:setData(data: any): ()
+	local mutationId = HttpService:GenerateGUID(false)
+	self.changeSet = Set.add(self.changeSet, mutationId)
+	self.data = data
+	self.frozenData = Dictionary.freezeDeep(data :: any)
+end
+KeyEntry.setData = t.wrap(KeyEntry.setData, t.tuple(t.any))
+
 function KeyEntry:mutateKey(newData: any): ()
 	if self.closed then
 		self.ctx.log("warn", `KeyEntry:mutateKey - Key {self.key} is closed, skipping mutation`)
@@ -374,10 +383,7 @@ function KeyEntry:mutateKey(newData: any): ()
 
 	local oldData = if self.data then Dictionary.freezeDeep(self.data :: any) else nil
 
-	local mutationId = HttpService:GenerateGUID(false)
-	self.changeSet = Set.add(self.changeSet, mutationId)
-	self.data = newData
-	self.frozenData = Dictionary.freezeDeep(newData :: any)
+	self:setData(newData)
 
 	for _, callback in self.ctx.changedCallbacks do
 		task.spawn(callback, self.key, self.frozenData, oldData)
