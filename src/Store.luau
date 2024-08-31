@@ -407,7 +407,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 	return PromiseQueue.multiQueueAdd(queues, function()
 		if txStatusPromise:awaitStatus() ~= (Promise :: any).Status.Resolved then
 			self._ctx.log("error", `Store {self._ctx.name}: Failed to pre-set tx {txId}`)
-			error("Failed to pre-set tx")
+			return Promise.reject("Failed to pre-set tx")
 		end
 
 		local currentState = {}
@@ -423,7 +423,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 		local transformOk, result = pcall(noYield, transformFunction, nextState :: any)
 		if not transformOk then
 			self._ctx.log("error", `Store {self._ctx.name}: Transaction transform function failed: {result}`)
-			error(`Store:tx transformFunction failed: {result}`)
+			return Promise.reject(`Store:tx transformFunction failed: {result}`)
 		end
 
 		assert(typeof(result) == "boolean", "Transaction transform function must return a boolean")
@@ -433,7 +433,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 				"trace",
 				`Store {self._ctx.name}: Transaction transform function for keys {table.concat(keys, ", ")} returned false, skipping update`
 			)
-			return
+			return Promise.reject("Transaction transform function returned false")
 		end
 
 		-- We deep copy here to prevent references to internal state from being
@@ -467,7 +467,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 				"trace",
 				`Store {self._ctx.name}: Transaction for keys {table.concat(keys, ", ")} resulted in no changes, skipping update`
 			)
-			return
+			return Promise.resolve()
 		elseif #changedKeys == 1 then
 			local key = changedKeys[1]
 			self._ctx.log(
@@ -475,7 +475,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 				`Store {self._ctx.name}: Transaction for keys {table.concat(keys, ", ")} only changed one key, treating as normal update`
 			)
 			self._keyEntries[key]:mutateKey(nextState[key])
-			return
+			return Promise.resolve()
 		end
 
 		self._ctx.log(
