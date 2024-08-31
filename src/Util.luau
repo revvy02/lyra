@@ -71,12 +71,11 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 
 	local lastUpdate
 	activeLocks[key] = activeLocks[key] or {}
-	local lockCounter = 0
 	local version = 0
 	local releasing = false
 
 	local function release(): Promise.Promise
-		ctx.log("info", `store({ctx.name}) key({key}) lockId({lockId}) locked({locked}) Release called`)
+		ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) locked({locked}) Release called`)
 		if releasing then
 			return Promise.resolve()
 		end
@@ -88,7 +87,6 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 		end
 
 		if lockExpiryThread then
-			lockCounter -= 1
 			task.cancel(lockExpiryThread)
 			lockExpiryThread = nil
 		end
@@ -99,18 +97,18 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 
 		local function transformFunction(otherLockId: string?): string?
 			ctx.log(
-				"info",
+				"trace",
 				`store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) locked({locked}) RELEASE transformFunction called`
 			)
 			if otherLockId == lockId then
 				ctx.log(
-					"info",
+					"trace",
 					`store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) locked({locked}) RELEASED`
 				)
 				return ""
 			end
 			ctx.log(
-				"info",
+				"trace",
 				`store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) locked({locked}) NOT RELEASED`
 			)
 			return nil
@@ -118,35 +116,30 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 
 		return ctx.hashMapInterface:update(scope, key, transformFunction, 0):finally(function()
 			table.remove(activeLocks[key], table.find(activeLocks[key], lockId))
-			-- ctx.log(
-			-- 	"info",
-			-- 	`store({ctx.name}) key({key}) lockId({lockId}) post-lock expiryThread: {lockExpiryThread} {lockCounter}`
-			-- )
 			locked = false
-			-- ctx.log("info", `store({ctx.name}) key({key}) lockId({lockId}) Lock released from util`)
 		end)
 	end
 
 	local function lock()
-		ctx.log("info", `store({ctx.name}) key({key}) lockId({lockId}) Lock called`)
+		ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) Lock called`)
 		local lastOtherLockId
 
 		local function transformFunction(otherLockId: string?): string?
 			ctx.log(
-				"info",
+				"trace",
 				`store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) releasing({releasing}) ACQUIRE transformFunction called`
 			)
 
 			lastOtherLockId = otherLockId
 			if releasing then
 				ctx.log(
-					"info",
+					"trace",
 					`store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) Lock released while acquiring`
 				)
 				return nil
 			end
 
-			if otherLockId ~= nil then
+			if otherLockId ~= nil and otherLockId ~= lockId then
 				local count = acquireOrphanLockIdCounts[otherLockId] or 0
 				count += 1
 				acquireOrphanLockIdCounts[otherLockId] = count
@@ -159,11 +152,11 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 			end
 
 			if otherLockId == nil or otherLockId == lockId then
-				ctx.log("info", `store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) ACQUIRED`)
+				ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) ACQUIRED`)
 				return lockId
 			end
 
-			ctx.log("info", `store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) NOT ACQUIRED`)
+			ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) NOT ACQUIRED`)
 			return nil
 		end
 
@@ -230,7 +223,7 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 			version += 1
 			local myVersion = version
 
-			ctx.log("info", `store({ctx.name}) key({key}) lockId({lockId}) Lock acquired. spawning expiry`)
+			ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) Lock acquired. spawning expiry`)
 			lockExpiryThread = task.delay(params.duration, task.spawn, function()
 				if myVersion ~= version then
 					warn(`store({ctx.name}) key({key}) lockId({lockId}) Lock has more than one expiry thread`)
@@ -245,8 +238,8 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 				table.remove(activeLocks[key], table.find(activeLocks[key], lockId))
 
 				locked = false
-
 				refreshLock = false
+
 				if curLockPromise then
 					curLockPromise:cancel()
 				end
@@ -255,11 +248,6 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 					task.spawn(callback)
 				end
 			end)
-			lockCounter += 1
-
-			if lockCounter > 1 then
-				warn("store({ctx.name}) key({key}) lockId({lockId}) too many threads", key, lockCounter)
-			end
 		end)
 
 		curLockPromise:finally(function()
@@ -285,10 +273,10 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 				if status ~= (Promise :: any).Status.Cancelled then
 					ctx.log("warn", `store({ctx.name}) key({key}) lockId({lockId}) Failed to refresh lock: {err}`)
 				else
-					ctx.log("info", `store({ctx.name}) key({key}) lockId({lockId}) Lock refresh cancelled`)
+					ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) Lock refresh cancelled`)
 				end
 			else
-				ctx.log("info", `store({ctx.name}) key({key}) lockId({lockId}) Lock refreshed`)
+				ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) Lock refreshed`)
 			end
 		end
 	end
@@ -314,7 +302,7 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 	}
 
 	return lock():andThen(function()
-		ctx.log("info", `store({ctx.name}) key({key}) lockId({lockId}) Lock successfully acquired`)
+		ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) Lock successfully acquired`)
 
 		task.spawn(lockRefreshLoop)
 
