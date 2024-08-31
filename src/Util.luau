@@ -102,7 +102,7 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 				"info",
 				`store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) locked({locked}) RELEASE transformFunction called`
 			)
-			if otherLockId == nil or otherLockId == lockId then
+			if otherLockId == lockId then
 				ctx.log(
 					"info",
 					`store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) locked({locked}) RELEASED`
