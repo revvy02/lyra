@@ -545,8 +545,8 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 					-- We just technically performed a save, so let's reset the
 					-- changeSet.
 					local keyEntry = self._keyEntries[key]
+					keyEntry:setData(nextState[key])
 					keyEntry.changeSet = {}
-					keyEntry.data = nextState[key]
 				end
 			end)
 
