@@ -187,15 +187,13 @@ describe.each({
 		it("waits for lock to expire correctly", function()
 			local now = DateTime.now().UnixTimestamp
 
-			return hashMapInterface
-				:set(storeContext.lockScope, "testKey", "other server", 2)
-				:andThen(getKeyEntry)
-				:andThen(function(keyEntry)
-					local data = keyEntry:get():expect()
-					local now2 = DateTime.now().UnixTimestamp
-					expect(now2 - now).toBeGreaterThan(0.9)
-					expect(data).never.toBeNil()
-				end)
+			local handle = hashMapInterface:set(storeContext.lockScope, "testKey", "other server", 2)
+			return handle.promise:andThen(getKeyEntry):andThen(function(keyEntry)
+				local data = keyEntry:get():expect()
+				local now2 = DateTime.now().UnixTimestamp
+				expect(now2 - now).toBeGreaterThan(0.9)
+				expect(data).never.toBeNil()
+			end)
 		end)
 
 		it("correctly reads and migrates data if necessary", function()

@@ -91,15 +91,20 @@ end
 PromiseQueue._addResumableBlock = addResumableBlock
 
 function PromiseQueue.multiQueueAdd(queues: { PromiseQueue }, callback: () -> ()): Promise.Promise
+	local trace = debug.traceback(nil, 2)
 	return Promise.new(function(resolve, reject)
 		local promises = Sift.Array.map(queues, addResumableBlock)
 
 		Promise.all(promises):andThen(function(resumes)
-			Promise.try(callback):andThen(resolve, reject):finally(function()
-				for _, resume in resumes do
-					resume()
-				end
-			end)
+			Promise.try(callback)
+				:andThen(resolve, function(e)
+					reject(`multiQueueAdd callback failed: {e}\nCreated at:\n{trace}`)
+				end)
+				:finally(function()
+					for _, resume in resumes do
+						resume()
+					end
+				end)
 		end)
 	end)
 end

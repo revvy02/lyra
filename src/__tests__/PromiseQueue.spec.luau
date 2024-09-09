@@ -51,9 +51,7 @@ describe("PromiseQueue", function()
 			local callback = function()
 				error("error inside callback")
 			end
-			return expect(queue:add(callback)).rejects.toMatchObject({
-				error = expect.stringMatching("error inside callback"),
-			})
+			return expect(queue:add(callback)).rejects.toMatch("error inside callback")
 		end)
 
 		it("ensures callbacks are executed in the order they are added", function()
@@ -116,11 +114,9 @@ describe("PromiseQueue", function()
 			local p1 = queue:add(callback1)
 			local p2 = queue:add(callback2)
 
-			expect(p1).rejects.toMatchObject({
-				error = expect.stringMatching("propagated error"),
-			})
-
-			return expect(p2).resolves.never.toBeDefined()
+			return expect(p2:andThen(function()
+				return expect(p1).rejects.toMatch("propagated error")
+			end)).resolves.never.toBeDefined()
 		end)
 	end)
 
@@ -201,9 +197,7 @@ describe("PromiseQueue", function()
 				error("propagated error")
 			end)
 
-			return expect(PromiseQueue.multiQueueAdd({ queue1, queue2 }, callback)).rejects.toMatchObject({
-				error = expect.stringMatching("propagated error"),
-			})
+			return expect(PromiseQueue.multiQueueAdd({ queue1, queue2 }, callback)).rejects.toMatch("propagated error")
 		end)
 
 		it("ensures all queues are blocked before the callback is executed", function()
