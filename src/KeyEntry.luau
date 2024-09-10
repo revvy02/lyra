@@ -175,7 +175,7 @@ local function load(params: LoadParams): any
 		end)
 		:andThen(function(data: any?)
 			if data == nil then
-				ctx.log("info", `load - no data, using template, store={ctx.name}, key={key}`)
+				ctx.log("debug", `load - no data, using template, store={ctx.name}, key={key}`)
 				data = Dictionary.copyDeep(ctx.template)
 				version = ctx.latestVersion
 			end
@@ -186,7 +186,7 @@ local function load(params: LoadParams): any
 				return Promise.reject("Data has newer version than this server supports")
 			elseif version < ctx.latestVersion then
 				ctx.log(
-					"info",
+					"debug",
 					`load - migrating data, store={ctx.name}, key={key}, from={version}, to={ctx.latestVersion}`
 				)
 				local migrateDataParams: Util.MigrateDataParams = {
@@ -296,7 +296,7 @@ function KeyEntry.load<T>(params: LoadKeyEntryParams<T>): Promise.TypedPromise<K
 
 			local keyEntry = createKeyEntry(createParams)
 
-			ctx.log("info", `KeyEntry:load - Loaded key {params.key}, data: {HttpService:JSONEncode(loadResult.data)}`)
+			ctx.log("debug", `KeyEntry:load - Loaded key {params.key}, data: {HttpService:JSONEncode(loadResult.data)}`)
 			keyEntry:mutateKey(loadResult.data)
 
 			return keyEntry :: any
@@ -475,14 +475,14 @@ function KeyEntry:unload(): Promise.Promise
 	self.closed = true
 	self:stopAutosaving()
 
-	self.ctx.log("info", `KeyEntry:unload - Unloading key {self.key}`)
+	self.ctx.log("trace", `KeyEntry:unload - Unloading key {self.key}`)
 	self.unloadPromise = self.queue
 		:add(function()
-			self.ctx.log("info", `KeyEntry:unload - Saving key {self.key}`)
+			self.ctx.log("trace", `KeyEntry:unload - Saving key {self.key}`)
 			return self:updateRecord()
 		end)
 		:finally(function()
-			self.ctx.log("info", `KeyEntry:unload - Unloaded key {self.key}. Calling release`)
+			self.ctx.log("trace", `KeyEntry:unload - Unloaded key {self.key}. Calling release`)
 			return self.lockHandle.release():catch(function(e)
 				self.ctx.log("warn", `KeyEntry:unload - Failed to release lock for key {self.key}: {e}`)
 			end)

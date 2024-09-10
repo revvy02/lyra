@@ -584,7 +584,7 @@ end
 Store.save = t.wrap(Store.save, t.tuple(t.any, t.string))
 
 function Store:close(): Promise.Promise
-	self._ctx.log("info", `Store {self._ctx.name}: Closing store`)
+	self._ctx.log("debug", `Store {self._ctx.name}: Closing store`)
 
 	for _, loadPromise in self._loadPromises do
 		(loadPromise :: any):cancel()
@@ -608,7 +608,7 @@ function Store:close(): Promise.Promise
 	self._ctx.log("trace", `Store {self._ctx.name}: Store marked as closed`)
 
 	return Promise.allSettled(promises):andThen(function()
-		self._ctx.log("info", `Store {self._ctx.name}: Store closed successfully`)
+		self._ctx.log("debug", `Store {self._ctx.name}: Store closed successfully`)
 	end)
 end
 
