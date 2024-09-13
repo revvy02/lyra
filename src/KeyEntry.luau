@@ -296,7 +296,7 @@ function KeyEntry.load<T>(params: LoadKeyEntryParams<T>): Promise.TypedPromise<K
 
 			local keyEntry = createKeyEntry(createParams)
 
-			ctx.log("debug", `KeyEntry:load - Loaded key {params.key}, data: {HttpService:JSONEncode(loadResult.data)}`)
+			ctx.log("trace", `KeyEntry:load - Loaded key {params.key}, data: {HttpService:JSONEncode(loadResult.data)}`)
 			keyEntry:mutateKey(loadResult.data)
 
 			return keyEntry :: any
