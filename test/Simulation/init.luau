@@ -6,7 +6,7 @@ local function runCase(case: ModuleScript)
 end
 
 local function run()
-	runCase(Cases.TradingRaceConditions)
+	runCase(Cases.TDSMigrate)
 end
 
 return {

@@ -1,6 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local RUN_SIMULATIONS = false
+local RUN_SIMULATIONS = true
 
 local Simulation = require(script.Parent.Simulation)
 

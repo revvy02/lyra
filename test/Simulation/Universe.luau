@@ -45,6 +45,13 @@ function Server:join(id)
 	table.insert(self.players, id)
 	print("Adding player:", id)
 
+	if not self.simulationConfig.playerData[id] then
+		local populateData = self.simulationConfig.populateData
+		if populateData then
+			self.simulationConfig.playerData[id] = populateData(id)
+		end
+	end
+
 	local p = self.store:load(id):catch(warn)
 	self:validate(id)
 	p:finally(function()
@@ -167,11 +174,15 @@ function Server:validate(id)
 		:get(id)
 		:andThen(function(data)
 			local playerData = self.simulationConfig.playerData[id]
-			if not Sift.Dictionary.equalsDeep(playerData, data) then
-				local diff = getDiff(data, playerData)
-				warn(`Data mismatch for player {id}: {HttpService:JSONEncode(diff)}`)
+			if playerData == nil then
+				self.simulationConfig.playerData[id] = data
 			else
-				print(`Data validated for player {id}`)
+				if not Sift.Dictionary.equalsDeep(playerData, data) then
+					local diff = getDiff(data, playerData)
+					warn(`Data mismatch for player {id}: {HttpService:JSONEncode(diff)}`)
+				else
+					print(`Data validated for player {id}`)
+				end
 			end
 		end)
 		:catch(warn)
@@ -210,27 +221,27 @@ function Universe.new(config)
 	self.config = config
 	self.storeName = `int-test-{string.sub(game.HttpService:GenerateGUID(false), 1, 8)}`
 
-	local storeConfig = {
-		name = self.storeName,
-		template = {
-			counter = 0,
-			items = {},
-			str = "",
-		},
-		schema = function()
-			return true
-		end,
-		useMock = false,
-		onLockLost = function(key)
-			warn("Lock lost", key)
-		end,
+	local storeConfig = config.storeConfig or {}
+	storeConfig.name = storeConfig.name or self.storeName
+	storeConfig.template = storeConfig.template or {
+		counter = 0,
+		items = {},
+		str = "",
 	}
+	storeConfig.schema = storeConfig.schema or function()
+		return true
+	end
+	storeConfig.useMock = storeConfig.useMock or false
+	storeConfig.onLockLost = storeConfig.onLockLost or function(key)
+		warn("Lock lost", key)
+	end
+
 	self.storeConfig = storeConfig
 
 	for _ = 1, config.maxPlayers do
 		local id = string.sub(game.HttpService:GenerateGUID(false), 1, 8)
 		table.insert(self.playerPool, id)
-		self.playerData[id] = Sift.Dictionary.copyDeep(storeConfig.template)
+		-- self.playerData[id] = Sift.Dictionary.copyDeep(storeConfig.template)
 	end
 	return self
 end

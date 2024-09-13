@@ -14,3 +14,5 @@ external
 .aider*
 
 node_modules
+
+/test/Simulation/Cases/TDSMigrate
