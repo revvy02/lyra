@@ -54,9 +54,8 @@ function PromiseQueue:_processQueue()
 	while #self._queue > 0 do
 		local item = self._queue[1]
 
-		-- TODO: Track call stack in :add to output here
 		local deadlockWarn = task.delay(5, function()
-			warn("Potential PromiseQueue deadlock")
+			warn(`Potential PromiseQueue deadlock\nCreated at:\n{item.trace}`)
 		end)
 
 		Promise.try(item.fn)
