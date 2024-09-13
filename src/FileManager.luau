@@ -35,7 +35,6 @@ function FileManager.write(params: WriteParams): Promise.TypedPromise<Types.File
 	end
 
 	local shardId = HttpService:GenerateGUID(false)
-	-- TODO: Add a test case ensuring that splitUtf8String is called with the correct arguments
 	local shards = splitUtf8String(str, params.maxShardSize)
 	local file = { shard = shardId, count = #shards }
 
