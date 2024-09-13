@@ -53,10 +53,6 @@ export type AcquireLockParams = {
 	refreshInterval: number,
 }
 
-local activeLocks = {}
-
-local acquireOrphanLockIdCounts = {}
-
 local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<LockHandle>
 	local ctx = params.storeContext
 	local key = params.key
@@ -70,8 +66,6 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 	local curLockPromise: any
 
 	local lastUpdate
-	activeLocks[key] = activeLocks[key] or {}
-	local version = 0
 	local releasing = false
 
 	local function release(): Promise.Promise
@@ -115,7 +109,6 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 		end
 
 		return ctx.hashMapInterface:update(scope, key, transformFunction, 0).promise:finally(function()
-			table.remove(activeLocks[key], table.find(activeLocks[key], lockId))
 			locked = false
 		end)
 	end
@@ -137,18 +130,6 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 					`store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) Lock released while acquiring`
 				)
 				return nil
-			end
-
-			if otherLockId ~= nil and otherLockId ~= lockId then
-				local count = acquireOrphanLockIdCounts[otherLockId] or 0
-				count += 1
-				acquireOrphanLockIdCounts[otherLockId] = count
-				if count > 2 then
-					ctx.log(
-						"error",
-						`store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) BUG HAPPENED`
-					)
-				end
 			end
 
 			if otherLockId == nil or otherLockId == lockId then
@@ -199,9 +180,6 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 					if resolved and lastValue ~= nil then
 						lastUpdate = os.clock()
 						locked = true
-						if not table.find(activeLocks[key], lockId) then
-							table.insert(activeLocks[key], lockId)
-						end
 						return resolve()
 					end
 
@@ -232,22 +210,20 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 				lockExpiryThread = nil
 			end
 
-			version += 1
-			local myVersion = version
-
 			ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) Lock acquired. spawning expiry`)
 			lockExpiryThread = task.delay(params.duration, task.spawn, function()
-				if myVersion ~= version then
-					warn(`store({ctx.name}) key({key}) lockId({lockId}) Lock has more than one expiry thread`)
-				end
-
-				ctx.log("warn", `store({ctx.name}) key({key}) lockId({lockId}) Lock expired`)
 				local tSinceLast = os.clock() - lastUpdate
-				warn(
-					`store({ctx.name}) key({key}) lockId({lockId}) lock lost, locked: {locked}, lockExpiryThread: {lockExpiryThread}, activeLock: {activeLocks[key]}, tSinceLast: {tSinceLast}`
+				if releasing or not locked then
+					ctx.log(
+						"warn",
+						`store({ctx.name}) key({key}) lockId({lockId}) lock expired after release called, releasing: {releasing}, locked: {locked}, tSinceLast: {tSinceLast}`
+					)
+					return
+				end
+				ctx.log(
+					"warn",
+					`store({ctx.name}) key({key}) lockId({lockId}) lock expired, locked: {locked}, lockExpiryThread: {lockExpiryThread}, tSinceLast: {tSinceLast}`
 				)
-				warn(activeLocks[key])
-				table.remove(activeLocks[key], table.find(activeLocks[key], lockId))
 
 				locked = false
 				refreshLock = false
@@ -351,5 +327,4 @@ return {
 	acquireLock = acquireLock,
 	migrateData = migrateData,
 	readTx = readTx,
-	activeLocks = activeLocks,
 }
