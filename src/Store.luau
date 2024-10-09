@@ -55,6 +55,7 @@ type StoreImpl<T> = {
 
 	_processOrphanedFile: (self: Store<T>, item: Types.OrphanedFileQueueItem) -> boolean,
 	_withKeyEntry: (self: Store<T>, key: string, callback: (keyEntry: KeyEntry.KeyEntry<any>) -> ()) -> Promise.Promise,
+	_getKeyInfo: (self: Store<T>, key: string) -> Promise.TypedPromise<DataStoreKeyInfo?>,
 
 	load: (self: Store<T>, key: string, userIds: { number }?) -> Promise.Promise,
 	unload: (self: Store<T>, key: string) -> Promise.Promise,
@@ -353,6 +354,12 @@ function Store:_withKeyEntry(key: string, callback: (keyEntry: KeyEntry.KeyEntry
 		end
 
 		resolve(callback(keyEntry))
+	end)
+end
+
+function Store:_getKeyInfo(key: string): Promise.TypedPromise<DataStoreKeyInfo?>
+	return self:_withKeyEntry(key, function(keyEntry)
+		return keyEntry.keyInfo
 	end)
 end
 

@@ -63,6 +63,8 @@ type KeyEntryProps<T> = {
 
 	closed: boolean,
 	unloadPromise: Promise.Promise?,
+
+	keyInfo: DataStoreKeyInfo?,
 }
 
 export type KeyEntry<T> = typeof(setmetatable({} :: KeyEntryProps<T>, {} :: KeyEntryImpl<T>))
@@ -88,6 +90,7 @@ export type LoadResult = {
 	version: number,
 	orphanedFiles: { Types.File },
 	currentFile: Types.File?,
+	keyInfo: DataStoreKeyInfo?,
 }
 
 local function load(params: LoadParams): any
@@ -102,16 +105,18 @@ local function load(params: LoadParams): any
 	local version: number
 	local orphanedFiles: { Types.File } = {}
 	local currentFile: Types.File?
+	local keyInfo: DataStoreKeyInfo?
 
 	return ctx.dataStoreInterface
 		:get(recordScope, key)
-		:andThen(function(record: Types.DataStoreRecord?)
+		:andThen(function(record: Types.DataStoreRecord?, _keyInfo: DataStoreKeyInfo?)
 			ctx.log("trace", `load - get record, store={ctx.name}, key={key}`)
 			if record == nil then
 				record = {} :: Types.DataStoreRecord
 			end
 			assert(record, "luau")
 
+			keyInfo = _keyInfo
 			version = record.version or ctx.latestVersion
 
 			if record.orphanedFiles then
@@ -209,6 +214,7 @@ local function load(params: LoadParams): any
 				version = version,
 				orphanedFiles = orphanedFiles,
 				currentFile = currentFile,
+				keyInfo = keyInfo,
 			}
 			ctx.log("trace", `load - done, store={ctx.name}, key={key}`)
 			return loadResult
@@ -226,6 +232,7 @@ type CreateKeyEntryParams = {
 	version: number,
 	orphanedFiles: { Types.File },
 	currentFile: Types.File?,
+	keyInfo: DataStoreKeyInfo?,
 }
 
 local function createKeyEntry<T>(params: CreateKeyEntryParams): KeyEntry<T>
@@ -257,6 +264,8 @@ local function createKeyEntry<T>(params: CreateKeyEntryParams): KeyEntry<T>
 
 		closed = false,
 		unloadPromise = nil,
+
+		keyInfo = params.keyInfo,
 	}
 
 	return setmetatable(props, KeyEntry) :: KeyEntry<T>
@@ -292,6 +301,7 @@ function KeyEntry.load<T>(params: LoadKeyEntryParams<T>): Promise.TypedPromise<K
 				version = loadResult.version,
 				orphanedFiles = loadResult.orphanedFiles,
 				currentFile = loadResult.currentFile,
+				keyInfo = loadResult.keyInfo,
 			}
 
 			local keyEntry = createKeyEntry(createParams)
