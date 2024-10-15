@@ -77,6 +77,7 @@ export type StoreContext<T> = {
 export type LogMessage = {
 	message: string,
 	level: "fatal" | "error" | "warn" | "info" | "debug" | "trace",
+	context: { [string]: any }?,
 }
 
 local txInfoCheck = t.some(
