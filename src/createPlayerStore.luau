@@ -1,5 +1,6 @@
 --!strict
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Promise = require(ReplicatedStorage.Packages.Promise)
@@ -8,6 +9,8 @@ local Types = require(script.Parent.Types)
 
 type PlayerStoreImpl<T> = {
 	__index: PlayerStoreImpl<T>,
+	_kickPlayer: (self: PlayerStore<T>, keyOrPlayer: string | Player, message: string) -> (),
+
 	get: (self: PlayerStore<T>, player: Player) -> Promise.TypedPromise<T>,
 	load: (self: PlayerStore<T>, player: Player) -> Promise.Promise,
 	unload: (self: PlayerStore<T>, player: Player) -> Promise.Promise,
@@ -45,7 +48,7 @@ local PlayerStore: PlayerStoreImpl<any> = {} :: PlayerStoreImpl<any>
 PlayerStore.__index = PlayerStore
 
 local function createPlayerStore<T>(config: PlayerStoreConfig<T>): PlayerStore<T>
-	local store: Store.Store<T>
+	local self: PlayerStore<T>
 
 	local storeConfig = {
 		name = config.name,
@@ -55,10 +58,25 @@ local function createPlayerStore<T>(config: PlayerStoreConfig<T>): PlayerStore<T
 		migrateFromOtherSystem = config.migrateFromOtherSystem,
 		changedCallbacks = config.changedCallbacks,
 		logCallback = config.logCallback,
+		onLockLost = function(key: string)
+			self:_kickPlayer(key, "DataStore lock lost, please rejoin the game.")
+		end,
 	}
 
-	store = Store.createStore(storeConfig)
-	return setmetatable({ _store = store }, PlayerStore)
+	local store = Store.createStore(storeConfig)
+	self = setmetatable({ _store = store }, PlayerStore)
+	return self
+end
+
+function PlayerStore:_kickPlayer(keyOrPlayer: string | Player, message: string): ()
+	if typeof(keyOrPlayer) ~= "string" then
+		keyOrPlayer:Kick(message)
+	else
+		local player = Players:GetPlayerByUserId(tonumber(keyOrPlayer))
+		if player ~= nil then
+			player:Kick(message)
+		end
+	end
 end
 
 function PlayerStore:get(player: Player)
@@ -68,7 +86,10 @@ end
 
 function PlayerStore:load(player: Player)
 	local userIdKey = getUserIdKey(player)
-	return self._store:load(userIdKey)
+	return self._store:load(userIdKey):catch(function(e)
+		self:_kickPlayer(player, "DataStore load failed, please rejoin the game.")
+		return Promise.reject(e)
+	end)
 end
 
 function PlayerStore:unload(player: Player)
