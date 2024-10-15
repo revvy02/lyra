@@ -3,22 +3,21 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Promise = require(ReplicatedStorage.Packages.Promise)
-local Sift = require(ReplicatedStorage.Packages.Sift)
 local Store = require(script.Parent.Store)
-local mapKeys = require(script.Parent.mapKeys)
+local Types = require(script.Parent.Types)
 
 type PlayerStoreImpl<T> = {
 	__index: PlayerStoreImpl<T>,
-	get: (self: PlayerStore<T>, userId: number) -> Promise.TypedPromise<T>,
-	load: (self: PlayerStore<T>, userId: number) -> Promise.Promise,
-	unload: (self: PlayerStore<T>, userId: number) -> Promise.Promise,
-	update: (self: PlayerStore<T>, userId: number, transformFunction: (data: T) -> boolean) -> Promise.Promise,
+	get: (self: PlayerStore<T>, player: Player) -> Promise.TypedPromise<T>,
+	load: (self: PlayerStore<T>, player: Player) -> Promise.Promise,
+	unload: (self: PlayerStore<T>, player: Player) -> Promise.Promise,
+	update: (self: PlayerStore<T>, player: Player, transformFunction: (data: T) -> boolean) -> Promise.Promise,
 	tx: (
 		self: PlayerStore<T>,
-		userIds: { number },
-		transformFunction: (state: { [number]: T }) -> boolean
+		players: { Player },
+		transformFunction: (state: { [Player]: T }) -> boolean
 	) -> Promise.Promise,
-	save: (self: PlayerStore<T>, userId: number) -> Promise.Promise,
+	save: (self: PlayerStore<T>, player: Player) -> Promise.Promise,
 	close: (self: PlayerStore<T>) -> Promise.Promise,
 }
 
@@ -26,51 +25,77 @@ type PlayerStoreProps<T> = {
 	_store: Store.Store<T>,
 }
 
+type PlayerStoreConfig<T> = {
+	name: string,
+	template: T,
+	schema: (value: any) -> (boolean, string?),
+	migrations: { [number]: (value: any) -> any }?,
+	migrateFromOtherSystem: ((key: string) -> any?)?,
+	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () }?,
+	logCallback: ((logMessage: Types.LogMessage) -> ())?,
+}
+
 type PlayerStore<T> = typeof(setmetatable({} :: PlayerStoreProps<T>, {} :: PlayerStoreImpl<T>))
 
-local function assertUserId(userId: number): string
-	assert(typeof(userId) == "number", "userId must be a number")
-
-	local userIdKey = tostring(userId)
-	assert(userIdKey ~= nil, "userId must be a valid number")
-	assert(string.match(userIdKey, "^%-?%d+$"), "userId must be an integer")
-
-	return userIdKey
+local function getUserIdKey(player: Player): string
+	return tostring(player.UserId)
 end
 
 local PlayerStore: PlayerStoreImpl<any> = {} :: PlayerStoreImpl<any>
 PlayerStore.__index = PlayerStore
 
-local function createPlayerStore<T>(config: Store.StoreConfig<T>): PlayerStore<T>
-	local store = Store.createStore(config)
+local function createPlayerStore<T>(config: PlayerStoreConfig<T>): PlayerStore<T>
+	local store: Store.Store<T>
+
+	local storeConfig = {
+		name = config.name,
+		template = config.template,
+		schema = config.schema,
+		migrations = config.migrations,
+		migrateFromOtherSystem = config.migrateFromOtherSystem,
+		changedCallbacks = config.changedCallbacks,
+		logCallback = config.logCallback,
+	}
+
+	store = Store.createStore(storeConfig)
 	return setmetatable({ _store = store }, PlayerStore)
 end
 
-function PlayerStore:get(userId: number)
-	local userIdKey = assertUserId(userId)
+function PlayerStore:get(player: Player)
+	local userIdKey = getUserIdKey(player)
 	return self._store:get(userIdKey)
 end
 
-function PlayerStore:load(userId: number)
-	local userIdKey = assertUserId(userId)
+function PlayerStore:load(player: Player)
+	local userIdKey = getUserIdKey(player)
 	return self._store:load(userIdKey)
 end
 
-function PlayerStore:unload(userId: number)
-	local userIdKey = assertUserId(userId)
+function PlayerStore:unload(player: Player)
+	local userIdKey = getUserIdKey(player)
 	return self._store:unload(userIdKey)
 end
 
-function PlayerStore:update<T>(userId: number, transformFunction: (data: T) -> boolean)
-	local userIdKey = assertUserId(userId)
+function PlayerStore:update<T>(player: Player, transformFunction: (data: T) -> boolean)
+	local userIdKey = getUserIdKey(player)
 	return self._store:update(userIdKey, transformFunction)
 end
 
-function PlayerStore:tx<T>(userIds: { number }, transformFunction: (state: { [number]: T }) -> boolean)
-	local userIdKeys = Sift.Array.map(userIds, assertUserId)
+function PlayerStore:tx<T>(players: { Player }, transformFunction: (state: { [Player]: T }) -> boolean)
+	local userIdKeys = table.create(#players)
+	local userIdKeyToPlayer = {}
+	for i, player in players do
+		local key = getUserIdKey(player)
+		userIdKeys[i] = key
+		userIdKeyToPlayer[key] = player
+	end
 
-	local function wrapped(state)
-		local userIdState: { [number]: any } = mapKeys(state, tonumber) :: any
+	local function wrapped(state: { [string]: any }): boolean
+		local userIdState = {}
+		for key, value in state do
+			local player = userIdKeyToPlayer[key]
+			userIdState[player] = value
+		end
 
 		local success = transformFunction(userIdState)
 		if success == false then
@@ -81,8 +106,8 @@ function PlayerStore:tx<T>(userIds: { number }, transformFunction: (state: { [nu
 			state[key] = nil
 		end
 
-		for userIdKey, value in userIdState do
-			local stringKey = assertUserId(userIdKey)
+		for playerVariant, value in userIdState do
+			local stringKey = getUserIdKey(playerVariant)
 			state[stringKey] = value
 		end
 
@@ -92,8 +117,8 @@ function PlayerStore:tx<T>(userIds: { number }, transformFunction: (state: { [nu
 	return self._store:tx(userIdKeys, wrapped)
 end
 
-function PlayerStore:save(userId: number)
-	local userIdKey = assertUserId(userId)
+function PlayerStore:save(player: Player)
+	local userIdKey = getUserIdKey(player)
 	return self._store:save(userIdKey)
 end
 
