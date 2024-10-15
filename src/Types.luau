@@ -65,7 +65,7 @@ export type StoreContext<T> = {
 
 	orphanedFileQueue: OrphanedFileQueue,
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () },
-	log: (level: "fatal" | "error" | "warn" | "info" | "debug" | "trace", message: string) -> (),
+	logger: Logger,
 	onLockLost: ((key: string) -> ())?,
 
 	recordScope: string,
@@ -74,17 +74,33 @@ export type StoreContext<T> = {
 	lockScope: string,
 }
 
-export type LogMessage = {
-	message: string,
-	level: "fatal" | "error" | "warn" | "info" | "debug" | "trace",
-	context: { [string]: any }?,
-}
-
 local txInfoCheck = t.some(
 	t.strictInterface({ committedData = t.any }),
 	t.strictInterface({ committedData = t.any, txId = t.string, txData = t.any })
 )
 local fileCheck = t.some(t.strictInterface({ data = t.any }), t.strictInterface({ shard = t.string, count = t.number }))
+
+export type LogMessage = {
+	message: string,
+	level: Level,
+	context: { [string]: any }?,
+}
+
+export type Level = "fatal" | "error" | "warn" | "info" | "debug" | "trace"
+
+export type LoggerImpl = {
+	__index: LoggerImpl,
+
+	log: (self: Logger, level: Level, message: string, context: { [string]: any }?) -> (),
+	extend: (self: Logger, context: { [string]: any }) -> Logger,
+}
+
+export type LoggerProps = {
+	_logCallback: (logMessage: LogMessage) -> (),
+	_context: { [string]: any },
+}
+
+export type Logger = typeof(setmetatable({} :: LoggerProps, {} :: LoggerImpl))
 
 return {
 	txInfoCheck = txInfoCheck,

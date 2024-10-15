@@ -2,7 +2,6 @@
 
 local Types = require(script.Parent.Types)
 
-export type Level = "fatal" | "error" | "warn" | "info" | "debug" | "trace"
 local levels = {
 	"fatal",
 	"error",
@@ -16,31 +15,17 @@ local Log = {
 	level = "info",
 }
 
-function Log.setLevel(level: Level)
+function Log.setLevel(level: Types.Level)
 	if table.find(levels, level) == nil then
 		error("Invalid log level")
 	end
 	Log.level = level
 end
 
-type LoggerImpl = {
-	__index: LoggerImpl,
-
-	log: (self: Logger, level: Level, message: string, context: { [string]: any }?) -> (),
-	extend: (self: Logger, context: { [string]: any }) -> Logger,
-}
-
-type LoggerProps = {
-	_logCallback: (logMessage: Types.LogMessage) -> (),
-	_context: { [string]: any },
-}
-
-type Logger = typeof(setmetatable({} :: LoggerProps, {} :: LoggerImpl))
-
-local Logger: LoggerImpl = {} :: LoggerImpl
+local Logger: Types.LoggerImpl = {} :: Types.LoggerImpl
 Logger.__index = Logger
 
-function Logger:log(level: Level, message: string, context: { [string]: any }?)
+function Logger:log(level: Types.Level, message: string, context: { [string]: any }?)
 	if table.find(levels, level) > table.find(levels, Log.level) then
 		return
 	end
@@ -59,7 +44,7 @@ function Logger:log(level: Level, message: string, context: { [string]: any }?)
 	})
 end
 
-function Logger:extend(context: { [string]: any }): Logger
+function Logger:extend(context: { [string]: any }): Types.Logger
 	local finalContext = table.clone(self._context)
 	for key, value in context do
 		finalContext[key] = value
@@ -71,7 +56,7 @@ function Logger:extend(context: { [string]: any }): Logger
 	}, Logger)
 end
 
-function Log.createLogger(logCallback: (logMessage: Types.LogMessage) -> (), context: { [string]: any }?): Logger
+function Log.createLogger(logCallback: (logMessage: Types.LogMessage) -> (), context: { [string]: any }?): Types.Logger
 	return setmetatable({
 		_logCallback = logCallback,
 		_context = context or {},
