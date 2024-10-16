@@ -68,76 +68,64 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 	local lastUpdate
 	local releasing = false
 
+	local logger = params.storeContext.logger:extend({ method = "acquireLock", key = params.key, lockId = lockId })
+
 	local function release(): Promise.Promise
-		ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) locked({locked}) Release called`)
+		logger:log("trace", "release called")
+
 		if releasing then
+			logger:log("trace", "already releasing")
 			return Promise.resolve()
 		end
 		releasing = true
 		refreshLock = false
 
 		if curLockPromise then
+			logger:log("trace", "cancelling curLockPromise")
 			curLockPromise:cancel()
 		end
 
 		if lockExpiryThread then
+			logger:log("trace", "cancelling lockExpiryThread")
 			task.cancel(lockExpiryThread)
 			lockExpiryThread = nil
 		end
 
 		if not locked then
+			logger:log("trace", "not locked, returning")
 			return Promise.resolve()
 		end
 
 		local function transformFunction(otherLockId: string?): string?
-			ctx.log(
-				"trace",
-				`store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) locked({locked}) RELEASE transformFunction called`
-			)
+			logger:log("trace", "transformFunction called", { otherLockId = otherLockId, locked = locked })
 			if otherLockId == lockId then
-				ctx.log(
-					"trace",
-					`store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) locked({locked}) RELEASED`
-				)
 				return ""
 			end
-			ctx.log(
-				"trace",
-				`store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) locked({locked}) NOT RELEASED`
-			)
 			return nil
 		end
 
 		return ctx.hashMapInterface:update(scope, key, transformFunction, 0).promise:finally(function()
 			locked = false
+			logger:log("trace", "locked set to false")
 		end)
 	end
 
 	local function lock()
-		ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) Lock called`)
+		logger:log("trace", "lock called")
 		local lastOtherLockId
 
 		local function transformFunction(otherLockId: string?): string?
-			ctx.log(
-				"trace",
-				`store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) releasing({releasing}) ACQUIRE transformFunction called`
-			)
+			logger:log("trace", "transformFunction called", { otherLockId = otherLockId, releasing = releasing })
 
 			lastOtherLockId = otherLockId
 			if releasing then
-				ctx.log(
-					"trace",
-					`store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) Lock released while acquiring`
-				)
 				return nil
 			end
 
 			if otherLockId == nil or otherLockId == lockId then
-				ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) ACQUIRED`)
 				return lockId
 			end
 
-			ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) otherLockId({otherLockId}) NOT ACQUIRED`)
 			return nil
 		end
 
@@ -145,37 +133,27 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 			local retryHandle: any
 
 			onCancel(function()
-				ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) curLockPromise cancelled`)
+				logger:log("trace", "curLockPromise onCancel called")
 				if retryHandle then
-					ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) cancelling retryHandle`)
+					logger:log("trace", "retryHandle exists, cancelling and waiting for it to finish")
 
 					retryHandle.cancel()
-
-					ctx.log(
-						"trace",
-						`store({ctx.name}) key({key}) lockId({lockId}) retryHandle cancelled, awaiting promise`
-					)
-
 					retryHandle.promise:await()
 				end
 
-				ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) releasing`)
-
+				logger:log("trace", "releasing")
 				release():catch(function(err)
-					ctx.log("error", `store({ctx.name}) key({key}) lockId({lockId}) Error releasing lock: {err}`)
+					logger:log("error", "release failed", { err = err })
 				end)
 			end)
 
 			task.spawn(function()
 				for i = 1, params.acquireAttempts do
+					logger:log("debug", `acquiring lock (attempt {i})`)
+
 					retryHandle = ctx.hashMapInterface:update(scope, key, transformFunction, params.duration)
 					local resolved, lastValue = retryHandle.promise:await()
 					retryHandle = nil
-
-					ctx.log(
-						"trace",
-						`store({ctx.name}) key({key}) lockId({lockId}) lastOtherLockId({lastOtherLockId}) resolved({resolved}) lastValue({lastValue}) ACQUIRE RETURNED`
-					)
 
 					if resolved and lastValue ~= nil then
 						lastUpdate = os.clock()
@@ -184,51 +162,55 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 					end
 
 					if onCancel() then
-						ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) Lock acquisition cancelled`)
+						logger:log("trace", "lock acquisition cancelled")
 						return reject("Lock acquisition cancelled")
 					end
 
 					if i ~= params.acquireAttempts then
-						ctx.log(
-							"trace",
-							`store({ctx.name}) key({key}) lockId({lockId}) lastOtherLockId({lastOtherLockId}) Retrying lock acquisition (attempt {i}). resolved({resolved}) lastValue({lastValue})`
-						)
 						local retryAfter = math.min(2 ^ (i - 1), 30)
+						logger:log(
+							"trace",
+							`lock acquisition failed, retrying in {retryAfter} seconds`,
+							{ lastOtherLockId = lastOtherLockId, lastValue = lastValue, resolved = resolved }
+						)
 						task.wait(retryAfter)
 					end
 				end
 
-				ctx.log(
-					"error",
-					`store({ctx.name}) key({key}) lockId({lockId}) Failed to acquire lock after {params.acquireAttempts} attempts`
-				)
+				logger:log("error", `failed to acquire lock after {params.acquireAttempts} attempts`)
 				return reject("Failed to acquire lock")
 			end)
 		end):tap(function()
+			logger:log("trace", "lock acquired")
+
 			if lockExpiryThread then
+				logger:log("trace", "cancelling lockExpiryThread")
 				task.cancel(lockExpiryThread)
 				lockExpiryThread = nil
 			end
 
-			ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) Lock acquired. spawning expiry`)
+			logger:log("trace", "spawning lockExpiryThread")
 			lockExpiryThread = task.delay(params.duration, task.spawn, function()
 				local tSinceLast = os.clock() - lastUpdate
+
+				logger:log(
+					"trace",
+					`lockExpiryThread running after {tSinceLast} seconds`,
+					{ locked = locked, lockExpiryThread = lockExpiryThread, releasing = releasing }
+				)
+
 				if releasing or not locked then
-					ctx.log(
-						"warn",
-						`store({ctx.name}) key({key}) lockId({lockId}) lock expired after release called, releasing: {releasing}, locked: {locked}, tSinceLast: {tSinceLast}`
-					)
+					logger:log("warn", "lockExpiryThread ran after release, returning")
 					return
 				end
-				ctx.log(
-					"warn",
-					`store({ctx.name}) key({key}) lockId({lockId}) lock expired, locked: {locked}, lockExpiryThread: {lockExpiryThread}, tSinceLast: {tSinceLast}`
-				)
+
+				logger:log("warn", "lock expired, releasing", { tSinceLast = tSinceLast })
 
 				locked = false
 				refreshLock = false
 
 				if curLockPromise then
+					logger:log("trace", "cancelling curLockPromise")
 					curLockPromise:cancel()
 				end
 
@@ -259,12 +241,12 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 			if not resolved then
 				local status = lockPromise:awaitStatus()
 				if status ~= (Promise :: any).Status.Cancelled then
-					ctx.log("warn", `store({ctx.name}) key({key}) lockId({lockId}) Failed to refresh lock: {err}`)
+					logger:log("warn", "failed to refresh lock", { err = err })
 				else
-					ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) Lock refresh cancelled`)
+					logger:log("trace", "lock refresh cancelled")
 				end
 			else
-				ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) Lock refreshed`)
+				logger:log("trace", "lock refreshed")
 			end
 		end
 	end
@@ -290,7 +272,7 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 	}
 
 	return lock():andThen(function()
-		ctx.log("trace", `store({ctx.name}) key({key}) lockId({lockId}) Lock successfully acquired`)
+		logger:log("trace", "lock acquired")
 
 		task.spawn(lockRefreshLoop)
 
