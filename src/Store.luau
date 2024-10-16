@@ -233,6 +233,17 @@ function Store:load(key: string, userIds: { number }?): Promise.Promise
 		userIds = userIds,
 	}
 	local loadPromise = waitForUnload:andThenCall(KeyEntry.load, params):andThen(function(keyEntry)
+		if self._closed then
+			logger:log("warn", "store closed before key loaded")
+
+			self._unloadPromises[key] = keyEntry:unload():finally(function()
+				logger:log("trace", "key unloaded")
+				self._unloadPromises[key] = nil
+			end)
+
+			return Promise.reject("Store closed before key loaded")
+		end
+
 		self._keyEntries[key] = keyEntry
 
 		keyEntry:startAutosaving()
