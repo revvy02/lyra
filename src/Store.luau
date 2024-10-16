@@ -83,18 +83,21 @@ local Store: StoreImpl<any> = {} :: StoreImpl<any>
 Store.__index = Store
 
 local function createStore<T>(config: StoreConfig<T>): Store<T>
-	local log = Log.filterCallback(config.logCallback)
+	local logger = Log.createLogger(config.logCallback or function() end, {
+		lib = "lyra",
+		store = config.name,
+	})
 
-	log("debug", `Creating new Store with name {config.name}`)
+	logger:log("debug", `creating store`)
 	local dataStoreInterface = config.dataStoreInterface
 	if dataStoreInterface == nil then
 		local service
 		if config.useMock then
 			assert(RunService:IsStudio(), "useMock can only be true in Studio")
-			log("info", `Creating Store {config.name} with a mock DataStoreService`)
+			logger:log("info", `using mock DataStoreService`)
 			service = (MockDataStoreService.createMockService() :: any) :: DataStoreService
 		else
-			log("trace", `Creating Store {config.name} with the real DataStoreService`)
+			logger:log("trace", `using real DataStoreService`)
 			service = DataStoreService
 		end
 
@@ -106,21 +109,22 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 	local orphanedFileQueue = OrphanedFileQueue.new()
 
 	local migrations = config.migrations or {}
-	log("trace", `Store {config.name} has {#migrations} migrations configured`)
 
 	local storeContext: Types.StoreContext<T> = {
 		name = config.name,
 		template = config.template,
 		schema = config.schema,
+
 		migrations = migrations,
 		migrateFromOtherSystem = config.migrateFromOtherSystem,
+		latestVersion = #migrations,
+
 		dataStoreInterface = dataStoreInterface,
 		hashMapInterface = hashMapInterface,
-		lockId = HttpService:GenerateGUID(false),
+
 		orphanedFileQueue = orphanedFileQueue,
-		latestVersion = #migrations,
 		changedCallbacks = config.changedCallbacks or {},
-		log = log,
+		logger = logger,
 		onLockLost = config.onLockLost,
 
 		recordScope = `{Constants.RECORD_SCOPE}/{config.name}`,
@@ -147,62 +151,49 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		return self:_processOrphanedFile(item)
 	end
 
-	log("trace", `Store {config.name} created successfully`)
+	logger:log("trace", `created store`)
 	return self
 end
 createStore = t.wrap(createStore, t.tuple(storeConfigCheck))
 
 function Store:_processOrphanedFile(item: Types.OrphanedFileQueueItem): boolean
-	self._ctx.log("trace", `Store {self._ctx.name}: Attempting to process orphaned file for key {item.key}`)
+	local logger = self._ctx.logger:extend({ method = "_processOrphanedFile", key = item.key, shard = item.file.shard })
+
 	local minBudget = 100
 	local curBudget =
 		self._ctx.dataStoreInterface:getRequestBudgetForBudgetType(Enum.DataStoreRequestType.SetIncrementAsync)
 	if curBudget < minBudget then
-		self._ctx.log(
-			"debug",
-			`Store {self._ctx.name}: Insufficient budget to process orphaned file for key {item.key}. Current budget: {curBudget}, minimum required: {minBudget}`
-		)
+		logger:log("debug", "insufficient budget", {
+			curBudget = curBudget,
+			minBudget = minBudget,
+		})
 		return false
 	end
 
-	self._ctx.log("debug", `Store {self._ctx.name}: Processing orphaned file for key {item.key}`)
+	logger:log("debug", "processing orphaned file")
 	item.beingProcessed = true
 
 	local promises = {}
 	for i = 1, item.file.count do
-		self._ctx.log(
-			"trace",
-			`Store {self._ctx.name}: Removing shard {i} of {item.file.count} for orphaned file {item.file.shard} for key {item.key}`
-		)
+		logger:log("trace", `Removing shard {i} of {item.file.count}`)
 		table.insert(promises, self._ctx.dataStoreInterface:remove(Constants.SHARD_SCOPE, `{item.file.shard}-{i}`))
 	end
 
 	Promise.all(promises)
 		:andThen(function()
-			self._ctx.log(
-				"trace",
-				`Store {self._ctx.name}: Successfully removed shards for orphaned file {item.file.shard} for key {item.key}`
-			)
+			logger:log("trace", "successfully removed shards")
 			local keyEntry = self._keyEntries[item.key]
 			if keyEntry then
 				keyEntry.orphanedFiles = Array.filter(keyEntry.orphanedFiles, function(file)
 					return not Dictionary.equals(file, item.file)
 				end)
-			else
-				self._ctx.log(
-					"warn",
-					`Store {self._ctx.name}: KeyEntry for {item.key} not found while processing orphaned file. This is a bug.`
-				)
 			end
 		end)
 		:catch(function(err)
-			self._ctx.log(
-				"error",
-				`Store {self._ctx.name}: Failed to process orphaned file {item.file.shard} for key {item.key}: {err}`
-			)
+			logger:log("error", `failed to remove shards: {err}`)
 		end)
 		:finally(function()
-			self._ctx.log("trace", `Store {self._ctx.name}: Finished processing orphaned file for key {item.key}`)
+			logger:log("trace", "finished processing orphaned file")
 			item.beingProcessed = false
 		end)
 
@@ -210,29 +201,28 @@ function Store:_processOrphanedFile(item: Types.OrphanedFileQueueItem): boolean
 end
 
 function Store:load(key: string, userIds: { number }?): Promise.Promise
-	self._ctx.log("trace", `Store {self._ctx.name}: Attempting to load key {key}`)
+	local logger = self._ctx.logger:extend({ method = "load", key = key })
+	logger:log("trace", "attempting to load key")
+
 	if self._closed then
-		self._ctx.log("warn", `Store {self._ctx.name}: Attempted to load key {key} while store is closed`)
+		logger:log("warn", "attempted to load key while store is closed")
 		return Promise.reject("Store is closed")
 	end
 
 	if self._keyEntries[key] and not self._unloadPromises[key] then
-		self._ctx.log("trace", `Store {self._ctx.name}: Key {key} is already loaded`)
+		logger:log("trace", "key is already loaded")
 		return Promise.resolve()
 	end
 
 	if self._loadPromises[key] then
-		self._ctx.log("trace", `Store {self._ctx.name}: Load for key {key} is already in progress`)
+		logger:log("trace", "key is currently being loaded")
 		return Promise.reject("Load already in progress")
 	end
 
 	local waitForUnload = Promise.try(function()
 		local unloadPromise = self._unloadPromises[key]
 		if unloadPromise then
-			self._ctx.log(
-				"trace",
-				`Store {self._ctx.name}: Key {key} is currently being unloaded, waiting for unload to complete`
-			)
+			logger:log("trace", "waiting for unload to complete")
 			unloadPromise:await()
 		end
 	end)
@@ -261,7 +251,7 @@ function Store:load(key: string, userIds: { number }?): Promise.Promise
 
 	return loadPromise:finally(function(status)
 		if status == (Promise :: any).Status.Cancelled then
-			self._ctx.log("trace", `Store {self._ctx.name}: Load for key {key} was cancelled`)
+			logger:log("trace", "load was cancelled")
 			return Promise.reject("Load was cancelled")
 		end
 	end)
@@ -269,31 +259,33 @@ end
 Store.load = t.wrap(Store.load, t.tuple(t.any, t.string, t.optional(t.array(t.number))))
 
 function Store:unload(key: string): Promise.Promise
-	self._ctx.log("trace", `Store {self._ctx.name}: Attempting to unload key {key}`)
+	local logger = self._ctx.logger:extend({ method = "unload", key = key })
+	logger:log("trace", "attempting to unload key")
+
 	if self._closed then
-		self._ctx.log("warn", `Store {self._ctx.name}: Attempted to unload key {key} while store is closed`)
+		logger:log("warn", "attempted to unload key while store is closed")
 		return Promise.reject("Store is closed")
 	end
 
 	if self._loadPromises[key] then
-		self._ctx.log("trace", `Store {self._ctx.name}: Key {key} is currently being loaded, cancelling load`)
+		logger:log("trace", "key is being loaded, cancelling load")
 		self._loadPromises[key]:cancel()
 		return Promise.resolve()
 	end
 
 	if self._unloadPromises[key] then
-		self._ctx.log("error", `Store {self._ctx.name}: Unload for key {key} is already in progress`)
+		logger:log("trace", "key is being unloaded")
 		return self._unloadPromises[key]
 	end
 
 	if not self._keyEntries[key] then
-		self._ctx.log("trace", `Store {self._ctx.name}: Key {key} is not loaded`)
+		logger:log("warn", "key not loaded")
 		return Promise.resolve()
 	end
 
-	self._ctx.log("trace", `Store {self._ctx.name}: Unloading key {key}`)
+	logger:log("trace", "unloading key")
 	self._unloadPromises[key] = self._keyEntries[key]:unload():finally(function()
-		self._ctx.log("trace", `Store {self._ctx.name}: Key {key} successfully unloaded`)
+		logger:log("trace", "key unloaded")
 		self._keyEntries[key] = nil
 		self._unloadPromises[key] = nil
 	end)
@@ -303,23 +295,22 @@ end
 Store.unload = t.wrap(Store.unload, t.tuple(t.any, t.string))
 
 function Store:_withKeyEntry(key: string, callback: (keyEntry: KeyEntry.KeyEntry<any>) -> any): Promise.Promise
+	local logger = self._ctx.logger:extend({ method = "_withKeyEntry", key = key })
+
 	return Promise.new(function(resolve, reject)
 		if self._closed then
-			self._ctx.log("warn", `Store {self._ctx.name}: Attempted to use key {key} while store is closed`)
+			logger:log("warn", "attempted to use key while store is closed")
 			return reject("Store is closed")
 		end
 
 		local loadPromise = self._loadPromises[key]
 		if loadPromise then
-			self._ctx.log(
-				"trace",
-				`Store {self._ctx.name}: Key {key} is currently being loaded, waiting for load to complete`
-			)
+			logger:log("trace", "key being loaded, waiting")
 			local loaded = loadPromise:await()
 			if not loaded then
 				return loadPromise:finally(function(status)
 					if status == (Promise :: any).Status.Cancelled then
-						self._ctx.log("trace", `Store {self._ctx.name}: Load for key {key} was cancelled`)
+						logger:log("trace", "load cancelled")
 						return reject("Load was cancelled")
 					end
 				end)
@@ -327,12 +318,12 @@ function Store:_withKeyEntry(key: string, callback: (keyEntry: KeyEntry.KeyEntry
 		end
 
 		if self._unloadPromises[key] then
-			self._ctx.log("warn", `Store {self._ctx.name}: Key {key} is currently being unloaded`)
+			logger:log("warn", "key is being unloaded")
 		end
 
 		local keyEntry = self._keyEntries[key]
 		if not keyEntry then
-			self._ctx.log("warn", `Store {self._ctx.name}: Key {key} not loaded`)
+			logger:log("warn", "key not loaded")
 			return reject("Key not loaded")
 		end
 
@@ -361,12 +352,12 @@ end
 Store.update = t.wrap(Store.update, t.tuple(t.any, t.string, t.callback))
 
 function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T }) -> boolean): Promise.Promise
-	self._ctx.log("trace", `Store {self._ctx.name}: Beginning transaction for keys {table.concat(keys, ", ")}`)
+	local txId = HttpService:GenerateGUID(false)
+	local logger = self._ctx.logger:extend({ method = "tx", keys = keys, txId = txId })
+
+	logger:log("trace", "starting transaction")
 	if self._closed then
-		self._ctx.log(
-			"warn",
-			`Store {self._ctx.name}: Attempted to start transaction for keys {table.concat(keys, ", ")} while store is closed`
-		)
+		logger:log("warn", "attempted to start transaction while store is closed")
 		return Promise.reject("Store is closed")
 	end
 
@@ -392,42 +383,44 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 		return self._keyEntries[key].queue
 	end)
 
-	local txId = HttpService:GenerateGUID(false)
-
-	-- Normally we'd consider a tx committed if its value is `true`, and failed
-	-- if its value is `false`. But, to save on storage space, we invert it such
-	-- that `nil` is committed and `false` is failed/in-progress.
-	-- Therefore, to prevent an untouched tx from being considered committed, we
-	-- set the value to `false` before we start the tx.
+	-- Normally we'd represent 'committed' as `true` and 'failed' as `false`.
+	-- This leaves a dangling DataStore entry (TX_SCOPE, txId). To clean it up,
+	-- we need to write all the keys again, committing their staged data and
+	-- removing txId from them. If all those succeed, *then* we can remove the
+	-- status entry. However, if we invert this so that 'committed' is `nil` and
+	-- 'failed' is `false`, we get a neat bonus where committing the tx also
+	-- cleans up what would be the dangling entry. Because `nil` means
+	-- 'committed', we can just leave the keys alone, and remove the status
+	-- entry. Assuming most transactions succeed, this saves a lot of writes.
 	local txStatusPromise = self._ctx.dataStoreInterface:set(Constants.TX_SCOPE, txId, false)
 
-	local function withTxLock(fn)
+	-- KeyEntry:update waits for txLockPromise to resolve if it exists. We only
+	-- want to resolve it when the transaction logic has completely finished, so
+	-- we use this helper function to wrap the transaction logic.
+	local function withTxLock(fn: () -> Promise.Promise): Promise.Promise
 		for _, key in keys do
 			local keyEntry = self._keyEntries[key]
 			keyEntry.txLockPromise = txLockPromise
 		end
-		self._ctx.log("trace", `Store {self._ctx.name}: Acquired transaction lock for keys {table.concat(keys, ", ")}`)
+		logger:log("trace", "set txLockPromise on KeyEntries")
 
 		return Promise.try(fn):finally(function()
-			self._ctx.log(
-				"trace",
-				`Store {self._ctx.name}: Releasing transaction lock for keys {table.concat(keys, ", ")}`
-			)
 			for _, key in keys do
 				local keyEntry = self._keyEntries[key]
 				if keyEntry.txLockPromise == txLockPromise then
 					keyEntry.txLockPromise = nil :: any
 				end
 			end
-			self._ctx.log("trace", `RELEASING TX LOCK`)
+			logger:log("trace", "cleared txLockPromise on KeyEntries")
 			txLockResolve()
 		end)
 	end
 
-	self._ctx.log("trace", `Store {self._ctx.name}: Acquiring transaction lock for keys {table.concat(keys, ", ")}`)
+	logger:log("trace", `acquiring PromiseQueue lock on keys`)
 	return PromiseQueue.multiQueueAdd(queues, function()
+		logger:log("trace", `acquired PromiseQueue lock on keys`)
 		if txStatusPromise:awaitStatus() ~= (Promise :: any).Status.Resolved then
-			self._ctx.log("error", `Store {self._ctx.name}: Failed to pre-set tx {txId}`)
+			logger:log("error", "failed to pre-set txId")
 			return Promise.reject("Failed to pre-set tx")
 		end
 
@@ -441,17 +434,14 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			local nextState = Dictionary.copyDeep(currentState)
 			local transformOk, result = pcall(noYield, transformFunction, nextState :: any)
 			if not transformOk then
-				self._ctx.log("error", `Store {self._ctx.name}: Transaction transform function failed: {result}`)
+				logger:log("error", "tx transformFunction failed", { error = result })
 				return Promise.reject(`Store:tx transformFunction failed: {result}`)
 			end
 
 			assert(typeof(result) == "boolean", "Transaction transform function must return a boolean")
 
 			if result == false then
-				self._ctx.log(
-					"trace",
-					`Store {self._ctx.name}: Transaction transform function for keys {table.concat(keys, ", ")} returned false, skipping update`
-				)
+				logger:log("trace", "tx transformFunction returned false, skipping update")
 				return Promise.reject("Transaction transform function returned false")
 			end
 
@@ -463,17 +453,17 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			for _, key in keys do
 				local schemaOk, err = self._ctx.schema(nextState[key] :: any)
 				if not schemaOk then
-					self._ctx.log(
-						"error",
-						`Store {self._ctx.name}: Schema validation failed for key {key} during transaction: {err}`
-					)
-					error(`Store:tx schema validation failed: {err}`)
+					logger:log("error", `schema validation for key {key} failed: {err}`)
+					Promise.reject(`Store:tx schema validation failed: {err}`)
 				end
 			end
 
 			local currentKeys = Dictionary.keys(currentState)
 			local nextKeys = Dictionary.keys(nextState)
-			assert(#Array.differenceSymmetric(currentKeys, nextKeys) == 0, "Keys changed in transaction")
+			if #Array.differenceSymmetric(currentKeys, nextKeys) ~= 0 then
+				logger:log("error", "keys changed in transaction")
+				return Promise.reject("Keys changed in transaction")
+			end
 
 			-- If no keys changed we can exit early, and if only one key changed, we
 			-- can treat it as a normal :update.
@@ -482,85 +472,68 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			end)
 
 			if #changedKeys == 0 then
-				self._ctx.log(
-					"trace",
-					`Store {self._ctx.name}: Transaction for keys {table.concat(keys, ", ")} resulted in no changes, skipping update`
-				)
+				logger:log("trace", "tx had no mutations, skipping update")
 				return Promise.resolve()
 			elseif #changedKeys == 1 then
+				logger:log("trace", `tx only changed one key, treating as KeyEntry:update`)
 				local key = changedKeys[1]
-				self._ctx.log(
-					"trace",
-					`Store {self._ctx.name}: Transaction for keys {table.concat(keys, ", ")} only changed one key, treating as normal update`
-				)
 				self._keyEntries[key]:mutateKey(nextState[key])
 				return Promise.resolve()
 			end
 
-			self._ctx.log(
-				"debug",
-				`Store {self._ctx.name}: Transaction for keys {table.concat(keys, ", ")} changed multiple keys, beginning multi-key update`
-			)
+			logger:log("trace", "tx changed multiple keys, beginning multi-key update")
 
 			local keyWritePromises = Array.map(keys, function(key)
 				local txInfo = {
 					txId = txId,
-					committedData = currentState[key],
 					txData = nextState[key],
+					committedData = currentState[key],
 				}
 
-				self._ctx.log("trace", `Store {self._ctx.name}: Writing record for key {key} in transaction {txId}`)
 				return self._keyEntries[key]:writeRecord(txInfo)
 			end)
 
-			local commitPromise = Promise.all(keyWritePromises)
+			local function revert(err)
+				logger:log("error", "multi-key update or tx commit failed, reverting", { error = err })
+
+				local cleanupPromises = Array.map(keys, function(key)
+					local txInfo = { committedData = currentState[key] }
+					return self._keyEntries[key]:writeRecord(txInfo)
+				end)
+
+				return Promise.all(cleanupPromises)
+					:andThen(function()
+						logger:log("trace", "multi-key update reverted, cleaning up tx status")
+						return self._ctx.dataStoreInterface:remove(Constants.TX_SCOPE, txId)
+					end)
+					:andThen(function()
+						logger:log("trace", "tx status cleaned up")
+						return Promise.reject(err)
+					end)
+			end
+
+			local updateAndCommitPromise = Promise.all(keyWritePromises)
 				:andThen(function()
-					self._ctx.log("trace", `Store {self._ctx.name}: Committing transaction {txId}`)
+					logger:log("trace", "multi-key update successful, committing transaction")
 					return self._ctx.dataStoreInterface:remove(Constants.TX_SCOPE, txId)
 				end)
-				:catch(function(err)
-					self._ctx.log("error", `Store {self._ctx.name}: Transaction {txId} errored: {err}`)
-
-					-- To guard against edge cases, we don't assume we know what the
-					-- tx status is. We check it first, then cleanup if we need to.
-					return self._ctx.dataStoreInterface
-						:get(Constants.TX_SCOPE, txId)
-						:andThen(function(txStatus)
-							if txStatus ~= false then
-								-- Tx was committed successfully, just pass down the
-								-- error.
-								return Promise.reject(err)
-							end
-							self._ctx.log("trace", `Store {self._ctx.name}: Transaction {txId} failed, cleaning up`)
-
-							local cleanupPromises = Array.map(keys, function(key)
-								local txInfo = { committedData = currentState[key] }
-								return self._keyEntries[key]:writeRecord(txInfo)
-							end)
-
-							return Promise.all(cleanupPromises)
-						end)
-						:andThen(function()
-							self._ctx.log("trace", `Store {self._ctx.name}: Removing transaction {txId}`)
-							return self._ctx.dataStoreInterface:remove(Constants.TX_SCOPE, txId)
-						end)
-						:andThen(function()
-							self._ctx.log("trace", `Store {self._ctx.name}: Transaction {txId} cleaned up`)
-							return Promise.reject(err)
-						end)
-				end)
+				:catch(revert)
 				:andThen(function()
-					self._ctx.log("debug", `Store {self._ctx.name}: Transaction {txId} committed successfully`)
+					logger:log("debug", "transaction committed successfully")
+
+					-- We just technically performed a save, so let's
+					-- reflect that in the KeyEntries.
 					for _, key in keys do
-						-- We just technically performed a save, so let's reset the
-						-- changeSet.
 						local keyEntry = self._keyEntries[key]
 						keyEntry:setData(nextState[key])
 						keyEntry.changeSet = {}
 					end
 				end)
+				:finally(function()
+					logger:log("trace", "tx finished")
+				end)
 
-			return commitPromise
+			return updateAndCommitPromise
 		end)
 	end)
 end
@@ -574,7 +547,8 @@ end
 Store.save = t.wrap(Store.save, t.tuple(t.any, t.string))
 
 function Store:close(): Promise.Promise
-	self._ctx.log("debug", `Store {self._ctx.name}: Closing store`)
+	local logger = self._ctx.logger:extend({ method = "close" })
+	logger:log("trace", "closing store")
 
 	for _, loadPromise in self._loadPromises do
 		(loadPromise :: any):cancel()
@@ -583,22 +557,19 @@ function Store:close(): Promise.Promise
 	local promises = {}
 	for key in self._keyEntries do
 		if self._unloadPromises[key] then
-			self._ctx.log(
-				"trace",
-				`Store {self._ctx.name}: Key {key} is currently being unloaded, adding unload promise to closing sequence`
-			)
+			logger:log("trace", "key already being unloaded", { key = key })
 			table.insert(promises, self._unloadPromises[key])
 		else
-			self._ctx.log("trace", `Store {self._ctx.name}: Key {key} is loaded, unloading as part of closing sequence`)
+			logger:log("trace", "unloading key", { key = key })
 			table.insert(promises, self:unload(key))
 		end
 	end
 
 	self._closed = true
-	self._ctx.log("trace", `Store {self._ctx.name}: Store marked as closed`)
+	logger:log("trace", "store marked as closed")
 
 	return Promise.allSettled(promises):andThen(function()
-		self._ctx.log("debug", `Store {self._ctx.name}: Store closed successfully`)
+		logger:log("debug", "store closed")
 	end)
 end
 
