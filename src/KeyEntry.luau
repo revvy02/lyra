@@ -65,6 +65,8 @@ type KeyEntryProps<T> = {
 	unloadPromise: Promise.Promise?,
 
 	keyInfo: DataStoreKeyInfo?,
+
+	logger: Types.Logger,
 }
 
 export type KeyEntry<T> = typeof(setmetatable({} :: KeyEntryProps<T>, {} :: KeyEntryImpl<T>))
@@ -96,7 +98,9 @@ export type LoadResult = {
 local function load(params: LoadParams): any
 	local ctx = params.storeContext
 	local key = params.key
-	ctx.log("trace", `load - start, store={ctx.name}, key={key}`)
+
+	local logger = ctx.logger:extend({ method = "load", key = params.key })
+	logger:log("trace", `loading key`)
 
 	local recordScope = ctx.recordScope
 	local shardScope = ctx.shardScope
@@ -110,7 +114,7 @@ local function load(params: LoadParams): any
 	return ctx.dataStoreInterface
 		:get(recordScope, key)
 		:andThen(function(record: Types.DataStoreRecord?, _keyInfo: DataStoreKeyInfo?)
-			ctx.log("trace", `load - get record, store={ctx.name}, key={key}`)
+			logger:log("trace", "got record")
 			if record == nil then
 				record = {} :: Types.DataStoreRecord
 			end
@@ -118,6 +122,15 @@ local function load(params: LoadParams): any
 
 			keyInfo = _keyInfo
 			version = record.version or ctx.latestVersion
+
+			if version > ctx.latestVersion then
+				logger:log(
+					"error",
+					"data has newer version than this server supports",
+					{ version = version, latestVersion = ctx.latestVersion }
+				)
+				return Promise.reject("Data has newer version than this server supports")
+			end
 
 			if record.orphanedFiles then
 				orphanedFiles = record.orphanedFiles
@@ -130,70 +143,71 @@ local function load(params: LoadParams): any
 					currentFile = file
 				end
 
+				logger:log("trace", "reading file", { file = HttpService:JSONEncode(file) })
 				local readParams: FileManager.ReadParams = {
 					dataStoreInterface = ctx.dataStoreInterface,
 					scope = shardScope,
 					file = file,
 				}
-				ctx.log("trace", `load - read file, store={ctx.name}, key={key}, file={HttpService:JSONEncode(file)}`)
 				return FileManager.read(readParams)
 			end
 
-			ctx.log("trace", `load - no file to read, store={ctx.name}, key={key}`)
+			logger:log("trace", "no file")
+
 			return nil :: any
 		end)
 		:andThen(function(txInfo: Types.TxInfo?): any?
 			if txInfo then
+				logger:log("trace", "got txInfo", { txInfo = txInfo })
+
 				local readTxParams = {
 					dataStoreInterface = ctx.dataStoreInterface,
 					scope = txScope,
 					txInfo = txInfo,
 				}
-				ctx.log("trace", `load - read tx, store={ctx.name}, key={key}, txInfo={HttpService:JSONEncode(txInfo)}`)
+
 				return Util.readTx(readTxParams)
 			end
-			ctx.log("trace", `load - no tx to read, store={ctx.name}, key={key}`)
+
+			logger:log("trace", "no txInfo")
+
 			return nil
 		end)
 		:andThen(function(data: any?)
 			if data ~= nil then
-				ctx.log("trace", `load - data loaded, store={ctx.name}, key={key}`)
+				logger:log("trace", "got data")
 				return data
 			end
 
 			local migrateFromOtherSystem = ctx.migrateFromOtherSystem
 			if migrateFromOtherSystem == nil then
-				ctx.log("trace", `load - no data and no migration, store={ctx.name}, key={key}`)
+				logger:log("trace", "no data, no migrateFromOtherSystem")
 				return nil
 			end
 
-			ctx.log("trace", `load - migrating from other system, store={ctx.name}, key={key}`)
+			logger:log("trace", "no data, migrating from other system")
 			return Promise.try(migrateFromOtherSystem, key)
 				:tap(function(oldData: any?)
 					if oldData ~= nil then
 						version = 0
 					end
+					logger:log("trace", "migrated from other system", { oldData = oldData })
 				end)
 				:catch(function(e)
+					logger:log("error", "failed to migrate key from other system", { error = e })
 					return Promise.reject(`Failed to migrate key {key} from other system: {e}`)
 				end)
 		end)
 		:andThen(function(data: any?)
 			if data == nil then
-				ctx.log("debug", `load - no data, using template, store={ctx.name}, key={key}`)
+				logger:log("trace", "no data, using template")
 				data = Dictionary.copyDeep(ctx.template)
 				version = ctx.latestVersion
 			end
 			assert(data, "luau")
 
-			if version > ctx.latestVersion then
-				ctx.log("error", `KeyEntry:lock - Data for key {key} has newer version than this server supports`)
-				return Promise.reject("Data has newer version than this server supports")
-			elseif version < ctx.latestVersion then
-				ctx.log(
-					"debug",
-					`load - migrating data, store={ctx.name}, key={key}, from={version}, to={ctx.latestVersion}`
-				)
+			if version < ctx.latestVersion then
+				logger:log("debug", `migrating data from {version} to {ctx.latestVersion}`)
 				local migrateDataParams: Util.MigrateDataParams = {
 					fromVersion = version,
 					toVersion = ctx.latestVersion,
@@ -202,13 +216,15 @@ local function load(params: LoadParams): any
 				}
 				return Util.migrateData(migrateDataParams):tap(function()
 					version = ctx.latestVersion
+					logger:log("trace", "data migrated to latest version")
 				end)
 			end
 
-			ctx.log("trace", `load - data ready, store={ctx.name}, key={key}`)
+			logger:log("trace", "data loaded")
 			return data
 		end)
 		:andThen(function(data)
+			logger:log("trace", "load done")
 			local loadResult: LoadResult = {
 				data = data,
 				version = version,
@@ -216,7 +232,6 @@ local function load(params: LoadParams): any
 				currentFile = currentFile,
 				keyInfo = keyInfo,
 			}
-			ctx.log("trace", `load - done, store={ctx.name}, key={key}`)
 			return loadResult
 		end)
 end
@@ -236,11 +251,11 @@ type CreateKeyEntryParams = {
 }
 
 local function createKeyEntry<T>(params: CreateKeyEntryParams): KeyEntry<T>
-	local ctx = params.storeContext
+	local logger = params.storeContext.logger:extend({ key = params.key })
 
 	local queue = PromiseQueue.new()
 	queue.onTimeout = function(e)
-		ctx.log("error", `PromiseQueue timed out: {e}`)
+		logger:log("error", "PromiseQueue timed out", { error = e })
 	end
 
 	local props: KeyEntryProps<T> = {
@@ -266,6 +281,7 @@ local function createKeyEntry<T>(params: CreateKeyEntryParams): KeyEntry<T>
 		unloadPromise = nil,
 
 		keyInfo = params.keyInfo,
+		logger = logger,
 	}
 
 	return setmetatable(props, KeyEntry) :: KeyEntry<T>
@@ -273,6 +289,7 @@ end
 
 function KeyEntry.load<T>(params: LoadKeyEntryParams<T>): Promise.TypedPromise<KeyEntry<T>>
 	local ctx = params.storeContext
+	local logger = ctx.logger:extend({ method = "load", key = params.key })
 
 	local acquireLockParams: Util.AcquireLockParams = {
 		storeContext = ctx,
@@ -290,7 +307,8 @@ function KeyEntry.load<T>(params: LoadKeyEntryParams<T>): Promise.TypedPromise<K
 
 		return load(loadParams):andThen(function(loadResult)
 			if not lockHandle.isLocked() then
-				return Promise.reject("KeyEntry:load - Lock was lost while loading key")
+				logger:log("error", "lock was lost while loading key")
+				return Promise.reject("Lock was lost while loading key")
 			end
 
 			local createParams: CreateKeyEntryParams = {
@@ -306,14 +324,15 @@ function KeyEntry.load<T>(params: LoadKeyEntryParams<T>): Promise.TypedPromise<K
 
 			local keyEntry = createKeyEntry(createParams)
 
-			ctx.log("trace", `KeyEntry:load - Loaded key {params.key}, data: {HttpService:JSONEncode(loadResult.data)}`)
+			logger:log("trace", "loaded key", { data = loadResult.data })
 			keyEntry:mutateKey(loadResult.data)
 
 			return keyEntry :: any
 		end):finally(function(status): ()
 			if status ~= (Promise :: any).Status.Resolved then
+				logger:log("trace", "failed to load key, releasing lock")
 				lockHandle.release():catch(function(e)
-					ctx.log("warn", `KeyEntry:load - Failed to release lock for key {params.key}: {e}`)
+					logger:log("warn", "failed to release lock", { error = e })
 				end)
 			end
 		end)
@@ -322,24 +341,25 @@ end
 KeyEntry.load = t.wrap(KeyEntry.load, t.tuple(loadKeyEntryParamsCheck))
 
 function KeyEntry:updateRecord(): Promise.TypedPromise<any>
-	self.ctx.log("trace", `updateRecord - start, store={self.ctx.name}, key={self.key}`)
+	local logger = self.logger:extend({ method = "updateRecord" })
+	logger:log("trace", "updateRecord called")
+
 	if self:isSaved() then
-		self.ctx.log("trace", `updateRecord - no changes, store={self.ctx.name}, key={self.key}`)
+		logger:log("trace", "no changes, returning")
 		return Promise.resolve()
 	end
 
 	local txInfo = { committedData = Dictionary.copyDeep(self.data) }
 
-	self.ctx.log(
-		"trace",
-		`updateRecord - txInfo created, store={self.ctx.name}, key={self.key}, txInfo={HttpService:JSONEncode(txInfo)}`
-	)
+	logger:log("trace", "writing record", { txInfo = txInfo })
 	return self:writeRecord(txInfo)
 end
 KeyEntry.updateRecord = t.wrap(KeyEntry.updateRecord, t.tuple(t.any))
 
 function KeyEntry:writeRecord(txInfo: Types.TxInfo): Promise.TypedPromise<any>
-	self.ctx.log("trace", `writeRecord - start, store={self.ctx.name}, key={self.key}`)
+	local logger = self.logger:extend({ method = "writeRecord" })
+	logger:log("trace", "writeRecord called")
+
 	local function orphanFile(file: Types.File?)
 		if file ~= nil and FileManager.isLargeFile(file) then
 			table.insert(self.orphanedFiles, file)
@@ -356,50 +376,45 @@ function KeyEntry:writeRecord(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 		userIds = self.userIds,
 	}
 
-	self.ctx.log(
-		"trace",
-		`writeRecord - writing file, store={self.ctx.name}, key={self.key}, writeParams={HttpService:JSONEncode(
-			writeParams
-		)}`
-	)
+	logger:log("trace", "writing file", { writeParams = writeParams })
+
 	return FileManager.write(writeParams)
 		:catch(function(err: FileManager.WriteError)
-			self.ctx.log("error", `Failed to write shards for key {self.key}: {err.error}`)
+			logger:log("error", "failed to write shards", { error = err.error })
 
 			orphanFile(err.file)
 
 			return Promise.reject(err.error)
 		end)
 		:andThen(function(file)
-			self.ctx.log("trace", `writeRecord - file written, store={self.ctx.name}, key={self.key}`)
+			logger:log("trace", "file written", { file = file })
+
+			if not self.lockHandle.isLocked() then
+				logger:log("error", "lock was lost while writing file")
+				orphanFile(file)
+				return Promise.reject("lock was lost while writing file")
+			end
+
 			local record = {
 				version = self.version,
 				file = file,
 				orphanedFiles = Array.push(self.orphanedFiles, self.currentFile :: any),
 			}
 
-			if not self.lockHandle.isLocked() then
-				orphanFile(file)
-				return Promise.reject("KeyEntry lock was lost while writing record")
-			end
-
-			self.ctx.log(
-				"trace",
-				`writeRecord - writing record, store={self.ctx.name}, key={self.key}, record={HttpService:JSONEncode(
-					record
-				)}`
-			)
+			logger:log("trace", "writing record", { record = record })
 			return self.ctx.dataStoreInterface
 				:set(self.ctx.recordScope, self.key, record, self.userIds)
 				:andThen(function()
-					self.ctx.log("trace", `writeRecord - record written, store={self.ctx.name}, key={self.key}`)
+					logger:log("trace", "record written")
+
 					orphanFile(self.currentFile)
 					self.currentFile = if FileManager.isLargeFile(file) then file else nil
 
 					return record
 				end)
 				:catch(function(err)
-					self.ctx.log("error", `Failed to write record for key {self.key}: {err}`)
+					logger:log("error", "failed to write record", { error = err })
+
 					orphanFile(file)
 
 					return Promise.reject(err)
@@ -433,12 +448,14 @@ end
 KeyEntry.mutateKey = t.wrap(KeyEntry.mutateKey, t.tuple(t.any, t.any))
 
 function KeyEntry:startAutosaving(): ()
+	local logger = self.logger:extend({ method = "startAutosaving" })
+
 	if self._cleanupAutosave then
-		self.ctx.log("warn", `KeyEntry:startAutosaving - Autosave already running for key {self.key}`)
+		logger:log("warn", "autosave already started")
 		return
 	end
 	if self.closed then
-		self.ctx.log("warn", `KeyEntry:startAutosaving - KeyEntry is closed, not starting autosave for key {self.key}`)
+		logger:log("warn", "KeyEntry is closed, not starting autosave")
 		return
 	end
 
@@ -451,16 +468,18 @@ function KeyEntry:startAutosaving(): ()
 
 			local ok, err = self:save():await()
 			if not ok then
-				self.ctx.log("warn", `KeyEntry:startAutosaving - Failed to autosave key {self.key}: {err}`)
+				logger:log("warn", "failed to autosave key", { error = err })
 			end
 		end
 	end)
 
 	local disconnectOnLockLost = self.lockHandle.onLockLost(function()
+		logger:log("warn", "lock was lost, stopping autosave")
 		self:stopAutosaving()
 	end)
 
 	self._cleanupAutosave = function()
+		logger:log("trace", "cleaning up autosave")
 		task.cancel(autosaveThread)
 		disconnectOnLockLost()
 		self._cleanupAutosave = nil
@@ -476,25 +495,27 @@ end
 KeyEntry.stopAutosaving = t.wrap(KeyEntry.stopAutosaving, t.tuple(t.any))
 
 function KeyEntry:unload(): Promise.Promise
-	self.ctx.log("trace", `KeyEntry:unload - start, key={self.key}`)
+	local logger = self.logger:extend({ method = "unload" })
+	logger:log("trace", "unload called")
+
 	if self.unloadPromise then
-		self.ctx.log("warn", `KeyEntry:unload - Unload already in progress for key {self.key}`)
+		logger:log("trace", "unload already in progress")
 		return self.unloadPromise
 	end
 
 	self.closed = true
 	self:stopAutosaving()
 
-	self.ctx.log("trace", `KeyEntry:unload - Unloading key {self.key}`)
+	logger:log("trace", "queueing unload")
 	self.unloadPromise = self.queue
 		:add(function()
-			self.ctx.log("trace", `KeyEntry:unload - Saving key {self.key}`)
+			logger:log("trace", "updating record before unloading")
 			return self:updateRecord()
 		end)
 		:finally(function()
-			self.ctx.log("trace", `KeyEntry:unload - Unloaded key {self.key}. Calling release`)
+			logger:log("trace", "releasing lock")
 			return self.lockHandle.release():catch(function(e)
-				self.ctx.log("warn", `KeyEntry:unload - Failed to release lock for key {self.key}: {e}`)
+				logger:log("warn", "failed to release lock", { error = e })
 			end)
 		end)
 
@@ -508,8 +529,11 @@ end
 KeyEntry.get = t.wrap(KeyEntry.get, t.tuple(t.any))
 
 function KeyEntry:update<T>(transformFunction: (data: T) -> boolean): Promise.Promise
-	self.ctx.log("trace", `KeyEntry:update - start, key={self.key}`)
+	local logger = self.logger:extend({ method = "update" })
+	logger:log("trace", "update called")
+
 	if self.closed then
+		logger:log("warn", "KeyEntry is closed, skipping update")
 		return Promise.reject("KeyEntry is closed")
 	end
 
@@ -517,21 +541,24 @@ function KeyEntry:update<T>(transformFunction: (data: T) -> boolean): Promise.Pr
 		while self.txLockPromise ~= nil do
 			self.txLockPromise:await()
 		end
-		self.ctx.log("trace", `UPDATING KEY`)
+		logger:log("trace", `UPDATING KEY`)
 
 		local currentData = self.data
 		local nextData = Dictionary.copyDeep(currentData)
 
 		local transformOk, result = pcall(noYield, transformFunction, nextData :: any)
 		if not transformOk then
-			self.ctx.log("error", `KeyEntry:update - Transform function for key {self.key} failed: {result}`)
+			logger:log("error", "transformFunction failed", { error = result })
 			return reject(`transformFunction failed: {result}`)
 		end
+
 		if typeof(result) ~= "boolean" then
+			logger:log("error", "transformFunction must return a boolean")
 			return reject("transformFunction must return a boolean")
 		end
 
 		if result == false then
+			logger:log("trace", "transformFunction returned false, skipping update")
 			return resolve()
 		end
 
@@ -542,7 +569,7 @@ function KeyEntry:update<T>(transformFunction: (data: T) -> boolean): Promise.Pr
 
 		local schemaOk, err = self.ctx.schema(nextData :: any)
 		if not schemaOk then
-			self.ctx.log("error", `KeyEntry:update - Schema validation failed for key {self.key}: {err}`)
+			logger:log("error", "schema validation failed", { error = err })
 			return reject(`Store:update schema validation failed: {err}`)
 		end
 
@@ -552,47 +579,46 @@ function KeyEntry:update<T>(transformFunction: (data: T) -> boolean): Promise.Pr
 
 		self:mutateKey(nextData)
 
+		logger:log("trace", "update succeeded")
+
 		return resolve()
 	end)
 end
 KeyEntry.update = t.wrap(KeyEntry.update, t.tuple(t.any, t.callback))
 
 function KeyEntry:save(): Promise.Promise
-	self.ctx.log("trace", `KeyEntry:save - start, key={self.key}`)
+	local logger = self.logger:extend({ method = "save" })
+	logger:log("trace", "save called")
+
 	if self.closed then
-		self.ctx.log("warn", `KeyEntry:save - KeyEntry is closed, skipping save for key {self.key}`)
+		logger:log("warn", "KeyEntry is closed, skipping save")
 		return Promise.reject("KeyEntry is closed")
 	end
 	if self:isSaved() then
-		self.ctx.log("trace", `KeyEntry:save - no changes, key={self.key}`)
+		logger:log("trace", "no changes, returning")
 		return Promise.resolve()
 	end
 
 	local changes = Set.copy(self.changeSet)
 
-	self.ctx.log("trace", `KeyEntry:save - adding save to queue for key {self.key}`)
+	logger:log("trace", "queueing save")
 	return self.queue:add(function()
-		self.ctx.log("trace", `KeyEntry:save - saving key {self.key}`)
+		logger:log("trace", "save task running")
+
 		local changesWereSaved = Set.count(Set.intersection(changes, self.changeSet)) == 0
 		if changesWereSaved then
-			self.ctx.log("trace", `KeyEntry:save - changes were saved by another task, key={self.key}`)
+			logger:log("trace", "changes were saved by another task, returning")
 			return Promise.resolve()
 		end
 
 		changes = Set.copy(self.changeSet)
 
-		self.ctx.log(
-			"trace",
-			`KeyEntry:save - saving changes for key {self.key}, changes={HttpService:JSONEncode(changes)}`
-		)
+		logger:log("trace", "saving changes", { changes = changes })
 		return self:updateRecord():andThen(function()
 			local newChangeSet = Set.difference(self.changeSet, changes)
-			self.ctx.log(
-				"trace",
-				`KeyEntry:save - changes saved for key {self.key}, latestChanges={HttpService:JSONEncode(self.changeSet)} new changes={HttpService:JSONEncode(
-					newChangeSet
-				)}`
-			)
+
+			logger:log("trace", "changes saved", { latestChanges = self.changeSet, newChanges = newChangeSet })
+
 			self.changeSet = newChangeSet
 		end)
 	end)
