@@ -173,6 +173,7 @@ function Server:validate(id)
 	return self.store
 		:get(id)
 		:andThen(function(data)
+			data = Sift.Dictionary.copyDeep(data)
 			local playerData = self.simulationConfig.playerData[id]
 			if playerData == nil then
 				self.simulationConfig.playerData[id] = data
@@ -234,6 +235,31 @@ function Universe.new(config)
 	storeConfig.useMock = storeConfig.useMock or false
 	storeConfig.onLockLost = storeConfig.onLockLost or function(key)
 		warn("Lock lost", key)
+	end
+
+	local function tableToLogfmt(tbl)
+		local parts = {}
+		for k, v in pairs(tbl) do
+			local key = tostring(k):gsub("=", "\\="):gsub(" ", "\\ ")
+			local value
+
+			if type(v) == "string" then
+				value = v:gsub('"', '\\"'):gsub("=", "\\="):gsub(" ", "\\ ")
+				if value:find(" ") then
+					value = '"' .. value .. '"'
+				end
+			elseif type(v) == "table" then
+				value = '{"' .. table.concat(v, '","') .. '"}'
+			else
+				value = tostring(v)
+			end
+
+			table.insert(parts, key .. "=" .. value)
+		end
+		return table.concat(parts, " ")
+	end
+	storeConfig.logCallback = function(logMessage)
+		print(logMessage.level, logMessage.message, tableToLogfmt(logMessage.context))
 	end
 
 	self.storeConfig = storeConfig

@@ -1,6 +1,10 @@
 local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Lyra = require(ReplicatedStorage.Packages.Lyra)
 local Universe = require(script.Parent.Parent.Universe)
+
+Lyra.setLogLevel("info")
 
 local function run()
 	local doTrades = true
@@ -24,7 +28,7 @@ local function run()
 						continue
 					end
 					local data = server.simulationConfig.playerData[id]
-					if next(data.items) ~= nil then
+					if data ~= nil and next(data.items) ~= nil then
 						return id
 					end
 				end
