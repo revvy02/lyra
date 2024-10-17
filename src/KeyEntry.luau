@@ -253,10 +253,9 @@ type CreateKeyEntryParams = {
 local function createKeyEntry<T>(params: CreateKeyEntryParams): KeyEntry<T>
 	local logger = params.storeContext.logger:extend({ key = params.key })
 
-	local queue = PromiseQueue.new()
-	queue.onTimeout = function(e)
-		logger:log("error", "PromiseQueue timed out", { error = e })
-	end
+	local queue = PromiseQueue.new({
+		logger = logger:extend({ component = "PromiseQueue" }),
+	})
 
 	local props: KeyEntryProps<T> = {
 		key = params.key,

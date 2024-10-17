@@ -1,19 +1,36 @@
+--!strict
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Types = require(script.Parent.Types)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 local Sift = require(ReplicatedStorage.Packages.Sift)
 
 type PromiseQueueImpl = {
 	__index: PromiseQueueImpl,
-	new: () -> PromiseQueue,
-	multiQueueAdd: (queues: { PromiseQueue }, callback: () -> ()) -> Promise.Promise,
+
+	new: (params: CreatePromiseQueueParams) -> PromiseQueue,
+
 	_processQueue: (self: PromiseQueue) -> (),
+	_addResumableBlock: (queue: PromiseQueue) -> Promise.TypedPromise<() -> ()>,
+	_getLogContext: (self: PromiseQueue, item: QueueItem?) -> { [string]: any },
+
+	multiQueueAdd: (queues: { PromiseQueue }, callback: () -> ()) -> Promise.Promise,
 	add: (self: PromiseQueue, callback: () -> ()) -> Promise.Promise,
 }
 
 type PromiseQueueProps = {
-	_queue: { () -> () },
-	onTimeout: ((error: any) -> ())?,
+	_queue: { QueueItem },
+	_logger: Types.Logger,
+	_totalItemCount: number,
+}
+
+type QueueItem = {
+	id: number,
+	fn: () -> (),
+	resolve: (value: any) -> (),
+	reject: (error: any) -> (),
+	trace: string,
 }
 
 export type PromiseQueue = typeof(setmetatable({} :: PromiseQueueProps, {} :: PromiseQueueImpl))
@@ -21,19 +38,32 @@ export type PromiseQueue = typeof(setmetatable({} :: PromiseQueueProps, {} :: Pr
 local PromiseQueue = {} :: PromiseQueueImpl
 PromiseQueue.__index = PromiseQueue
 
-function PromiseQueue.new(): PromiseQueue
-	return setmetatable({ _queue = {} }, PromiseQueue) :: PromiseQueue
+type CreatePromiseQueueParams = {
+	logger: Types.Logger,
+}
+
+function PromiseQueue.new(params: CreatePromiseQueueParams): PromiseQueue
+	return setmetatable({
+		_queue = {},
+		_logger = params.logger,
+		_totalItemCount = 0,
+	}, PromiseQueue) :: PromiseQueue
 end
 
 function PromiseQueue:add(callback: () -> ()): Promise.Promise
 	return Promise.new(function(resolve, reject, onCancel)
+		self._totalItemCount += 1
+
 		local record = {
+			id = self._totalItemCount,
 			fn = callback,
 			resolve = resolve,
 			reject = reject,
 			trace = debug.traceback(nil, 2),
 		}
 		table.insert(self._queue, record)
+
+		self._logger:log("trace", "added item to queue", self:_getLogContext())
 
 		onCancel(function()
 			local idx = table.find(self._queue, record)
@@ -51,19 +81,37 @@ function PromiseQueue:add(callback: () -> ()): Promise.Promise
 end
 
 function PromiseQueue:_processQueue()
+	self._logger:log("trace", "processing queue", self:_getLogContext())
 	while #self._queue > 0 do
 		local item = self._queue[1]
 
 		local deadlockWarn = task.delay(5, function()
-			warn(`Potential PromiseQueue deadlock\nCreated at:\n{item.trace}`)
+			local ctx = self:_getLogContext(item)
+			ctx.trace = item.trace
+			self._logger:log("warn", "potential deadlock possible", ctx)
 		end)
 
+		self._logger:log("trace", "processing queue item", self:_getLogContext(item))
 		Promise.try(item.fn)
 			:timeout(60)
 			:andThen(item.resolve, function(e)
+				local ctx = self:_getLogContext(item)
+				ctx.error = e
+				ctx.trace = item.trace
+
+				local msg
+				if Promise.Error.isKind(e, Promise.Error.Kind.TimedOut) then
+					msg = "queue item timed out"
+				else
+					msg = "queue item failed"
+				end
+				self._logger:log("debug", msg, ctx)
+
 				item.reject(`Queue item failed: {e}\nCreated at:\n{item.trace}`)
 			end)
 			:finally(function()
+				self._logger:log("trace", "finished processing queue item", self:_getLogContext(item))
+
 				if self._queue[1] == item then
 					table.remove(self._queue, 1)
 				end
@@ -82,7 +130,7 @@ local function addResumableBlock(queue: PromiseQueue): Promise.TypedPromise<() -
 	return Promise.new(function(resolve)
 		queue:add(function()
 			return Promise.new(function(resume)
-				resolve(resume)
+				resolve(resume :: any)
 			end)
 		end)
 	end)
@@ -106,6 +154,14 @@ function PromiseQueue.multiQueueAdd(queues: { PromiseQueue }, callback: () -> ()
 				end)
 		end)
 	end)
+end
+
+function PromiseQueue:_getLogContext(item: QueueItem?): { [string]: any }
+	return {
+		queueLength = #self._queue,
+		totalItems = self._totalItemCount,
+		itemId = item and item.id,
+	}
 end
 
 return PromiseQueue
