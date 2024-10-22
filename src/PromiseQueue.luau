@@ -51,6 +51,7 @@ function PromiseQueue.new(params: CreatePromiseQueueParams): PromiseQueue
 end
 
 function PromiseQueue:add(callback: () -> ()): Promise.Promise
+	local trace = debug.traceback(nil, 2)
 	return Promise.new(function(resolve, reject, onCancel)
 		self._totalItemCount += 1
 
@@ -59,7 +60,7 @@ function PromiseQueue:add(callback: () -> ()): Promise.Promise
 			fn = callback,
 			resolve = resolve,
 			reject = reject,
-			trace = debug.traceback(nil, 2),
+			trace = trace,
 		}
 		table.insert(self._queue, record)
 
@@ -88,7 +89,7 @@ function PromiseQueue:_processQueue()
 		local deadlockWarn = task.delay(5, function()
 			local ctx = self:_getLogContext(item)
 			ctx.trace = item.trace
-			self._logger:log("warn", "potential deadlock possible", ctx)
+			self._logger:log("warn", "queue item taking a while", ctx)
 		end)
 
 		self._logger:log("trace", "processing queue item", self:_getLogContext(item))
