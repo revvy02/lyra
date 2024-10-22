@@ -5,21 +5,22 @@ local function run()
 		while true do
 			local j = server:join(playerId)
 			j:catch(warn)
-			task.wait(math.random())
+			task.wait(math.random() / 2)
 			if math.random() < 0.05 then
 				local status = j:awaitStatus()
 				warn(`Server {server.store.name}, join, status: {status}`)
 			end
+
 			local l = server:leave(playerId)
 			l:catch(warn)
-			task.wait(math.random())
+			task.wait(math.random() / 2)
 			if math.random() < 0.05 then
 				local status = l:awaitStatus()
 				warn(`Server {server.store.name}, leave, status: {status}`)
 			end
 
 			if math.random() < 0.05 then
-				task.wait(2)
+				task.wait()
 				warn(`Server {server.store.name}`)
 			end
 		end

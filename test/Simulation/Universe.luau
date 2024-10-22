@@ -259,7 +259,16 @@ function Universe.new(config)
 		return table.concat(parts, " ")
 	end
 	storeConfig.logCallback = function(logMessage)
-		print(logMessage.level, logMessage.message, tableToLogfmt(logMessage.context))
+		if logMessage.level == "warn" then
+			warn(`{string.upper(logMessage.level)} {logMessage.message} {tableToLogfmt(logMessage.context)}`)
+		elseif logMessage.level == "error" or logMessage.level == "fatal" then
+			task.spawn(
+				error,
+				`{string.upper(logMessage.level)} {logMessage.message} {tableToLogfmt(logMessage.context)}`
+			)
+		else
+			print(`{string.upper(logMessage.level)} {logMessage.message} {tableToLogfmt(logMessage.context)}`)
+		end
 	end
 
 	self.storeConfig = storeConfig
