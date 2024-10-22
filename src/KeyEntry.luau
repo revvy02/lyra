@@ -458,10 +458,12 @@ function KeyEntry:startAutosaving(): ()
 		return
 	end
 
-	local autosaveThread = task.spawn(function()
+	local stop = false
+
+	task.spawn(function()
 		while true do
 			task.wait(Constants.AUTOSAVE_INTERVAL_SECONDS)
-			if self.closed then
+			if self.closed or stop then
 				break
 			end
 
@@ -479,7 +481,7 @@ function KeyEntry:startAutosaving(): ()
 
 	self._cleanupAutosave = function()
 		logger:log("trace", "cleaning up autosave")
-		task.cancel(autosaveThread)
+		stop = true
 		disconnectOnLockLost()
 		self._cleanupAutosave = nil
 	end

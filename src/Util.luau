@@ -151,6 +151,11 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 				for i = 1, params.acquireAttempts do
 					logger:log("debug", `acquiring lock (attempt {i})`)
 
+					if onCancel() then
+						logger:log("trace", "lock acquisition cancelled")
+						return
+					end
+
 					retryHandle = ctx.hashMapInterface:update(scope, key, transformFunction, params.duration)
 					local resolved, lastValue = retryHandle.promise:await()
 					retryHandle = nil
@@ -163,7 +168,7 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 
 					if onCancel() then
 						logger:log("trace", "lock acquisition cancelled")
-						return reject("Lock acquisition cancelled")
+						return
 					end
 
 					if i ~= params.acquireAttempts then
