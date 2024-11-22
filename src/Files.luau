@@ -8,9 +8,7 @@ local Sift = require(ReplicatedStorage.Packages.Sift)
 
 local Array = Sift.Array
 
-local FileManager = {}
-
-function FileManager.isLargeFile(file: Types.File): boolean
+local function isLargeFile(file: Types.File): boolean
 	return file.shard ~= nil
 end
 
@@ -27,7 +25,7 @@ export type WriteError = {
 	file: Types.File,
 }
 
-function FileManager.write(params: WriteParams): Promise.TypedPromise<Types.File>
+local function write(params: WriteParams): Promise.TypedPromise<Types.File>
 	local str = HttpService:JSONEncode(params.data)
 	if #str <= params.maxShardSize then
 		return Promise.resolve({ data = params.data } :: Types.File)
@@ -55,8 +53,8 @@ export type ReadParams = {
 	file: Types.File,
 }
 
-function FileManager.read(params: ReadParams): Promise.TypedPromise<any>
-	if not FileManager.isLargeFile(params.file) then
+local function read(params: ReadParams): Promise.TypedPromise<any>
+	if not isLargeFile(params.file) then
 		return Promise.resolve(params.file.data)
 	end
 
@@ -76,4 +74,8 @@ function FileManager.read(params: ReadParams): Promise.TypedPromise<any>
 	end)
 end
 
-return FileManager
+return {
+	isLargeFile = isLargeFile,
+	write = write,
+	read = read,
+}

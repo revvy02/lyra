@@ -3,7 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local DataStoreInterface = require(ReplicatedStorage.Packages.Lyra.DataStoreInterface)
-local FileManager = require(ReplicatedStorage.Packages.Lyra.FileManager)
+local Files = require(ReplicatedStorage.Packages.Lyra.Files)
 local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataStoreService)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 
@@ -12,7 +12,7 @@ local describe = JestGlobals.describe
 local it = JestGlobals.it
 local beforeEach = JestGlobals.beforeEach
 
-describe("FileManager", function()
+describe("Files", function()
 	local mockDataStoreService
 	local dataStoreInterface
 
@@ -23,11 +23,11 @@ describe("FileManager", function()
 
 	describe("isLargeFile", function()
 		it("should return true for files with a shard property", function()
-			expect(FileManager.isLargeFile({ shard = "shardId", count = 1 })).toBe(true)
+			expect(Files.isLargeFile({ shard = "shardId", count = 1 })).toBe(true)
 		end)
 
 		it("should return false for files without a shard property", function()
-			expect(FileManager.isLargeFile({ data = "testData" } :: any)).toBe(false)
+			expect(Files.isLargeFile({ data = "testData" } :: any)).toBe(false)
 		end)
 	end)
 
@@ -37,7 +37,7 @@ describe("FileManager", function()
 		it("should correctly write small files without sharding", function()
 			local data = { test = "data" }
 
-			return FileManager.write({
+			return Files.write({
 				dataStoreInterface = dataStoreInterface,
 				data = data,
 				maxShardSize = maxShardSize,
@@ -53,7 +53,7 @@ describe("FileManager", function()
 		it("should correctly handle data size equal to maxShardSize", function()
 			local data = string.rep("a", maxShardSize - 2) -- subtract 2 for json "{}"
 
-			return FileManager.write({
+			return Files.write({
 				dataStoreInterface = dataStoreInterface,
 				data = data,
 				maxShardSize = maxShardSize,
@@ -69,7 +69,7 @@ describe("FileManager", function()
 		it("should correctly handle empty data inputs", function()
 			local data = {}
 
-			return FileManager.write({
+			return Files.write({
 				dataStoreInterface = dataStoreInterface,
 				data = data,
 				maxShardSize = maxShardSize,
@@ -89,7 +89,7 @@ describe("FileManager", function()
 				large = string.rep("a", maxShardSize * 2),
 			}
 
-			return FileManager.write({
+			return Files.write({
 				dataStoreInterface = dataStoreInterface,
 				data = data,
 				maxShardSize = maxShardSize,
@@ -120,7 +120,7 @@ describe("FileManager", function()
 				return Promise.reject(errorMessage)
 			end
 
-			return FileManager.write({
+			return Files.write({
 				dataStoreInterface = dataStoreInterface,
 				data = data,
 				maxShardSize = maxShardSize,
@@ -139,7 +139,7 @@ describe("FileManager", function()
 			local data = { test = "data" }
 			local file = { data = data }
 
-			return FileManager.read({
+			return Files.read({
 				dataStoreInterface = dataStoreInterface,
 				scope = "testScope",
 				file = file :: any,
@@ -151,14 +151,14 @@ describe("FileManager", function()
 		it("should correctly read and reassemble large files from shards", function()
 			local data = { data = string.rep("a", 1100) }
 
-			return FileManager.write({
+			return Files.write({
 				dataStoreInterface = dataStoreInterface,
 				data = data,
 				maxShardSize = 1000,
 				key = "testKey",
 				scope = "testScope",
 			}):andThen(function(file)
-				return FileManager.read({
+				return Files.read({
 					dataStoreInterface = dataStoreInterface,
 					scope = "testScope",
 					file = file,

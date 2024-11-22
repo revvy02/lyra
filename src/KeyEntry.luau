@@ -4,7 +4,7 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Constants = require(script.Parent.Constants)
-local FileManager = require(script.Parent.FileManager)
+local Files = require(script.Parent.Files)
 local Locks = require(script.Parent.Locks)
 local PromiseQueue = require(script.Parent.PromiseQueue)
 local Promise = require(ReplicatedStorage.Packages.Promise)
@@ -140,17 +140,17 @@ local function load(params: LoadParams): any
 
 			local file = record.file
 			if file then
-				if FileManager.isLargeFile(file) then
+				if Files.isLargeFile(file) then
 					currentFile = file
 				end
 
 				logger:log("trace", "reading file", { file = HttpService:JSONEncode(file) })
-				local readParams: FileManager.ReadParams = {
+				local readParams: Files.ReadParams = {
 					dataStoreInterface = ctx.dataStoreInterface,
 					scope = shardScope,
 					file = file,
 				}
-				return FileManager.read(readParams)
+				return Files.read(readParams)
 			end
 
 			logger:log("trace", "no file")
@@ -361,13 +361,13 @@ function KeyEntry:writeRecord(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 	logger:log("trace", "writeRecord called")
 
 	local function orphanFile(file: Types.File?)
-		if file ~= nil and FileManager.isLargeFile(file) then
+		if file ~= nil and Files.isLargeFile(file) then
 			table.insert(self.orphanedFiles, file)
 			self.ctx.orphanedFileQueue:markFile(self.key, file)
 		end
 	end
 
-	local writeParams: FileManager.WriteParams = {
+	local writeParams: Files.WriteParams = {
 		dataStoreInterface = self.ctx.dataStoreInterface,
 		data = txInfo,
 		maxShardSize = Constants.MAX_CHUNK_SIZE,
@@ -378,8 +378,8 @@ function KeyEntry:writeRecord(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 
 	logger:log("trace", "writing file", { writeParams = writeParams })
 
-	return FileManager.write(writeParams)
-		:catch(function(err: FileManager.WriteError)
+	return Files.write(writeParams)
+		:catch(function(err: Files.WriteError)
 			logger:log("error", "failed to write shards", { error = err.error })
 
 			orphanFile(err.file)
@@ -408,7 +408,7 @@ function KeyEntry:writeRecord(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 					logger:log("trace", "record written")
 
 					orphanFile(self.currentFile)
-					self.currentFile = if FileManager.isLargeFile(file) then file else nil
+					self.currentFile = if Files.isLargeFile(file) then file else nil
 
 					return record
 				end)
