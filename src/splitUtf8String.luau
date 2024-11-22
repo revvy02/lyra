@@ -1,13 +1,15 @@
 --!strict
 
 local function splitUtf8String(str: string, maxSizeBytes: number): { string }
-	-- TODO: Add t check for arg types
+	assert(typeof(str) == "string", `splitUtf8String: expected string for 'str', got {typeof(str)}`)
+	assert(
+		typeof(maxSizeBytes) == "number",
+		`splitUtf8String: expected number for 'maxSizeBytes', got {typeof(maxSizeBytes)}`
+	)
+	assert(maxSizeBytes > 0, `splitUtf8String: expected maxSizeBytes to be greater than 0, got {maxSizeBytes}`)
+
 	if str == "" then
 		return {}
-	end
-
-	if maxSizeBytes <= 0 then
-		error("maxSizeBytes must be greater than 0")
 	end
 
 	local sections = {}
@@ -16,13 +18,14 @@ local function splitUtf8String(str: string, maxSizeBytes: number): { string }
 	while true do
 		-- Get the index of the last codepoint that *starts* within bounds.
 		local index = utf8.len(str, prevOffset, math.min(#str, prevOffset + maxSizeBytes))
-		assert(index ~= nil, "invalid utf8 string")
+		assert(index ~= nil, `splitUtf8String: invalid UTF-8 sequence detected at offset {prevOffset}`)
 
 		-- We don't know if the width of the codepoint at `index` extends beyond
 		-- bounds, so we calculate the width by subtracting 1 from the *next*
 		-- codepoint.
 		local nextCodepointOffset = utf8.offset(str, index + 1, prevOffset)
-		assert(nextCodepointOffset ~= nil, "invalid utf8 string")
+		assert(nextCodepointOffset ~= nil, `splitUtf8String: malformed UTF-8 sequence at index {index}`)
+
 		if nextCodepointOffset - (prevOffset - 1) - 1 > maxSizeBytes then
 			-- The codepoint at `index` is too wide to fit within bounds, so we
 			-- shrink by one codepoint.
@@ -30,7 +33,7 @@ local function splitUtf8String(str: string, maxSizeBytes: number): { string }
 		end
 
 		local offset = utf8.offset(str, index + 1, prevOffset)
-		assert(offset ~= nil, "invalid utf8 string")
+		assert(offset ~= nil, `splitUtf8String: UTF-8 boundary error at index {index}`)
 		offset -= 1
 
 		table.insert(sections, string.sub(str, prevOffset, offset))
