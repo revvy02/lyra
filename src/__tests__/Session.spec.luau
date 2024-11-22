@@ -6,7 +6,7 @@ local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local Constants = require(ReplicatedStorage.Packages.Lyra.Constants)
 local DataStoreInterface = require(ReplicatedStorage.Packages.Lyra.DataStoreInterface)
 local HashMapInterface = require(ReplicatedStorage.Packages.Lyra.HashMapInterface)
-local KeyEntry = require(ReplicatedStorage.Packages.Lyra.KeyEntry)
+local Session = require(ReplicatedStorage.Packages.Lyra.Session)
 local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataStoreService)
 local Types = require(ReplicatedStorage.Packages.Lyra.Types)
 local Promise = require(ReplicatedStorage.Packages.Promise)
@@ -26,13 +26,13 @@ describe.each({
 		name = "DataStoreService",
 		dataStoreService = game:GetService("DataStoreService"),
 	},
-})("KeyEntry with $name", function(services)
+})("Session with $name", function(services)
 	local dataStoreInterface
 	local hashMapInterface
 	local storeContext
 
-	local function getKeyEntry()
-		return KeyEntry.load({
+	local function getSession()
+		return Session.load({
 			key = "testKey",
 			storeContext = storeContext,
 		})
@@ -65,32 +65,32 @@ describe.each({
 		}
 	end)
 
-	describe("KeyEntry.load", function()
+	describe("Session.load", function()
 		it("correctly initializes with default properties", function()
-			return getKeyEntry():andThen(function(keyEntry)
-				expect(keyEntry.key).toBe("testKey")
-				expect(keyEntry.ctx).toBe(storeContext)
-				expect(keyEntry.userIds).toBeNil()
-				expect(keyEntry.data).toEqual({})
-				expect(keyEntry.version).toBe(0)
-				expect(keyEntry.changeSet).never.toBeNil()
-				expect(keyEntry.orphanedFiles).toEqual({})
-				expect(keyEntry.currentFile).toBeNil()
+			return getSession():andThen(function(session)
+				expect(session.key).toBe("testKey")
+				expect(session.ctx).toBe(storeContext)
+				expect(session.userIds).toBeNil()
+				expect(session.data).toEqual({})
+				expect(session.version).toBe(0)
+				expect(session.changeSet).never.toBeNil()
+				expect(session.orphanedFiles).toEqual({})
+				expect(session.currentFile).toBeNil()
 			end)
 		end)
 
 		it("correctly initializes with provided config", function()
-			return KeyEntry.load({
+			return Session.load({
 				key = "testKey",
 				storeContext = storeContext,
 				userIds = { 12345 },
-			}):andThen(function(keyEntry)
-				expect(keyEntry.userIds).toEqual({ 12345 })
+			}):andThen(function(session)
+				expect(session.userIds).toEqual({ 12345 })
 			end)
 		end)
 	end)
 
-	describe("KeyEntry:updateRecord/writeRecord", function()
+	describe("Session:updateRecord/writeRecord", function()
 		it("correctly writes a record with transaction info", function()
 			local txInfo = {
 				txId = "tx123",
@@ -98,8 +98,8 @@ describe.each({
 				txData = { foo = "baz" },
 			} :: Types.TxInfo
 
-			return getKeyEntry():andThen(function(keyEntry)
-				local record = keyEntry:writeRecord(txInfo):expect()
+			return getSession():andThen(function(session)
+				local record = session:writeRecord(txInfo):expect()
 
 				expect(record.version).toBe(0)
 				expect(record.file.data).toEqual(txInfo)
@@ -118,11 +118,11 @@ describe.each({
 				count = 2,
 			} :: Types.File
 
-			return getKeyEntry():andThen(function(keyEntry)
-				keyEntry.currentFile = toBeOrphaned
-				keyEntry:writeRecord(txInfo):expect()
-				expect(#keyEntry.orphanedFiles).toBe(1)
-				expect(keyEntry.orphanedFiles[1]).toBe(toBeOrphaned)
+			return getSession():andThen(function(session)
+				session.currentFile = toBeOrphaned
+				session:writeRecord(txInfo):expect()
+				expect(#session.orphanedFiles).toBe(1)
+				expect(session.orphanedFiles[1]).toBe(toBeOrphaned)
 			end)
 		end)
 
@@ -133,12 +133,12 @@ describe.each({
 				txData = { foo = "baz" },
 			} :: Types.TxInfo
 
-			return getKeyEntry():andThen(function(keyEntry)
+			return getSession():andThen(function(session)
 				dataStoreInterface.set = function(_, _, _)
 					return Promise.reject("Record write error")
 				end
 
-				return expect(keyEntry:writeRecord(txInfo)).rejects.toBe("Record write error")
+				return expect(session:writeRecord(txInfo)).rejects.toBe("Record write error")
 			end)
 		end)
 
@@ -149,17 +149,17 @@ describe.each({
 				txData = { foo = "baz" },
 			} :: Types.TxInfo
 
-			return getKeyEntry():andThen(function(keyEntry)
-				local record = keyEntry:writeRecord(txInfo):expect()
+			return getSession():andThen(function(session)
+				local record = session:writeRecord(txInfo):expect()
 				expect(record.file.data).toEqual(txInfo)
-				expect(record.orphanedFiles).toEqual({ keyEntry.currentFile })
+				expect(record.orphanedFiles).toEqual({ session.currentFile })
 			end)
 		end)
 
 		it("correctly writes a record with empty table and no currentFile", function()
-			return getKeyEntry():andThen(function(keyEntry)
-				keyEntry:save():expect()
-				keyEntry:updateRecord({}):expect()
+			return getSession():andThen(function(session)
+				session:save():expect()
+				session:updateRecord({}):expect()
 				local record = dataStoreInterface:get(storeContext.recordScope, "testKey"):expect()
 				expect(record).toMatchObject(expect.objectContaining({
 					version = 0,
@@ -176,10 +176,10 @@ describe.each({
 		end)
 	end)
 
-	describe("KeyEntry:load", function()
+	describe("Session:load", function()
 		it("correctly locks and loads key", function()
-			return getKeyEntry():andThen(function(keyEntry)
-				local data = keyEntry:get():expect()
+			return getSession():andThen(function(session)
+				local data = session:get():expect()
 				expect(data).never.toBeNil()
 			end)
 		end)
@@ -188,8 +188,8 @@ describe.each({
 			local now = DateTime.now().UnixTimestamp
 
 			local handle = hashMapInterface:set(storeContext.lockScope, "testKey", "other server", 2)
-			return handle.promise:andThen(getKeyEntry):andThen(function(keyEntry)
-				local data = keyEntry:get():expect()
+			return handle.promise:andThen(getSession):andThen(function(session)
+				local data = session:get():expect()
 				local now2 = DateTime.now().UnixTimestamp
 				expect(now2 - now).toBeGreaterThan(0.9)
 				expect(data).never.toBeNil()
@@ -213,9 +213,9 @@ describe.each({
 					version = 0,
 					file = { data = { committedData = data } } :: Types.File,
 				})
-				:andThen(getKeyEntry)
-				:andThen(function(keyEntry)
-					expect(keyEntry.data).toEqual({
+				:andThen(getSession)
+				:andThen(function(session)
+					expect(session.data).toEqual({
 						foo = "bar",
 						migrated = true,
 					})
@@ -223,44 +223,44 @@ describe.each({
 		end)
 	end)
 
-	describe("KeyEntry:get", function()
+	describe("Session:get", function()
 		it("correctly returns cached data", function()
-			return getKeyEntry():andThen(function(keyEntry)
-				keyEntry
+			return getSession():andThen(function(session)
+				session
 					:update(function(data)
 						data.foo = "bar"
 						return true
 					end)
 					:expect()
 
-				local data = keyEntry:get():expect()
-				expect(data).toEqual(keyEntry.data)
+				local data = session:get():expect()
+				expect(data).toEqual(session.data)
 			end)
 		end)
 
 		it("freezes and deep copies cached data", function()
-			return getKeyEntry():andThen(function(keyEntry)
-				keyEntry
+			return getSession():andThen(function(session)
+				session
 					:update(function(data)
 						data.foo = "bar"
 						return true
 					end)
 					:expect()
 
-				local data = keyEntry:get():expect()
+				local data = session:get():expect()
 				expect(table.isfrozen(data)).toBe(true)
-				expect(data).never.toBe(keyEntry.data)
+				expect(data).never.toBe(session.data)
 			end)
 		end)
 	end)
 
-	describe("KeyEntry:unload", function()
+	describe("Session:unload", function()
 		it("correctly releases lock for the key", function()
-			return getKeyEntry():andThen(function(keyEntry)
-				keyEntry:unload():expect()
+			return getSession():andThen(function(session)
+				session:unload():expect()
 
-				expect(keyEntry.lockHandle.isLocked()).toBe(false)
-				expect(keyEntry.closed).toBe(true)
+				expect(session.lockHandle.isLocked()).toBe(false)
+				expect(session.closed).toBe(true)
 			end)
 		end)
 
@@ -269,9 +269,9 @@ describe.each({
 				test = "data",
 			}
 
-			return getKeyEntry():andThen(function(keyEntry)
-				keyEntry:mutateKey(data)
-				keyEntry:unload():expect()
+			return getSession():andThen(function(session)
+				session:mutateKey(data)
+				session:unload():expect()
 
 				local record = dataStoreInterface:get(storeContext.recordScope, "testKey"):expect()
 
@@ -280,10 +280,10 @@ describe.each({
 		end)
 	end)
 
-	describe("KeyEntry:update", function()
+	describe("Session:update", function()
 		it("correctly applies transform function to key data", function()
-			return getKeyEntry():andThen(function(keyEntry)
-				keyEntry.data = {
+			return getSession():andThen(function(session)
+				session.data = {
 					count = 10,
 				}
 				local transformFunction = function(data)
@@ -291,18 +291,18 @@ describe.each({
 					return true
 				end
 
-				keyEntry:update(transformFunction):expect()
-				expect(keyEntry.data.count).toBe(15)
+				session:update(transformFunction):expect()
+				expect(session.data.count).toBe(15)
 			end)
 		end)
 
 		it("propagates errors from transform function correctly", function()
-			return getKeyEntry():andThen(function(keyEntry)
+			return getSession():andThen(function(session)
 				local transformFunction = function(_)
 					error("Transform error")
 				end
 
-				return keyEntry:update(transformFunction):catch(function(err)
+				return session:update(transformFunction):catch(function(err)
 					expect(err).toMatch("transformFunction failed:")
 					expect(err).toMatch("Transform error")
 				end)
@@ -314,14 +314,14 @@ describe.each({
 				return false
 			end)
 
-			return getKeyEntry():andThen(function(keyEntry)
-				keyEntry.data = {
+			return getSession():andThen(function(session)
+				session.data = {
 					count = 10,
 				}
-				keyEntry:update(fn):expect()
+				session:update(fn):expect()
 
 				expect(mock).toHaveBeenCalledTimes(1)
-				expect(keyEntry.data.count).toBe(10)
+				expect(session.data.count).toBe(10)
 			end)
 		end)
 
@@ -330,8 +330,8 @@ describe.each({
 				return typeof(data) == "table" and data.value ~= nil
 			end
 
-			return getKeyEntry():andThen(function(keyEntry)
-				local invalidUpdate = keyEntry
+			return getSession():andThen(function(session)
+				local invalidUpdate = session
 					:update(function(data)
 						data.value = nil
 						return true
@@ -340,7 +340,7 @@ describe.each({
 						error("Invalid update should not be allowed")
 					end)
 
-				local validUpdate = keyEntry:update(function(data)
+				local validUpdate = session:update(function(data)
 					data.value = "valid"
 					return true
 				end)
@@ -355,12 +355,12 @@ describe.each({
 				return true
 			end)
 
-			return getKeyEntry():andThen(function(keyEntry)
-				keyEntry.data = { value = "initial" }
+			return getSession():andThen(function(session)
+				session.data = { value = "initial" }
 
-				local before = table.clone(keyEntry.changeSet)
-				keyEntry:update(transformFn):expect()
-				local after = table.clone(keyEntry.changeSet)
+				local before = table.clone(session.changeSet)
+				session:update(transformFn):expect()
+				local after = table.clone(session.changeSet)
 
 				expect(mock).toHaveBeenCalledTimes(1)
 				expect(before).toEqual(after)
@@ -368,22 +368,22 @@ describe.each({
 		end)
 
 		it("handles concurrent update attempts and ensures data consistency", function()
-			return getKeyEntry():andThen(function(keyEntry)
-				keyEntry.data = { count = 0 }
-				keyEntry
+			return getSession():andThen(function(session)
+				session.data = { count = 0 }
+				session
 					:update(function(data)
 						data.count += 1
 						return true
 					end)
 					:expect()
-				keyEntry
+				session
 					:update(function(data)
 						data.count += 5
 						return true
 					end)
 					:expect()
 
-				keyEntry:save():expect()
+				session:save():expect()
 
 				local record = dataStoreInterface:get(storeContext.recordScope, "testKey"):expect()
 				expect(record.file.data.committedData.count).toBe(6)
@@ -391,18 +391,18 @@ describe.each({
 		end)
 	end)
 
-	describe("KeyEntry:save", function()
+	describe("Session:save", function()
 		it("correctly saves data if there are unsaved changes", function()
-			return getKeyEntry():andThen(function(keyEntry)
-				keyEntry:mutateKey({
+			return getSession():andThen(function(session)
+				session:mutateKey({
 					foo = "bar",
 				})
 
-				keyEntry:save():expect()
+				session:save():expect()
 				local record = dataStoreInterface:get(storeContext.recordScope, "testKey"):expect()
 
-				expect(record.file.data.committedData).toEqual(keyEntry.data)
-				expect((next(keyEntry.changeSet))).toBeNil()
+				expect(record.file.data.committedData).toEqual(session.data)
+				expect((next(session.changeSet))).toBeNil()
 			end)
 		end)
 
@@ -411,29 +411,29 @@ describe.each({
 				return Promise.resolve()
 			end)
 
-			return getKeyEntry():andThen(function(keyEntry)
-				keyEntry:save():expect()
+			return getSession():andThen(function(session)
+				session:save():expect()
 				dataStoreInterface.set = fn
-				keyEntry:save():expect()
+				session:save():expect()
 				expect(mock).toHaveBeenCalledTimes(0)
 			end)
 		end)
 
 		it("tracks changes correctly", function()
-			return getKeyEntry():andThen(function(keyEntry)
-				keyEntry:mutateKey({
+			return getSession():andThen(function(session)
+				session:mutateKey({
 					foo = "bar",
 				})
-				expect((next(keyEntry.changeSet))).never.toBeNil()
-				return keyEntry:save():andThen(function()
-					expect(keyEntry.changeSet).toEqual({})
+				expect((next(session.changeSet))).never.toBeNil()
+				return session:save():andThen(function()
+					expect(session.changeSet).toEqual({})
 				end)
 			end)
 		end)
 
 		it("handles errors during save operation gracefully", function()
-			return getKeyEntry():andThen(function(keyEntry)
-				keyEntry:mutateKey({
+			return getSession():andThen(function(session)
+				session:mutateKey({
 					foo = "bar",
 				})
 
@@ -441,7 +441,7 @@ describe.each({
 					return Promise.reject("Save error")
 				end
 
-				return expect(keyEntry:save()).rejects.toMatch("Save error")
+				return expect(session:save()).rejects.toMatch("Save error")
 			end)
 		end)
 	end)

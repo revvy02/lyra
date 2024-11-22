@@ -20,29 +20,29 @@ local Set = Sift.Set
 
 type Set = { [string]: boolean }
 
-type KeyEntryImpl<T> = {
-	__index: KeyEntryImpl<T>,
+type SessionImpl<T> = {
+	__index: SessionImpl<T>,
 
-	load: (params: LoadKeyEntryParams<T>) -> Promise.TypedPromise<KeyEntry<T>>,
+	load: (params: LoadSessionParams<T>) -> Promise.TypedPromise<Session<T>>,
 
-	updateRecord: (self: KeyEntry<T>) -> Promise.TypedPromise<any>,
-	writeRecord: (self: KeyEntry<T>, txInfo: Types.TxInfo) -> Promise.TypedPromise<any>,
+	updateRecord: (self: Session<T>) -> Promise.TypedPromise<any>,
+	writeRecord: (self: Session<T>, txInfo: Types.TxInfo) -> Promise.TypedPromise<any>,
 
-	isSaved: (self: KeyEntry<T>) -> boolean,
+	isSaved: (self: Session<T>) -> boolean,
 
-	setData: (self: KeyEntry<T>, data: T) -> (),
-	mutateKey: (self: KeyEntry<T>, newData: T) -> (),
+	setData: (self: Session<T>, data: T) -> (),
+	mutateKey: (self: Session<T>, newData: T) -> (),
 
-	startAutosaving: (self: KeyEntry<T>) -> (),
-	stopAutosaving: (self: KeyEntry<T>) -> (),
+	startAutosaving: (self: Session<T>) -> (),
+	stopAutosaving: (self: Session<T>) -> (),
 
-	unload: (self: KeyEntry<T>) -> Promise.Promise,
-	get: (self: KeyEntry<T>) -> Promise.TypedPromise<T>,
-	update: (self: KeyEntry<T>, transformFunction: (data: T) -> boolean) -> Promise.Promise,
-	save: (self: KeyEntry<T>) -> Promise.Promise,
+	unload: (self: Session<T>) -> Promise.Promise,
+	get: (self: Session<T>) -> Promise.TypedPromise<T>,
+	update: (self: Session<T>, transformFunction: (data: T) -> boolean) -> Promise.Promise,
+	save: (self: Session<T>) -> Promise.Promise,
 }
 
-type KeyEntryProps<T> = {
+type SessionProps<T> = {
 	_cleanupAutosave: (() -> ())?,
 
 	key: string,
@@ -70,14 +70,14 @@ type KeyEntryProps<T> = {
 	logger: Types.Logger,
 }
 
-export type KeyEntry<T> = typeof(setmetatable({} :: KeyEntryProps<T>, {} :: KeyEntryImpl<T>))
+export type Session<T> = typeof(setmetatable({} :: SessionProps<T>, {} :: SessionImpl<T>))
 
-type LoadKeyEntryParams<T> = {
+type LoadSessionParams<T> = {
 	key: string,
 	storeContext: Types.StoreContext<T>,
 	userIds: { number }?,
 }
-local loadKeyEntryParamsCheck = t.strictInterface({
+local loadSessionParamsCheck = t.strictInterface({
 	key = t.string,
 	storeContext = t.any,
 	userIds = t.optional(t.array(t.number)),
@@ -237,10 +237,10 @@ local function load(params: LoadParams): any
 		end)
 end
 
-local KeyEntry: KeyEntryImpl<any> = {} :: KeyEntryImpl<any>
-KeyEntry.__index = KeyEntry
+local Session: SessionImpl<any> = {} :: SessionImpl<any>
+Session.__index = Session
 
-type CreateKeyEntryParams = {
+type CreateSessionParams = {
 	storeContext: Types.StoreContext<any>,
 	key: string,
 	lockHandle: Locks.LockHandle,
@@ -251,14 +251,14 @@ type CreateKeyEntryParams = {
 	keyInfo: DataStoreKeyInfo?,
 }
 
-local function createKeyEntry<T>(params: CreateKeyEntryParams): KeyEntry<T>
+local function createSession<T>(params: CreateSessionParams): Session<T>
 	local logger = params.storeContext.logger:extend({ key = params.key })
 
 	local queue = PromiseQueue.new({
 		logger = logger:extend({ component = "PromiseQueue" }),
 	})
 
-	local props: KeyEntryProps<T> = {
+	local props: SessionProps<T> = {
 		key = params.key,
 		ctx = params.storeContext,
 		lockHandle = params.lockHandle,
@@ -284,10 +284,10 @@ local function createKeyEntry<T>(params: CreateKeyEntryParams): KeyEntry<T>
 		logger = logger,
 	}
 
-	return setmetatable(props, KeyEntry) :: KeyEntry<T>
+	return setmetatable(props, Session) :: Session<T>
 end
 
-function KeyEntry.load<T>(params: LoadKeyEntryParams<T>): Promise.TypedPromise<KeyEntry<T>>
+function Session.load<T>(params: LoadSessionParams<T>): Promise.TypedPromise<Session<T>>
 	local ctx = params.storeContext
 	local logger = ctx.logger:extend({ method = "load", key = params.key })
 
@@ -311,7 +311,7 @@ function KeyEntry.load<T>(params: LoadKeyEntryParams<T>): Promise.TypedPromise<K
 				return Promise.reject("Lock was lost while loading key")
 			end
 
-			local createParams: CreateKeyEntryParams = {
+			local createParams: CreateSessionParams = {
 				storeContext = ctx,
 				key = params.key,
 				lockHandle = lockHandle,
@@ -322,12 +322,12 @@ function KeyEntry.load<T>(params: LoadKeyEntryParams<T>): Promise.TypedPromise<K
 				keyInfo = loadResult.keyInfo,
 			}
 
-			local keyEntry = createKeyEntry(createParams)
+			local session = createSession(createParams)
 
 			logger:log("trace", "loaded key", { data = loadResult.data })
-			keyEntry:mutateKey(loadResult.data)
+			session:mutateKey(loadResult.data)
 
-			return keyEntry :: any
+			return session :: any
 		end):finally(function(status): ()
 			if status ~= (Promise :: any).Status.Resolved then
 				logger:log("trace", "failed to load key, releasing lock")
@@ -338,9 +338,9 @@ function KeyEntry.load<T>(params: LoadKeyEntryParams<T>): Promise.TypedPromise<K
 		end)
 	end)
 end
-KeyEntry.load = t.wrap(KeyEntry.load, t.tuple(loadKeyEntryParamsCheck))
+Session.load = t.wrap(Session.load, t.tuple(loadSessionParamsCheck))
 
-function KeyEntry:updateRecord(): Promise.TypedPromise<any>
+function Session:updateRecord(): Promise.TypedPromise<any>
 	local logger = self.logger:extend({ method = "updateRecord" })
 	logger:log("trace", "updateRecord called")
 
@@ -354,9 +354,9 @@ function KeyEntry:updateRecord(): Promise.TypedPromise<any>
 	logger:log("trace", "writing record", { txInfo = txInfo })
 	return self:writeRecord(txInfo)
 end
-KeyEntry.updateRecord = t.wrap(KeyEntry.updateRecord, t.tuple(t.any))
+Session.updateRecord = t.wrap(Session.updateRecord, t.tuple(t.any))
 
-function KeyEntry:writeRecord(txInfo: Types.TxInfo): Promise.TypedPromise<any>
+function Session:writeRecord(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 	local logger = self.logger:extend({ method = "writeRecord" })
 	logger:log("trace", "writeRecord called")
 
@@ -421,22 +421,22 @@ function KeyEntry:writeRecord(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 				end)
 		end)
 end
-KeyEntry.writeRecord = t.wrap(KeyEntry.writeRecord, t.tuple(t.any))
+Session.writeRecord = t.wrap(Session.writeRecord, t.tuple(t.any))
 
-function KeyEntry:isSaved(): boolean
+function Session:isSaved(): boolean
 	return Set.count(self.changeSet) == 0
 end
-KeyEntry.isSaved = t.wrap(KeyEntry.isSaved, t.tuple(t.any))
+Session.isSaved = t.wrap(Session.isSaved, t.tuple(t.any))
 
-function KeyEntry:setData(data: any): ()
+function Session:setData(data: any): ()
 	local mutationId = HttpService:GenerateGUID(false)
 	self.changeSet = Set.add(self.changeSet, mutationId)
 	self.data = data
 	self.frozenData = Dictionary.freezeDeep(data :: any)
 end
-KeyEntry.setData = t.wrap(KeyEntry.setData, t.tuple(t.any))
+Session.setData = t.wrap(Session.setData, t.tuple(t.any))
 
-function KeyEntry:mutateKey(newData: any): ()
+function Session:mutateKey(newData: any): ()
 	local oldData = if self.data then Dictionary.freezeDeep(self.data :: any) else nil
 
 	self:setData(newData)
@@ -445,9 +445,9 @@ function KeyEntry:mutateKey(newData: any): ()
 		task.spawn(callback, self.key, self.frozenData, oldData)
 	end
 end
-KeyEntry.mutateKey = t.wrap(KeyEntry.mutateKey, t.tuple(t.any, t.any))
+Session.mutateKey = t.wrap(Session.mutateKey, t.tuple(t.any, t.any))
 
-function KeyEntry:startAutosaving(): ()
+function Session:startAutosaving(): ()
 	local logger = self.logger:extend({ method = "startAutosaving" })
 
 	if self._cleanupAutosave then
@@ -455,7 +455,7 @@ function KeyEntry:startAutosaving(): ()
 		return
 	end
 	if self.closed then
-		logger:log("warn", "KeyEntry is closed, not starting autosave")
+		logger:log("warn", "Session is closed, not starting autosave")
 		return
 	end
 
@@ -487,16 +487,16 @@ function KeyEntry:startAutosaving(): ()
 		self._cleanupAutosave = nil
 	end
 end
-KeyEntry.startAutosaving = t.wrap(KeyEntry.startAutosaving, t.tuple(t.any))
+Session.startAutosaving = t.wrap(Session.startAutosaving, t.tuple(t.any))
 
-function KeyEntry:stopAutosaving(): ()
+function Session:stopAutosaving(): ()
 	if self._cleanupAutosave then
 		self._cleanupAutosave()
 	end
 end
-KeyEntry.stopAutosaving = t.wrap(KeyEntry.stopAutosaving, t.tuple(t.any))
+Session.stopAutosaving = t.wrap(Session.stopAutosaving, t.tuple(t.any))
 
-function KeyEntry:unload(): Promise.Promise
+function Session:unload(): Promise.Promise
 	local logger = self.logger:extend({ method = "unload" })
 	logger:log("trace", "unload called")
 
@@ -523,20 +523,20 @@ function KeyEntry:unload(): Promise.Promise
 
 	return self.unloadPromise :: any
 end
-KeyEntry.unload = t.wrap(KeyEntry.unload, t.tuple(t.any))
+Session.unload = t.wrap(Session.unload, t.tuple(t.any))
 
-function KeyEntry:get<T>(): Promise.TypedPromise<T>
+function Session:get<T>(): Promise.TypedPromise<T>
 	return Promise.resolve(self.frozenData) :: any
 end
-KeyEntry.get = t.wrap(KeyEntry.get, t.tuple(t.any))
+Session.get = t.wrap(Session.get, t.tuple(t.any))
 
-function KeyEntry:update<T>(transformFunction: (data: T) -> boolean): Promise.Promise
+function Session:update<T>(transformFunction: (data: T) -> boolean): Promise.Promise
 	local logger = self.logger:extend({ method = "update" })
 	logger:log("trace", "update called")
 
 	if self.closed then
-		logger:log("warn", "KeyEntry is closed, skipping update")
-		return Promise.reject("KeyEntry is closed")
+		logger:log("warn", "Session is closed, skipping update")
+		return Promise.reject("Session is closed")
 	end
 
 	return Promise.new(function(resolve, reject)
@@ -586,15 +586,15 @@ function KeyEntry:update<T>(transformFunction: (data: T) -> boolean): Promise.Pr
 		return resolve()
 	end)
 end
-KeyEntry.update = t.wrap(KeyEntry.update, t.tuple(t.any, t.callback))
+Session.update = t.wrap(Session.update, t.tuple(t.any, t.callback))
 
-function KeyEntry:save(): Promise.Promise
+function Session:save(): Promise.Promise
 	local logger = self.logger:extend({ method = "save" })
 	logger:log("trace", "save called")
 
 	if self.closed then
-		logger:log("warn", "KeyEntry is closed, skipping save")
-		return Promise.reject("KeyEntry is closed")
+		logger:log("warn", "Session is closed, skipping save")
+		return Promise.reject("Session is closed")
 	end
 	if self:isSaved() then
 		logger:log("trace", "no changes, returning")
@@ -625,6 +625,6 @@ function KeyEntry:save(): Promise.Promise
 		end)
 	end)
 end
-KeyEntry.save = t.wrap(KeyEntry.save, t.tuple(t.any))
+Session.save = t.wrap(Session.save, t.tuple(t.any))
 
-return KeyEntry
+return Session
