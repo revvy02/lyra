@@ -232,6 +232,27 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 		end)
 end
 
+export type ProbeLockActiveParams = {
+	storeContext: Types.StoreContext<any>,
+	key: string,
+}
+
+local function probeLockActive(params: ProbeLockActiveParams): Promise.TypedPromise<boolean>
+	local ctx = params.storeContext
+	local key = params.key
+	local scope = ctx.lockScope
+	local logger = ctx.logger:extend({ method = "probeLockActive", key = key })
+
+	logger:log("trace", "probing if lock is active")
+
+	local retryHandle = ctx.hashMapInterface:get(scope, key)
+
+	return retryHandle.promise:andThen(function(value)
+		return value ~= nil
+	end)
+end
+
 return {
 	acquireLock = acquireLock,
+	probeLockActive = probeLockActive,
 }
