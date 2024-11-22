@@ -2,8 +2,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local DataStoreInterface = require(script.Parent.DataStoreInterface)
-local HashMapInterface = require(script.Parent.HashMapInterface)
+local Promise = require(ReplicatedStorage.Packages.Promise)
 local t = require(ReplicatedStorage.Packages.t)
 
 export type TxInfo = {
@@ -60,8 +59,8 @@ export type StoreContext<T> = {
 	migrateFromOtherSystem: ((key: string) -> any?)?,
 	latestVersion: number,
 
-	dataStoreInterface: DataStoreInterface.DataStoreInterface,
-	hashMapInterface: HashMapInterface.HashMapInterface,
+	dataStoreInterface: DataStoreInterface,
+	hashMapInterface: HashMapInterface,
 
 	orphanedFileQueue: OrphanedFileQueue,
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () },
@@ -101,6 +100,75 @@ export type LoggerProps = {
 }
 
 export type Logger = typeof(setmetatable({} :: LoggerProps, {} :: LoggerImpl))
+
+export type RetryHandle<T> = {
+	promise: T,
+	cancel: () -> (),
+}
+
+export type HashMapInterfaceImpl = {
+	__index: HashMapInterfaceImpl,
+	_getHashMap: (self: HashMapInterface, scope: string) -> MemoryStoreHashMap,
+	_retry: (self: HashMapInterface, func: () -> any) -> RetryHandle<Promise.TypedPromise<any>>,
+	new: (memoryStoreService: MemoryStoreService) -> HashMapInterface,
+	get: (self: HashMapInterface, scope: string, key: string) -> RetryHandle<Promise.TypedPromise<any?>>,
+	set: (
+		self: HashMapInterface,
+		scope: string,
+		key: string,
+		value: any,
+		expiration: number
+	) -> RetryHandle<Promise.TypedPromise<boolean>>,
+	update: (
+		self: HashMapInterface,
+		scope: string,
+		key: string,
+		transformFunction: (currentValue: any?) -> any?,
+		expiration: number
+	) -> RetryHandle<Promise.TypedPromise<any?>>,
+	remove: (self: HashMapInterface, scope: string, key: string) -> RetryHandle<Promise.Promise>,
+}
+
+export type HashMapInterfaceProps = {
+	_memoryStoreService: MemoryStoreService,
+	_hashMaps: { [string]: MemoryStoreHashMap },
+}
+
+export type HashMapInterface = typeof(setmetatable({} :: HashMapInterfaceProps, {} :: HashMapInterfaceImpl))
+
+export type DataStoreInterfaceImpl = {
+	__index: DataStoreInterfaceImpl,
+	_getDataStore: (self: DataStoreInterface, scope: string) -> GlobalDataStore,
+	_retry: (self: DataStoreInterface, func: () -> any) -> Promise.TypedPromise<any>,
+	new: (dataStoreService: DataStoreService) -> DataStoreInterface,
+	getRequestBudgetForBudgetType: (self: DataStoreInterface, budgetType: Enum.DataStoreRequestType) -> number,
+	get: (self: DataStoreInterface, scope: string, key: string) -> Promise.TypedPromise<(any?, DataStoreKeyInfo?)>,
+	set: (
+		self: DataStoreInterface,
+		scope: string,
+		key: string,
+		value: any,
+		userIds: { number }?,
+		metadata: { [string]: any }?
+	) -> Promise.TypedPromise<string>,
+	update: (
+		self: DataStoreInterface,
+		scope: string,
+		key: string,
+		transformFunction: (
+			currentValue: any,
+			keyInfo: DataStoreKeyInfo
+		) -> (any, { number }?, { [string]: any }?)
+	) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
+	remove: (self: DataStoreInterface, scope: string, key: string) -> Promise.TypedPromise<(any?, DataStoreKeyInfo?)>,
+}
+
+export type DataStoreInterfaceProps = {
+	_dataStoreService: DataStoreService,
+	_dataStores: { [string]: GlobalDataStore },
+}
+
+export type DataStoreInterface = typeof(setmetatable({} :: DataStoreInterfaceProps, {} :: DataStoreInterfaceImpl))
 
 return {
 	txInfoCheck = txInfoCheck,

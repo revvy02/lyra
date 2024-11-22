@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Constants = require(script.Parent.Constants)
 local FileManager = require(script.Parent.FileManager)
+local Locks = require(script.Parent.Locks)
 local PromiseQueue = require(script.Parent.PromiseQueue)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 local Sift = require(ReplicatedStorage.Packages.Sift)
@@ -46,7 +47,7 @@ type KeyEntryProps<T> = {
 
 	key: string,
 	ctx: Types.StoreContext<T>,
-	lockHandle: Util.LockHandle,
+	lockHandle: Locks.LockHandle,
 
 	userIds: { number }?,
 
@@ -242,7 +243,7 @@ KeyEntry.__index = KeyEntry
 type CreateKeyEntryParams = {
 	storeContext: Types.StoreContext<any>,
 	key: string,
-	lockHandle: Util.LockHandle,
+	lockHandle: Locks.LockHandle,
 	userIds: { number }?,
 	version: number,
 	orphanedFiles: { Types.File },
@@ -290,7 +291,7 @@ function KeyEntry.load<T>(params: LoadKeyEntryParams<T>): Promise.TypedPromise<K
 	local ctx = params.storeContext
 	local logger = ctx.logger:extend({ method = "load", key = params.key })
 
-	local acquireLockParams: Util.AcquireLockParams = {
+	local acquireLockParams: Locks.AcquireLockParams = {
 		storeContext = ctx,
 		key = params.key,
 		acquireAttempts = Constants.LOCK_ACQUIRE_ATTEMPTS,
@@ -298,7 +299,7 @@ function KeyEntry.load<T>(params: LoadKeyEntryParams<T>): Promise.TypedPromise<K
 		refreshInterval = Constants.LOCK_REFRESH_INTERVAL_SECONDS,
 	}
 
-	return Util.acquireLock(acquireLockParams):andThen(function(lockHandle)
+	return Locks.acquireLock(acquireLockParams):andThen(function(lockHandle)
 		local loadParams = {
 			storeContext = ctx,
 			key = params.key,

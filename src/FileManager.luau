@@ -1,7 +1,6 @@
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local DataStoreInterface = require(script.Parent.DataStoreInterface)
 local Types = require(script.Parent.Types)
 local splitUtf8String = require(script.Parent.splitUtf8String)
 local Promise = require(ReplicatedStorage.Packages.Promise)
@@ -16,7 +15,7 @@ function FileManager.isLargeFile(file: Types.File): boolean
 end
 
 export type WriteParams = {
-	dataStoreInterface: DataStoreInterface.DataStoreInterface,
+	dataStoreInterface: Types.DataStoreInterface,
 	data: any,
 	maxShardSize: number,
 	key: string,
@@ -51,7 +50,7 @@ function FileManager.write(params: WriteParams): Promise.TypedPromise<Types.File
 end
 
 export type ReadParams = {
-	dataStoreInterface: DataStoreInterface.DataStoreInterface,
+	dataStoreInterface: Types.DataStoreInterface,
 	scope: string,
 	file: Types.File,
 }

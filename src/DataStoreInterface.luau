@@ -3,6 +3,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Promise = require(ReplicatedStorage.Packages.Promise)
+local Types = require(script.Parent.Types)
 
 local MAX_RETRIES = 5
 local RETRY_ERROR_CODES = {
@@ -21,44 +22,10 @@ local RETRY_ERROR_CODES = {
 }
 local ERROR_RATE = 0
 
-type DataStoreInterfaceImpl = {
-	__index: DataStoreInterfaceImpl,
-	_getDataStore: (self: DataStoreInterface, scope: string) -> GlobalDataStore,
-	_retry: (self: DataStoreInterface, func: () -> any) -> Promise.TypedPromise<any>,
-	new: (dataStoreService: DataStoreService) -> DataStoreInterface,
-	getRequestBudgetForBudgetType: (self: DataStoreInterface, budgetType: Enum.DataStoreRequestType) -> number,
-	get: (self: DataStoreInterface, scope: string, key: string) -> Promise.TypedPromise<(any?, DataStoreKeyInfo?)>,
-	set: (
-		self: DataStoreInterface,
-		scope: string,
-		key: string,
-		value: any,
-		userIds: { number }?,
-		metadata: { [string]: any }?
-	) -> Promise.TypedPromise<string>,
-	update: (
-		self: DataStoreInterface,
-		scope: string,
-		key: string,
-		transformFunction: (
-			currentValue: any,
-			keyInfo: DataStoreKeyInfo
-		) -> (any, { number }?, { [string]: any }?)
-	) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
-	remove: (self: DataStoreInterface, scope: string, key: string) -> Promise.TypedPromise<(any?, DataStoreKeyInfo?)>,
-}
-
-type DataStoreInterfaceProps = {
-	_dataStoreService: DataStoreService,
-	_dataStores: { [string]: GlobalDataStore },
-}
-
-export type DataStoreInterface = typeof(setmetatable({} :: DataStoreInterfaceProps, {} :: DataStoreInterfaceImpl))
-
-local DataStoreInterface: DataStoreInterfaceImpl = {} :: DataStoreInterfaceImpl
+local DataStoreInterface: Types.DataStoreInterfaceImpl = {} :: Types.DataStoreInterfaceImpl
 DataStoreInterface.__index = DataStoreInterface
 
-function DataStoreInterface.new(dataStoreService: DataStoreService): DataStoreInterface
+function DataStoreInterface.new(dataStoreService: DataStoreService): Types.DataStoreInterface
 	local self = setmetatable({
 		_dataStoreService = dataStoreService,
 		_dataStores = {},
