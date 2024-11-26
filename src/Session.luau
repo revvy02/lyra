@@ -180,23 +180,23 @@ local function load(params: LoadParams): any
 				return data
 			end
 
-			local migrateFromOtherSystem = ctx.migrateFromOtherSystem
-			if migrateFromOtherSystem == nil then
-				logger:log("trace", "no data, no migrateFromOtherSystem")
+			local importLegacyData = ctx.importLegacyData
+			if importLegacyData == nil then
+				logger:log("trace", "no data, no importLegacyData")
 				return nil
 			end
 
-			logger:log("trace", "no data, migrating from other system")
-			return Promise.try(migrateFromOtherSystem, key)
+			logger:log("trace", "no data, importing legacy data")
+			return Promise.try(importLegacyData, key)
 				:tap(function(oldData: any?)
 					if oldData ~= nil then
 						version = 0
 					end
-					logger:log("trace", "migrated from other system", { oldData = oldData })
+					logger:log("trace", "imported legacy data", { oldData = oldData })
 				end)
 				:catch(function(e)
-					logger:log("error", "failed to migrate key from other system", { error = e })
-					return Promise.reject(`Failed to migrate key {key} from other system: {e}`)
+					logger:log("error", "failed to import legacy data", { error = e })
+					return Promise.reject(`Failed to import legacy data for key {key}: {e}`)
 				end)
 		end)
 		:andThen(function(data: any?)

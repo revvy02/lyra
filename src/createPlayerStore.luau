@@ -33,7 +33,7 @@ type PlayerStoreConfig<T> = {
 	template: T,
 	schema: (value: any) -> (boolean, string?),
 	migrations: { [number]: (value: any) -> any }?,
-	migrateFromOtherSystem: ((key: string) -> any?)?,
+	importLegacyData: ((key: string) -> any?)?,
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () }?,
 	logCallback: ((logMessage: Types.LogMessage) -> ())?,
 }
@@ -55,7 +55,7 @@ local function createPlayerStore<T>(config: PlayerStoreConfig<T>): PlayerStore<T
 		template = config.template,
 		schema = config.schema,
 		migrations = config.migrations,
-		migrateFromOtherSystem = config.migrateFromOtherSystem,
+		importLegacyData = config.importLegacyData,
 		changedCallbacks = config.changedCallbacks,
 		logCallback = config.logCallback,
 		onLockLost = function(key: string)

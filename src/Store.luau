@@ -28,7 +28,7 @@ export type StoreConfig<T> = {
 	template: T,
 	schema: (value: any) -> (boolean, string?),
 	migrations: { [number]: (value: any) -> any }?,
-	migrateFromOtherSystem: ((key: string) -> any?)?,
+	importLegacyData: ((key: string) -> any?)?,
 	dataStoreInterface: Types.DataStoreInterface?,
 	useMock: boolean?,
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () }?,
@@ -40,7 +40,7 @@ local storeConfigCheck = t.strictInterface({
 	template = t.any,
 	schema = t.callback,
 	migrations = t.optional(t.array(t.callback)),
-	migrateFromOtherSystem = t.optional(t.callback),
+	importLegacyData = t.optional(t.callback),
 	dataStoreInterface = t.optional(t.table),
 	useMock = t.optional(t.boolean),
 	changedCallbacks = t.optional(t.array(t.callback)),
@@ -116,7 +116,7 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		schema = config.schema,
 
 		migrations = migrations,
-		migrateFromOtherSystem = config.migrateFromOtherSystem,
+		importLegacyData = config.importLegacyData,
 		latestVersion = #migrations,
 
 		dataStoreInterface = dataStoreInterface,

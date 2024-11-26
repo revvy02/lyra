@@ -56,7 +56,7 @@ export type StoreContext<T> = {
 	schema: (value: any) -> (boolean, string?),
 
 	migrations: { [number]: (value: any) -> any },
-	migrateFromOtherSystem: ((key: string) -> any?)?,
+	importLegacyData: ((key: string) -> any?)?,
 	latestVersion: number,
 
 	dataStoreInterface: DataStoreInterface,
