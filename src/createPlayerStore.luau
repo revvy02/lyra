@@ -86,7 +86,7 @@ end
 
 function PlayerStore:load(player: Player)
 	local userIdKey = getUserIdKey(player)
-	return self._store:load(userIdKey):catch(function(e)
+	return self._store:load(userIdKey, { player.UserId }):catch(function(e)
 		self:_kickPlayer(player, "DataStore load failed, please rejoin the game.")
 		return Promise.reject(e)
 	end)
