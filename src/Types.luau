@@ -50,12 +50,17 @@ type OrphanedFileQueueProps = {
 
 export type OrphanedFileQueue = typeof(setmetatable({} :: OrphanedFileQueueProps, {} :: OrphanedFileQueueImpl))
 
+export type MigrationStep = {
+	name: string,
+	apply: (data: { [string]: any }) -> { [string]: any },
+}
+
 export type StoreContext<T> = {
 	name: string,
 	template: T,
 	schema: (value: any) -> (boolean, string?),
 
-	migrations: { [number]: (value: any) -> any },
+	migrations: { MigrationStep },
 	importLegacyData: ((key: string) -> any?)?,
 	latestVersion: number,
 
