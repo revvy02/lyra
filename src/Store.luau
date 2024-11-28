@@ -8,12 +8,15 @@ local RunService = game:GetService("RunService")
 
 local Constants = require(script.Parent.Constants)
 local DataStoreInterface = require(script.Parent.DataStoreInterface)
+local Files = require(script.Parent.Files)
 local HashMapInterface = require(script.Parent.HashMapInterface)
+local Locks = require(script.Parent.Locks)
 local Session = require(script.Parent.Session)
 local Log = require(script.Parent.Log)
 local MockDataStoreService = require(script.Parent.MockDataStoreService)
 local OrphanedFileQueue = require(script.Parent.OrphanedFileQueue)
 local PromiseQueue = require(script.Parent.PromiseQueue)
+local Transactions = require(script.Parent.Transactions)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 local Sift = require(ReplicatedStorage.Packages.Sift)
 local t = require(ReplicatedStorage.Packages.t)
@@ -51,6 +54,14 @@ local storeConfigCheck = t.strictInterface({
 	onLockLost = t.optional(t.callback),
 })
 
+type ListVersionParams = {
+	key: string,
+	sortDirection: Enum.SortDirection?,
+	minDate: number?,
+	maxDate: number?,
+	pageSize: number?,
+}
+
 type StoreImpl<T> = {
 	__index: StoreImpl<T>,
 
@@ -69,6 +80,10 @@ type StoreImpl<T> = {
 	) -> Promise.Promise,
 	save: (self: Store<T>, key: string) -> Promise.Promise,
 	close: (self: Store<T>) -> Promise.Promise,
+
+	probeLockActive: (self: Store<T>, key: string) -> Promise.TypedPromise<boolean>,
+	listVersions: (self: Store<T>, params: ListVersionParams) -> Promise.TypedPromise<DataStoreVersionPages>,
+	readVersion: (self: Store<T>, key: string, version: string) -> Promise.TypedPromise<T, DataStoreKeyInfo>,
 }
 
 type StoreProps<T> = {
@@ -584,6 +599,50 @@ function Store:close(): Promise.Promise
 	return Promise.allSettled(promises):andThen(function()
 		logger:log("debug", "store closed")
 	end)
+end
+
+function Store:probeLockActive(key: string): Promise.TypedPromise<boolean>
+	return Locks.probeLockActive({
+		storeContext = self._ctx,
+		key = key,
+	})
+end
+
+function Store:listVersions(params: ListVersionParams): Promise.TypedPromise<DataStoreVersionPages>
+	return self._ctx.dataStoreInterface:listVersions(
+		self._ctx.recordScope,
+		params.key,
+		params.sortDirection,
+		params.minDate,
+		params.maxDate,
+		params.pageSize
+	)
+end
+
+function Store:readVersion<T>(key: string, version: string): Promise.TypedPromise<(T, DataStoreKeyInfo)>
+	return self._ctx.dataStoreInterface
+		:getVersion(self._ctx.recordScope, key, version)
+		:andThen(function(record, keyInfo)
+			if not record or not keyInfo then
+				return Promise.reject("Record not found")
+			end
+
+			local readParams: Files.ReadParams = {
+				dataStoreInterface = self._ctx.dataStoreInterface,
+				scope = self._ctx.shardScope,
+				file = record.file,
+			}
+			return Files.read(readParams)
+		end)
+		:andThen(function(txInfo: Types.TxInfo)
+			local readTxParams = {
+				dataStoreInterface = self._ctx.dataStoreInterface,
+				scope = self._ctx.txScope,
+				txInfo = txInfo,
+			}
+
+			return Transactions.readTx(readTxParams)
+		end)
 end
 
 return {

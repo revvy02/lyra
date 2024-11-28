@@ -142,7 +142,7 @@ export type HashMapInterface = typeof(setmetatable({} :: HashMapInterfaceProps, 
 
 export type DataStoreInterfaceImpl = {
 	__index: DataStoreInterfaceImpl,
-	_getDataStore: (self: DataStoreInterface, scope: string) -> GlobalDataStore,
+	_getDataStore: (self: DataStoreInterface, scope: string) -> DataStore,
 	_retry: (self: DataStoreInterface, func: () -> any) -> Promise.TypedPromise<any>,
 	new: (dataStoreService: DataStoreService) -> DataStoreInterface,
 	getRequestBudgetForBudgetType: (self: DataStoreInterface, budgetType: Enum.DataStoreRequestType) -> number,
@@ -165,11 +165,26 @@ export type DataStoreInterfaceImpl = {
 		) -> (any, { number }?, { [string]: any }?)
 	) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
 	remove: (self: DataStoreInterface, scope: string, key: string) -> Promise.TypedPromise<(any?, DataStoreKeyInfo?)>,
+	listVersions: (
+		self: DataStoreInterface,
+		scope: string,
+		key: string,
+		sortDirection: Enum.SortDirection?,
+		minDate: number?,
+		maxDate: number?,
+		pageSize: number?
+	) -> Promise.TypedPromise<DataStoreVersionPages>,
+	getVersion: (
+		self: DataStoreInterface,
+		scope: string,
+		key: string,
+		version: string
+	) -> Promise.TypedPromise<(any?, DataStoreKeyInfo?)>,
 }
 
 export type DataStoreInterfaceProps = {
 	_dataStoreService: DataStoreService,
-	_dataStores: { [string]: GlobalDataStore },
+	_dataStores: { [string]: DataStore },
 }
 
 export type DataStoreInterface = typeof(setmetatable({} :: DataStoreInterfaceProps, {} :: DataStoreInterfaceImpl))

@@ -33,7 +33,7 @@ function DataStoreInterface.new(dataStoreService: DataStoreService): Types.DataS
 	return self
 end
 
-function DataStoreInterface:_getDataStore(scope: string): GlobalDataStore
+function DataStoreInterface:_getDataStore(scope: string): DataStore
 	if not self._dataStores[scope] then
 		self._dataStores[scope] = self._dataStoreService:GetDataStore(scope)
 	end
@@ -114,6 +114,31 @@ function DataStoreInterface:remove(scope: string, key: string): Promise.TypedPro
 	local dataStore = self:_getDataStore(scope)
 	return self:_retry(function()
 		return dataStore:RemoveAsync(key)
+	end)
+end
+
+function DataStoreInterface:listVersions(
+	scope: string,
+	key: string,
+	sortDirection: Enum.SortDirection?,
+	minDate: number?,
+	maxDate: number?,
+	pageSize: number?
+): Promise.TypedPromise<DataStoreVersionPages>
+	local dataStore = self:_getDataStore(scope)
+	return self:_retry(function()
+		return dataStore:ListVersionsAsync(key, sortDirection, minDate, maxDate, pageSize)
+	end)
+end
+
+function DataStoreInterface:getVersion(
+	scope: string,
+	key: string,
+	version: string
+): Promise.TypedPromise<(any?, DataStoreKeyInfo?)>
+	local dataStore = self:_getDataStore(scope)
+	return self:_retry(function()
+		return dataStore:GetVersionAsync(key, version)
 	end)
 end
 
