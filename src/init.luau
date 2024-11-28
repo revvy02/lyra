@@ -1,11 +1,11 @@
 --!strict
 
 local Log = require(script.Log)
+local Migrations = require(script.Migrations)
 local createPlayerStore = require(script.createPlayerStore)
-local migrationsFromFolder = require(script.migrationsFromFolder)
 
 return {
+	Migration = Migrations.Migration,
 	createPlayerStore = createPlayerStore,
-	migrationsFromFolder = migrationsFromFolder,
 	setLogLevel = Log.setLevel,
 }
