@@ -12,7 +12,7 @@ local Promise = require(ReplicatedStorage.Packages.Promise)
 local Sift = require(ReplicatedStorage.Packages.Sift)
 local t = require(ReplicatedStorage.Packages.t)
 local Types = require(script.Parent.Types)
-local Util = require(script.Parent.Util)
+local Transactions = require(script.Parent.Transactions)
 local noYield = require(script.Parent.noYield)
 
 local Dictionary = Sift.Dictionary
@@ -161,7 +161,7 @@ local function load(params: LoadParams): any
 					txInfo = txInfo,
 				}
 
-				return Util.readTx(readTxParams)
+				return Transactions.readTx(readTxParams)
 			end
 
 			logger:log("trace", "no txInfo")

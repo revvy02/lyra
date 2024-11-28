@@ -3,7 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local DataStoreInterface = require(ReplicatedStorage.Packages.Lyra.DataStoreInterface)
-local Util = require(ReplicatedStorage.Packages.Lyra.Util)
+local Transactions = require(ReplicatedStorage.Packages.Lyra.Transactions)
 local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataStoreService)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 
@@ -21,7 +21,7 @@ describe.each({
 		name = "DataStoreService",
 		dataStoreService = game:GetService("DataStoreService"),
 	},
-})("Util with $name", function(services)
+})("Transactions with $name", function(services)
 	local dataStoreInterface
 	local txScope = `TX_TEST/{string.sub(HttpService:GenerateGUID(false), 1, 8)}}`
 	local params
@@ -41,7 +41,7 @@ describe.each({
 				committedData = { foo = "bar" },
 			}
 
-			return Util.readTx(params):andThen(function(data)
+			return Transactions.readTx(params):andThen(function(data)
 				expect(data).toEqual(params.txInfo.committedData)
 			end)
 		end)
@@ -65,8 +65,8 @@ describe.each({
 				p1.txInfo = txInfo1
 				local p2 = table.clone(params)
 				p2.txInfo = txInfo2
-				local data1 = Util.readTx(p1):expect()
-				local data2 = Util.readTx(p2):expect()
+				local data1 = Transactions.readTx(p1):expect()
+				local data2 = Transactions.readTx(p2):expect()
 
 				expect(data1).toEqual(txInfo1.txData)
 				expect(data2).toEqual(txInfo2.committedData)
