@@ -46,8 +46,7 @@ describe.each({
 			name = name,
 			dataStoreInterface = dataStoreInterface,
 			hashMapInterface = hashMapInterface,
-			latestVersion = 0,
-			migrations = {},
+			migrationSteps = {},
 			template = {},
 			schema = function(data)
 				return typeof(data) == "table"
@@ -72,7 +71,7 @@ describe.each({
 				expect(session.ctx).toBe(storeContext)
 				expect(session.userIds).toBeNil()
 				expect(session.data).toEqual({})
-				expect(session.version).toBe(0)
+				expect(session.appliedMigrations).toEqual({})
 				expect(session.changeSet).never.toBeNil()
 				expect(session.orphanedFiles).toEqual({})
 				expect(session.currentFile).toBeNil()
@@ -101,7 +100,7 @@ describe.each({
 			return getSession():andThen(function(session)
 				local record = session:writeRecord(txInfo):expect()
 
-				expect(record.version).toBe(0)
+				expect(record.appliedMigrations).toEqual({})
 				expect(record.file.data).toEqual(txInfo)
 				expect(record.orphanedFiles).toEqual({})
 			end)
@@ -162,7 +161,7 @@ describe.each({
 				session:updateRecord({}):expect()
 				local record = dataStoreInterface:get(storeContext.recordScope, "testKey"):expect()
 				expect(record).toMatchObject(expect.objectContaining({
-					version = 0,
+					appliedMigrations = {},
 					file = {
 						data = {
 							txId = nil,
@@ -198,19 +197,20 @@ describe.each({
 
 		it("correctly reads and migrates data if necessary", function()
 			local testMigrations = {}
-			testMigrations[1] = function(data)
-				data.migrated = true
-				return data
-			end
-			storeContext.migrations = testMigrations
-			storeContext.latestVersion = 1
+			testMigrations[1] = {
+				name = "test migrate",
+				apply = function(data)
+					data.migrated = true
+				end,
+			}
+			storeContext.migrationSteps = testMigrations
 
 			local data = {
 				foo = "bar",
 			}
 			return dataStoreInterface
 				:set(storeContext.recordScope, "testKey", {
-					version = 0,
+					appliedMigrations = {},
 					file = { data = { committedData = data } } :: Types.File,
 				})
 				:andThen(getSession)

@@ -27,7 +27,7 @@ export type StoreConfig<T> = {
 	name: string,
 	template: T,
 	schema: (value: any) -> (boolean, string?),
-	migrations: { [number]: (value: any) -> any }?,
+	migrationSteps: { Types.MigrationStep }?,
 	importLegacyData: ((key: string) -> any?)?,
 	dataStoreInterface: Types.DataStoreInterface?,
 	useMock: boolean?,
@@ -39,7 +39,10 @@ local storeConfigCheck = t.strictInterface({
 	name = t.string,
 	template = t.any,
 	schema = t.callback,
-	migrations = t.optional(t.array(t.callback)),
+	migrationSteps = t.optional(t.array(t.strictInterface({
+		name = t.string,
+		apply = t.callback,
+	}))),
 	importLegacyData = t.optional(t.callback),
 	dataStoreInterface = t.optional(t.table),
 	useMock = t.optional(t.boolean),
@@ -108,16 +111,15 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 	local hashMapInterface = HashMapInterface.new(MemoryStoreService)
 	local orphanedFileQueue = OrphanedFileQueue.new()
 
-	local migrations = config.migrations or {}
+	local migrationSteps = config.migrationSteps or {}
 
 	local storeContext: Types.StoreContext<T> = {
 		name = config.name,
 		template = config.template,
 		schema = config.schema,
 
-		migrations = migrations,
+		migrationSteps = migrationSteps,
 		importLegacyData = config.importLegacyData,
-		latestVersion = #migrations,
 
 		dataStoreInterface = dataStoreInterface,
 		hashMapInterface = hashMapInterface,

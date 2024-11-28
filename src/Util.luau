@@ -4,38 +4,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(script.Parent.Types)
 local Promise = require(ReplicatedStorage.Packages.Promise)
-local Sift = require(ReplicatedStorage.Packages.Sift)
-
-local Dictionary = Sift.Dictionary
-
-export type MigrateDataParams = {
-	fromVersion: number,
-	toVersion: number,
-	data: any,
-	migrations: { (data: any) -> any },
-}
-
-local function migrateData(params: MigrateDataParams): Promise.TypedPromise<any>
-	local data = Dictionary.copyDeep(params.data)
-
-	return Promise.new(function(resolve, reject)
-		for i = params.fromVersion + 1, params.toVersion do
-			local migration = params.migrations[i]
-			if not migration then
-				return reject(`No migration found for version {i}`)
-			end
-
-			local resolved, result = Promise.try(migration, data):await()
-			if not resolved then
-				return reject(`Migration failed for version {i}: {result}`)
-			end
-
-			data = Dictionary.copyDeep(result)
-		end
-
-		resolve(data)
-	end)
-end
 
 export type ReadTxParams = {
 	dataStoreInterface: Types.DataStoreInterface,
@@ -63,6 +31,5 @@ local function readTx(params: ReadTxParams): Promise.TypedPromise<any>
 end
 
 return {
-	migrateData = migrateData,
 	readTx = readTx,
 }

@@ -24,7 +24,7 @@ export type LockInfo = {
 }
 
 export type DataStoreRecord = {
-	version: number,
+	appliedMigrations: { string },
 	file: File,
 	orphanedFiles: {},
 }
@@ -60,9 +60,8 @@ export type StoreContext<T> = {
 	template: T,
 	schema: (value: any) -> (boolean, string?),
 
-	migrations: { MigrationStep },
+	migrationSteps: { MigrationStep },
 	importLegacyData: ((key: string) -> any?)?,
-	latestVersion: number,
 
 	dataStoreInterface: DataStoreInterface,
 	hashMapInterface: HashMapInterface,

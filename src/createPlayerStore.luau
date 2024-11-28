@@ -32,7 +32,7 @@ type PlayerStoreConfig<T> = {
 	name: string,
 	template: T,
 	schema: (value: any) -> (boolean, string?),
-	migrations: { [number]: (value: any) -> any }?,
+	migrationSteps: { Types.MigrationStep }?,
 	importLegacyData: ((key: string) -> any?)?,
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () }?,
 	logCallback: ((logMessage: Types.LogMessage) -> ())?,
@@ -50,11 +50,11 @@ PlayerStore.__index = PlayerStore
 local function createPlayerStore<T>(config: PlayerStoreConfig<T>): PlayerStore<T>
 	local self: PlayerStore<T>
 
-	local storeConfig = {
+	local storeConfig: Store.StoreConfig<T> = {
 		name = config.name,
 		template = config.template,
 		schema = config.schema,
-		migrations = config.migrations,
+		migrationSteps = config.migrationSteps,
 		importLegacyData = config.importLegacyData,
 		changedCallbacks = config.changedCallbacks,
 		logCallback = config.logCallback,

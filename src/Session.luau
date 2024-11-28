@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Constants = require(script.Parent.Constants)
 local Files = require(script.Parent.Files)
 local Locks = require(script.Parent.Locks)
+local Migrations = require(script.Parent.Migrations)
 local PromiseQueue = require(script.Parent.PromiseQueue)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 local Sift = require(ReplicatedStorage.Packages.Sift)
@@ -53,7 +54,7 @@ type SessionProps<T> = {
 
 	data: T?,
 	frozenData: T?,
-	version: number,
+	appliedMigrations: { string },
 
 	changeSet: Set,
 
@@ -90,7 +91,7 @@ export type LoadParams = {
 
 export type LoadResult = {
 	data: any,
-	version: number,
+	appliedMigrations: { string },
 	orphanedFiles: { Types.File },
 	currentFile: Types.File?,
 	keyInfo: DataStoreKeyInfo?,
@@ -107,7 +108,7 @@ local function load(params: LoadParams): any
 	local shardScope = ctx.shardScope
 	local txScope = ctx.txScope
 
-	local version: number
+	local appliedMigrations: { string } = Migrations.getStepNames(ctx.migrationSteps)
 	local orphanedFiles: { Types.File } = {}
 	local currentFile: Types.File?
 	local keyInfo: DataStoreKeyInfo?
@@ -122,15 +123,8 @@ local function load(params: LoadParams): any
 			assert(record, "luau")
 
 			keyInfo = _keyInfo
-			version = record.version or ctx.latestVersion
-
-			if version > ctx.latestVersion then
-				logger:log(
-					"error",
-					"data has newer version than this server supports",
-					{ version = version, latestVersion = ctx.latestVersion }
-				)
-				return Promise.reject("Data has newer version than this server supports")
+			if record.appliedMigrations then
+				appliedMigrations = record.appliedMigrations
 			end
 
 			if record.orphanedFiles then
@@ -190,7 +184,7 @@ local function load(params: LoadParams): any
 			return Promise.try(importLegacyData, key)
 				:tap(function(oldData: any?)
 					if oldData ~= nil then
-						version = 0
+						appliedMigrations = {}
 					end
 					logger:log("trace", "imported legacy data", { oldData = oldData })
 				end)
@@ -203,21 +197,22 @@ local function load(params: LoadParams): any
 			if data == nil then
 				logger:log("trace", "no data, using template")
 				data = Dictionary.copyDeep(ctx.template)
-				version = ctx.latestVersion
 			end
 			assert(data, "luau")
 
-			if version < ctx.latestVersion then
-				logger:log("debug", `migrating data from {version} to {ctx.latestVersion}`)
-				local migrateDataParams: Util.MigrateDataParams = {
-					fromVersion = version,
-					toVersion = ctx.latestVersion,
+			if #ctx.migrationSteps > 0 then
+				logger:log("debug", "applying migrations")
+				local migrationParams: Migrations.ApplyParams = {
+					logger = logger:extend({ component = "Migrations" }),
 					data = data,
-					migrations = ctx.migrations,
+					steps = ctx.migrationSteps,
+					appliedMigrations = appliedMigrations,
 				}
-				return Util.migrateData(migrateDataParams):tap(function()
-					version = ctx.latestVersion
-					logger:log("trace", "data migrated to latest version")
+
+				return Migrations.apply(migrationParams):andThen(function(result: Migrations.ApplyResult)
+					appliedMigrations = result.appliedMigrations
+					logger:log("trace", "migrations applied", { data = data, appliedMigrations = appliedMigrations })
+					return result.data
 				end)
 			end
 
@@ -228,7 +223,7 @@ local function load(params: LoadParams): any
 			logger:log("trace", "load done")
 			local loadResult: LoadResult = {
 				data = data,
-				version = version,
+				appliedMigrations = appliedMigrations,
 				orphanedFiles = orphanedFiles,
 				currentFile = currentFile,
 				keyInfo = keyInfo,
@@ -245,7 +240,7 @@ type CreateSessionParams = {
 	key: string,
 	lockHandle: Locks.LockHandle,
 	userIds: { number }?,
-	version: number,
+	appliedMigrations: { string },
 	orphanedFiles: { Types.File },
 	currentFile: Types.File?,
 	keyInfo: DataStoreKeyInfo?,
@@ -267,7 +262,7 @@ local function createSession<T>(params: CreateSessionParams): Session<T>
 
 		data = nil,
 		frozenData = nil,
-		version = params.version,
+		appliedMigrations = params.appliedMigrations,
 
 		changeSet = {},
 
@@ -316,7 +311,7 @@ function Session.load<T>(params: LoadSessionParams<T>): Promise.TypedPromise<Ses
 				key = params.key,
 				lockHandle = lockHandle,
 				userIds = params.userIds,
-				version = loadResult.version,
+				appliedMigrations = loadResult.appliedMigrations,
 				orphanedFiles = loadResult.orphanedFiles,
 				currentFile = loadResult.currentFile,
 				keyInfo = loadResult.keyInfo,
@@ -396,7 +391,7 @@ function Session:writeRecord(txInfo: Types.TxInfo): Promise.TypedPromise<any>
 			end
 
 			local record = {
-				version = self.version,
+				appliedMigrations = self.appliedMigrations,
 				file = file,
 				orphanedFiles = Array.push(self.orphanedFiles, self.currentFile :: any),
 			}

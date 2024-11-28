@@ -50,7 +50,7 @@ function Migration:finalize(): { Types.MigrationStep }
 	return self.steps
 end
 
-local function validateMigrationSteps(steps: { Types.MigrationStep })
+local function validate(steps: { Types.MigrationStep })
 	assert(typeof(steps) == "table", "steps must be a table")
 	for _, step in steps do
 		assert(typeof(step) == "table", "step must be a table")
@@ -59,34 +59,63 @@ local function validateMigrationSteps(steps: { Types.MigrationStep })
 	end
 end
 
-type ApplyMigrationStepsParams = {
+export type ApplyParams = {
 	logger: Types.Logger,
 	data: Data,
 	steps: { Types.MigrationStep },
+	appliedMigrations: { string },
 }
 
-local function applyMigrationSteps(params: ApplyMigrationStepsParams): Promise.TypedPromise<Data>
-	local logger = params.logger:extend({ method = "applyMigrationSteps" })
+export type ApplyResult = {
+	data: Data,
+	appliedMigrations: { string },
+}
 
+local function apply(params: ApplyParams): Promise.TypedPromise<ApplyResult>
+	local logger = params.logger:extend({ method = "applyMigrations" })
 	local currentData = params.data
-	for _, step in params.steps do
-		logger:log("trace", "applying migration step", { stepName = step.name })
+	local appliedMigrations = params.appliedMigrations
 
-		local staged = Sift.Dictionary.copyDeep(currentData)
-		local ok, result = pcall(step.apply, staged)
-		if not ok then
-			logger:log("error", "failed to apply migration step", { stepName = step.name, error = result })
-			return Promise.reject(result)
-		end
-
-		currentData = Sift.Dictionary.copyDeep(result)
+	local appliedSet = {}
+	for _, name in appliedMigrations do
+		appliedSet[name] = true
 	end
 
-	return currentData
+	return Promise.new(function(resolve, reject)
+		for _, step in params.steps do
+			if not appliedSet[step.name] then
+				logger:log("trace", "applying migration step", { stepName = step.name })
+
+				local staged = Sift.Dictionary.copyDeep(currentData)
+				local ok, result = pcall(step.apply, staged)
+				if not ok then
+					logger:log("error", "failed to apply migration step", { stepName = step.name, error = result })
+					return reject(result)
+				end
+
+				currentData = Sift.Dictionary.copyDeep(result)
+				table.insert(appliedMigrations, step.name)
+			end
+		end
+
+		return resolve({
+			data = currentData,
+			appliedMigrations = appliedMigrations,
+		})
+	end)
+end
+
+local function getStepNames(migrations: { Types.MigrationStep }): { string }
+	local names = {}
+	for _, step in migrations do
+		table.insert(names, step.name)
+	end
+	return names
 end
 
 return {
 	Migration = Migration,
-	validateMigrationSteps = validateMigrationSteps,
-	applyMigrationSteps = applyMigrationSteps,
+	validate = validate,
+	apply = apply,
+	getStepNames = getStepNames,
 }
