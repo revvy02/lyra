@@ -164,6 +164,8 @@ Store.__index = Store
 	@function createStore
 ]=]
 local function createStore<T>(config: StoreConfig<T>): Store<T>
+	assert(storeConfigCheck(config))
+
 	local logger = Log.createLogger(config.logCallback or function() end, {
 		lib = "lyra",
 		store = config.name,
@@ -234,7 +236,6 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 	logger:log("trace", `created store`)
 	return self
 end
-createStore = t.wrap(createStore, t.tuple(storeConfigCheck))
 
 --[=[
 	Processes an orphaned file in the store's queue.
@@ -306,6 +307,9 @@ end
 	@within Store 
 ]=]
 function Store:load(key: string, userIds: { number }?): Promise.Promise
+	assert(t.string(key))
+	assert(t.optional(t.array(t.number))(userIds))
+
 	local logger = self._ctx.logger:extend({ method = "load", key = key })
 	logger:log("trace", "attempting to load key")
 
@@ -372,7 +376,6 @@ function Store:load(key: string, userIds: { number }?): Promise.Promise
 		end
 	end)
 end
-Store.load = t.wrap(Store.load, t.tuple(t.any, t.string, t.optional(t.array(t.number))))
 
 --[=[
 	Unloads data for the given key from memory and ends the session.
@@ -387,6 +390,8 @@ Store.load = t.wrap(Store.load, t.tuple(t.any, t.string, t.optional(t.array(t.nu
 	@within Store
 ]=]
 function Store:unload(key: string): Promise.Promise
+	assert(t.string(key))
+
 	local logger = self._ctx.logger:extend({ method = "unload", key = key })
 	logger:log("trace", "attempting to unload key")
 
@@ -420,7 +425,6 @@ function Store:unload(key: string): Promise.Promise
 
 	return self._unloadPromises[key] or Promise.resolve()
 end
-Store.unload = t.wrap(Store.unload, t.tuple(t.any, t.string))
 
 --[=[
 	Internal helper to manage sessions.
@@ -493,11 +497,12 @@ end
 	@within Store
 ]=]
 function Store:get<T>(key: string): Promise.TPromise<T>
+	assert(t.string(key))
+
 	return self:_withSession(key, function(session)
 		return session:get()
 	end)
 end
-Store.get = t.wrap(Store.get, t.tuple(t.any, t.string))
 
 --[=[
 	Updates data for the given key using a transform function.
@@ -524,11 +529,13 @@ Store.get = t.wrap(Store.get, t.tuple(t.any, t.string))
 	@within Store
 ]=]
 function Store:update<T>(key: string, transformFunction: (data: T) -> boolean): Promise.Promise
+	assert(t.string(key))
+	assert(t.callback(transformFunction))
+
 	return self:_withSession(key, function(session)
 		return session:update(transformFunction)
 	end)
 end
-Store.update = t.wrap(Store.update, t.tuple(t.any, t.string, t.callback))
 
 --[=[
 	Performs a transaction across multiple keys atomically.
@@ -557,6 +564,9 @@ Store.update = t.wrap(Store.update, t.tuple(t.any, t.string, t.callback))
 	@within Store
 ]=]
 function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T }) -> boolean): Promise.Promise
+	assert(t.array(t.string)(keys))
+	assert(t.callback(transformFunction))
+
 	local txId = HttpService:GenerateGUID(false)
 	local logger = self._ctx.logger:extend({ method = "tx", keys = keys, txId = txId })
 
@@ -756,7 +766,6 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 		end)
 	end)
 end
-Store.tx = t.wrap(Store.tx, t.tuple(t.any, t.array(t.string), t.callback))
 
 --[=[
 	Forces an immediate save of the given key's data.
@@ -770,11 +779,12 @@ Store.tx = t.wrap(Store.tx, t.tuple(t.any, t.array(t.string), t.callback))
 	@within Store
 ]=]
 function Store:save(key: string): Promise.Promise
+	assert(t.string(key))
+
 	return self:_withSession(key, function(session)
 		return session:save()
 	end)
 end
-Store.save = t.wrap(Store.save, t.tuple(t.any, t.string))
 
 --[=[
 	Closes the store and unloads all active sessions.

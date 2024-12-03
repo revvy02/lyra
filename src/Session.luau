@@ -279,6 +279,8 @@ local function createSession<T>(params: CreateSessionParams): Session<T>
 end
 
 function Session.load<T>(params: LoadSessionParams<T>): Promise.TPromise<Session<T>>
+	assert(loadSessionParamsCheck(params))
+
 	local ctx = params.storeContext
 	local logger = ctx.logger:extend({ method = "load", key = params.key })
 
@@ -329,7 +331,6 @@ function Session.load<T>(params: LoadSessionParams<T>): Promise.TPromise<Session
 		end)
 	end)
 end
-Session.load = t.wrap(Session.load, t.tuple(loadSessionParamsCheck))
 
 function Session:updateRecord(): Promise.TPromise<any>
 	local logger = self.logger:extend({ method = "updateRecord" })
@@ -345,7 +346,6 @@ function Session:updateRecord(): Promise.TPromise<any>
 	logger:log("trace", "writing record", { txInfo = txInfo })
 	return self:writeRecord(txInfo)
 end
-Session.updateRecord = t.wrap(Session.updateRecord, t.tuple(t.any))
 
 function Session:writeRecord(txInfo: Types.TxInfo): Promise.TPromise<any>
 	local logger = self.logger:extend({ method = "writeRecord" })
@@ -415,12 +415,10 @@ function Session:writeRecord(txInfo: Types.TxInfo): Promise.TPromise<any>
 				end)
 		end)
 end
-Session.writeRecord = t.wrap(Session.writeRecord, t.tuple(t.any))
 
 function Session:isSaved(): boolean
 	return next(self.changeSet) == nil
 end
-Session.isSaved = t.wrap(Session.isSaved, t.tuple(t.any))
 
 function Session:setData(data: any): ()
 	local mutationId = HttpService:GenerateGUID(false)
@@ -428,7 +426,6 @@ function Session:setData(data: any): ()
 	self.data = data
 	self.frozenData = Tables.freezeDeep(data :: any)
 end
-Session.setData = t.wrap(Session.setData, t.tuple(t.any))
 
 function Session:mutateKey(newData: any): ()
 	local oldData = if self.data then Tables.freezeDeep(self.data :: any) else nil
@@ -439,7 +436,6 @@ function Session:mutateKey(newData: any): ()
 		task.spawn(callback, self.key, self.frozenData, oldData)
 	end
 end
-Session.mutateKey = t.wrap(Session.mutateKey, t.tuple(t.any, t.any))
 
 function Session:startAutosaving(): ()
 	local logger = self.logger:extend({ method = "startAutosaving" })
@@ -481,14 +477,12 @@ function Session:startAutosaving(): ()
 		self._cleanupAutosave = nil
 	end
 end
-Session.startAutosaving = t.wrap(Session.startAutosaving, t.tuple(t.any))
 
 function Session:stopAutosaving(): ()
 	if self._cleanupAutosave then
 		self._cleanupAutosave()
 	end
 end
-Session.stopAutosaving = t.wrap(Session.stopAutosaving, t.tuple(t.any))
 
 function Session:unload(): Promise.Promise
 	local logger = self.logger:extend({ method = "unload" })
@@ -517,14 +511,14 @@ function Session:unload(): Promise.Promise
 
 	return self.unloadPromise :: any
 end
-Session.unload = t.wrap(Session.unload, t.tuple(t.any))
 
 function Session:get<T>(): Promise.TPromise<T>
 	return Promise.resolve(self.frozenData) :: any
 end
-Session.get = t.wrap(Session.get, t.tuple(t.any))
 
 function Session:update<T>(transformFunction: (data: T) -> boolean): Promise.Promise
+	assert(t.callback(transformFunction))
+
 	local logger = self.logger:extend({ method = "update" })
 	logger:log("trace", "update called")
 
@@ -580,7 +574,6 @@ function Session:update<T>(transformFunction: (data: T) -> boolean): Promise.Pro
 		return resolve()
 	end)
 end
-Session.update = t.wrap(Session.update, t.tuple(t.any, t.callback))
 
 function Session:save(): Promise.Promise
 	local logger = self.logger:extend({ method = "save" })
@@ -626,6 +619,5 @@ function Session:save(): Promise.Promise
 		end)
 	end)
 end
-Session.save = t.wrap(Session.save, t.tuple(t.any))
 
 return Session
