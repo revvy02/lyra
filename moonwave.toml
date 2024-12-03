@@ -1,0 +1,17 @@
+title = "Lyra"
+gitRepoUrl = "placeholder"
+
+gitSourceBranch = "main"
+changelog = true
+
+[docusaurus]
+onBrokenLinks = "throw"
+onBrokenMarkdownLinks = "warn"
+
+[home]
+enabled = true
+
+[[navbar.items]]
+href = "placeholder"
+label = "Wally"
+position = "right"
