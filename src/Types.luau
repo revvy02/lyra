@@ -2,7 +2,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Promise = require(ReplicatedStorage.Packages.Promise)
+local Promise = require(script.Parent.Promise)
 local t = require(ReplicatedStorage.Packages.t)
 
 export type TxInfo = {
@@ -113,23 +113,23 @@ export type RetryHandle<T> = {
 export type HashMapInterfaceImpl = {
 	__index: HashMapInterfaceImpl,
 	_getHashMap: (self: HashMapInterface, scope: string) -> MemoryStoreHashMap,
-	_retry: (self: HashMapInterface, func: () -> any) -> RetryHandle<Promise.TypedPromise<any>>,
+	_retry: (self: HashMapInterface, func: () -> any) -> RetryHandle<Promise.TPromise<any>>,
 	new: (memoryStoreService: MemoryStoreService) -> HashMapInterface,
-	get: (self: HashMapInterface, scope: string, key: string) -> RetryHandle<Promise.TypedPromise<any?>>,
+	get: (self: HashMapInterface, scope: string, key: string) -> RetryHandle<Promise.TPromise<any?>>,
 	set: (
 		self: HashMapInterface,
 		scope: string,
 		key: string,
 		value: any,
 		expiration: number
-	) -> RetryHandle<Promise.TypedPromise<boolean>>,
+	) -> RetryHandle<Promise.TPromise<boolean>>,
 	update: (
 		self: HashMapInterface,
 		scope: string,
 		key: string,
 		transformFunction: (currentValue: any?) -> any?,
 		expiration: number
-	) -> RetryHandle<Promise.TypedPromise<any?>>,
+	) -> RetryHandle<Promise.TPromise<any?>>,
 	remove: (self: HashMapInterface, scope: string, key: string) -> RetryHandle<Promise.Promise>,
 }
 
@@ -143,10 +143,10 @@ export type HashMapInterface = typeof(setmetatable({} :: HashMapInterfaceProps, 
 export type DataStoreInterfaceImpl = {
 	__index: DataStoreInterfaceImpl,
 	_getDataStore: (self: DataStoreInterface, scope: string) -> DataStore,
-	_retry: (self: DataStoreInterface, func: () -> any) -> Promise.TypedPromise<any>,
+	_retry: (self: DataStoreInterface, func: () -> any) -> Promise.TPromise<any>,
 	new: (dataStoreService: DataStoreService) -> DataStoreInterface,
 	getRequestBudgetForBudgetType: (self: DataStoreInterface, budgetType: Enum.DataStoreRequestType) -> number,
-	get: (self: DataStoreInterface, scope: string, key: string) -> Promise.TypedPromise<(any?, DataStoreKeyInfo?)>,
+	get: (self: DataStoreInterface, scope: string, key: string) -> Promise.TPromise<(any?, DataStoreKeyInfo?)>,
 	set: (
 		self: DataStoreInterface,
 		scope: string,
@@ -154,7 +154,7 @@ export type DataStoreInterfaceImpl = {
 		value: any,
 		userIds: { number }?,
 		metadata: { [string]: any }?
-	) -> Promise.TypedPromise<string>,
+	) -> Promise.TPromise<string>,
 	update: (
 		self: DataStoreInterface,
 		scope: string,
@@ -163,8 +163,8 @@ export type DataStoreInterfaceImpl = {
 			currentValue: any,
 			keyInfo: DataStoreKeyInfo
 		) -> (any, { number }?, { [string]: any }?)
-	) -> Promise.TypedPromise<(any, DataStoreKeyInfo)>,
-	remove: (self: DataStoreInterface, scope: string, key: string) -> Promise.TypedPromise<(any?, DataStoreKeyInfo?)>,
+	) -> Promise.TPromise<(any, DataStoreKeyInfo)>,
+	remove: (self: DataStoreInterface, scope: string, key: string) -> Promise.TPromise<(any?, DataStoreKeyInfo?)>,
 	listVersions: (
 		self: DataStoreInterface,
 		scope: string,
@@ -173,13 +173,13 @@ export type DataStoreInterfaceImpl = {
 		minDate: number?,
 		maxDate: number?,
 		pageSize: number?
-	) -> Promise.TypedPromise<DataStoreVersionPages>,
+	) -> Promise.TPromise<DataStoreVersionPages>,
 	getVersion: (
 		self: DataStoreInterface,
 		scope: string,
 		key: string,
 		version: string
-	) -> Promise.TypedPromise<(any?, DataStoreKeyInfo?)>,
+	) -> Promise.TPromise<(any?, DataStoreKeyInfo?)>,
 }
 
 export type DataStoreInterfaceProps = {

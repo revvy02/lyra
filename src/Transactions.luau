@@ -1,9 +1,7 @@
 --!strict
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 local Types = require(script.Parent.Types)
-local Promise = require(ReplicatedStorage.Packages.Promise)
+local Promise = require(script.Parent.Promise)
 
 export type ReadTxParams = {
 	dataStoreInterface: Types.DataStoreInterface,
@@ -11,7 +9,7 @@ export type ReadTxParams = {
 	txInfo: Types.TxInfo,
 }
 
-local function readTx(params: ReadTxParams): Promise.TypedPromise<any>
+local function readTx(params: ReadTxParams): Promise.TPromise<any>
 	local txInfo = params.txInfo
 
 	local txId = txInfo.txId

@@ -1,5 +1,39 @@
 --!strict
 
+--[=[
+	A Store coordinates Sessions and provides a safe way to interact with persistent data.
+
+	```lua
+	local store = Store.createStore({
+		name = "PlayerData",
+		template = {
+			coins = 0,
+			items = {},
+		},
+		schema = function(data)
+			return type(data.coins) == "number" and type(data.items) == "table", 
+			"Invalid data format"
+		end,
+	})
+
+	-- Load data for a player
+	store:load("player_1"):andThen(function()
+		-- Get current data
+		return store:get("player_1")
+	end):andThen(function(data)
+		print(data.coins) -- 0
+		
+		-- Update data
+		return store:update("player_1", function(data)
+			data.coins += 100
+			return true -- Must return true to commit changes
+		end)
+	end)
+	```
+
+	@class Store
+]=]
+
 local DataStoreService = game:GetService("DataStoreService")
 local HttpService = game:GetService("HttpService")
 local MemoryStoreService = game:GetService("MemoryStoreService")
@@ -100,6 +134,38 @@ export type Store<T> = typeof(setmetatable({} :: StoreProps<T>, {} :: StoreImpl<
 local Store: StoreImpl<any> = {} :: StoreImpl<any>
 Store.__index = Store
 
+--[=[
+	Creates a new Store with the given configuration.
+
+	```lua
+	local store = Store.createStore({
+		name = "PlayerData",
+		template = { coins = 0 },
+		schema = function(data)
+			return type(data.coins) == "number", "coins must be a number"
+		end,
+		
+		-- Optional: Runs whenever data changes
+		changedCallbacks = {
+			function(key, newData, oldData)
+				print(key, "changed from", oldData.coins, "to", newData.coins)
+			end,
+		},
+
+		-- Optional: Called if lock is lost during session
+		onLockLost = function(key)
+			warn("Lost lock for", key)
+		end,
+	})
+	```
+
+	:::caution
+	If schema validation fails at any point, operations will be rejected with the error message.
+	:::
+
+	@within Store
+	@function createStore
+]=]
 local function createStore<T>(config: StoreConfig<T>): Store<T>
 	local logger = Log.createLogger(config.logCallback or function() end, {
 		lib = "lyra",
@@ -173,6 +239,12 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 end
 createStore = t.wrap(createStore, t.tuple(storeConfigCheck))
 
+--[=[
+	Processes an orphaned file in the store's queue.
+
+	@within Store
+	@private
+]=]
 function Store:_processOrphanedFile(item: Types.OrphanedFileQueueItem): boolean
 	local logger = self._ctx.logger:extend({ method = "_processOrphanedFile", key = item.key, shard = item.file.shard })
 
@@ -217,6 +289,22 @@ function Store:_processOrphanedFile(item: Types.OrphanedFileQueueItem): boolean
 	return true
 end
 
+--[=[
+	Loads data for the given key into memory and establishes a session.
+	Must be called before using any other methods with this key.
+
+	```lua
+	store:load("player_1"):andThen(function()
+		print("Data loaded!")
+	end):catch(function(err)
+		warn("Failed to load:", err)
+	end)
+	```
+
+	@error "Load already in progress" -- Another load is already in progress for this key
+	@error "Store is closed" -- The store has been closed
+	@within Store 
+]=]
 function Store:load(key: string, userIds: { number }?): Promise.Promise
 	local logger = self._ctx.logger:extend({ method = "load", key = key })
 	logger:log("trace", "attempting to load key")
@@ -286,6 +374,18 @@ function Store:load(key: string, userIds: { number }?): Promise.Promise
 end
 Store.load = t.wrap(Store.load, t.tuple(t.any, t.string, t.optional(t.array(t.number))))
 
+--[=[
+	Unloads data for the given key from memory and ends the session.
+
+	```lua
+	store:unload("player_1"):andThen(function()
+		print("Data unloaded!")
+	end)
+	```
+
+	@error "Store is closed" -- The store has been closed
+	@within Store
+]=]
 function Store:unload(key: string): Promise.Promise
 	local logger = self._ctx.logger:extend({ method = "unload", key = key })
 	logger:log("trace", "attempting to unload key")
@@ -322,6 +422,12 @@ function Store:unload(key: string): Promise.Promise
 end
 Store.unload = t.wrap(Store.unload, t.tuple(t.any, t.string))
 
+--[=[
+	Internal helper to manage sessions.
+
+	@within Store
+	@private
+]=]
 function Store:_withSession(key: string, callback: (session: Session.Session<any>) -> any): Promise.Promise
 	local logger = self._ctx.logger:extend({ method = "_withSession", key = key })
 
@@ -359,12 +465,33 @@ function Store:_withSession(key: string, callback: (session: Session.Session<any
 	end)
 end
 
+--[=[
+	Returns the DataStoreKeyInfo associated with the given key, if available.
+
+	@within Store
+	@private
+]=]
 function Store:_getKeyInfo(key: string): Promise.TypedPromise<DataStoreKeyInfo?>
 	return self:_withSession(key, function(session)
 		return session.keyInfo
 	end)
 end
 
+--[=[
+	Gets the current data for the given key.
+
+	```lua
+	store:get("player_1"):andThen(function(data)
+		print("Current coins:", data.coins)
+	end):catch(function(err)
+		warn("Failed to get data:", err)
+	end)
+	```
+
+	@error "Key not loaded" -- The key hasn't been loaded with store:load()
+	@error "Store is closed" -- The store has been closed
+	@within Store
+]=]
 function Store:get<T>(key: string): Promise.TypedPromise<T>
 	return self:_withSession(key, function(session)
 		return session:get()
@@ -372,6 +499,30 @@ function Store:get<T>(key: string): Promise.TypedPromise<T>
 end
 Store.get = t.wrap(Store.get, t.tuple(t.any, t.string))
 
+--[=[
+	Updates data for the given key using a transform function.
+	The transform function receives the current data and can modify it.
+	Must return true to commit changes, or false to abort.
+
+	```lua
+	store:update("player_1", function(data)
+		if data.coins < 100 then
+			data.coins += 50
+			return true -- Commit changes
+		end
+		return false -- Don't commit changes
+	end):andThen(function()
+		print("Update successful!")
+	end):catch(function(err)
+		warn("Update failed:", err)
+	end)
+	```
+
+	@error "Key not loaded" -- The key hasn't been loaded with store:load()
+	@error "Store is closed" -- The store has been closed
+	@error "Schema validation failed" -- The transformed data failed schema validation
+	@within Store
+]=]
 function Store:update<T>(key: string, transformFunction: (data: T) -> boolean): Promise.Promise
 	return self:_withSession(key, function(session)
 		return session:update(transformFunction)
@@ -379,6 +530,32 @@ function Store:update<T>(key: string, transformFunction: (data: T) -> boolean): 
 end
 Store.update = t.wrap(Store.update, t.tuple(t.any, t.string, t.callback))
 
+--[=[
+	Performs a transaction across multiple keys atomically.
+	All keys must be loaded first. Either all changes are applied, or none are.
+
+	```lua
+	store:tx({"player_1", "player_2"}, function(state)
+		-- Transfer coins between players
+		if state.player_1.coins >= 100 then
+			state.player_1.coins -= 100
+			state.player_2.coins += 100
+			return true -- Commit transaction
+		end
+		return false -- Abort transaction
+	end):andThen(function()
+		print("Transaction successful!")
+	end):catch(function(err)
+		warn("Transaction failed:", err)
+	end)
+	```
+
+	@error "Key not loaded" -- One or more keys haven't been loaded
+	@error "Store is closed" -- The store has been closed
+	@error "Schema validation failed" -- The transformed data failed schema validation
+	@error "Keys changed in transaction" -- The transform function modified the keys table
+	@within Store
+]=]
 function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T }) -> boolean): Promise.Promise
 	local txId = HttpService:GenerateGUID(false)
 	local logger = self._ctx.logger:extend({ method = "tx", keys = keys, txId = txId })
@@ -567,6 +744,17 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 end
 Store.tx = t.wrap(Store.tx, t.tuple(t.any, t.array(t.string), t.callback))
 
+--[=[
+	Forces an immediate save of the given key's data.
+	
+	:::info
+	Data is automatically saved periodically, so manual saves are usually only useful in scenarios where you need to guarantee data has saved, such as ProcessReceipt.
+	:::
+
+	@error "Key not loaded" -- The key hasn't been loaded with store:load()
+	@error "Store is closed" -- The store has been closed
+	@within Store
+]=]
 function Store:save(key: string): Promise.Promise
 	return self:_withSession(key, function(session)
 		return session:save()
@@ -574,6 +762,12 @@ function Store:save(key: string): Promise.Promise
 end
 Store.save = t.wrap(Store.save, t.tuple(t.any, t.string))
 
+--[=[
+	Closes the store and unloads all active sessions.
+	The store cannot be used after closing.
+
+	@within Store
+]=]
 function Store:close(): Promise.Promise
 	local logger = self._ctx.logger:extend({ method = "close" })
 	logger:log("trace", "closing store")
@@ -601,6 +795,11 @@ function Store:close(): Promise.Promise
 	end)
 end
 
+--[=[
+	Checks if a lock is currently active for the given key.
+
+	@within Store
+]=]
 function Store:probeLockActive(key: string): Promise.TypedPromise<boolean>
 	return Locks.probeLockActive({
 		storeContext = self._ctx,
@@ -608,6 +807,11 @@ function Store:probeLockActive(key: string): Promise.TypedPromise<boolean>
 	})
 end
 
+--[=[
+	Returns DataStoreVersionPages for the given key.
+
+	@within Store
+]=]
 function Store:listVersions(params: ListVersionParams): Promise.TypedPromise<DataStoreVersionPages>
 	return self._ctx.dataStoreInterface:listVersions(
 		self._ctx.recordScope,
@@ -619,6 +823,11 @@ function Store:listVersions(params: ListVersionParams): Promise.TypedPromise<Dat
 	)
 end
 
+--[=[
+	Reads a specific version of data for the given key.
+
+	@within Store
+]=]
 function Store:readVersion<T>(key: string, version: string): Promise.TypedPromise<(T, DataStoreKeyInfo)>
 	return self._ctx.dataStoreInterface
 		:getVersion(self._ctx.recordScope, key, version)

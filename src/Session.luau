@@ -8,7 +8,7 @@ local Files = require(script.Parent.Files)
 local Locks = require(script.Parent.Locks)
 local Migrations = require(script.Parent.Migrations)
 local PromiseQueue = require(script.Parent.PromiseQueue)
-local Promise = require(ReplicatedStorage.Packages.Promise)
+local Promise = require(script.Parent.Promise)
 local Sift = require(ReplicatedStorage.Packages.Sift)
 local t = require(ReplicatedStorage.Packages.t)
 local Types = require(script.Parent.Types)
@@ -24,10 +24,10 @@ type Set = { [string]: boolean }
 type SessionImpl<T> = {
 	__index: SessionImpl<T>,
 
-	load: (params: LoadSessionParams<T>) -> Promise.TypedPromise<Session<T>>,
+	load: (params: LoadSessionParams<T>) -> Promise.TPromise<Session<T>>,
 
-	updateRecord: (self: Session<T>) -> Promise.TypedPromise<any>,
-	writeRecord: (self: Session<T>, txInfo: Types.TxInfo) -> Promise.TypedPromise<any>,
+	updateRecord: (self: Session<T>) -> Promise.TPromise<any>,
+	writeRecord: (self: Session<T>, txInfo: Types.TxInfo) -> Promise.TPromise<any>,
 
 	isSaved: (self: Session<T>) -> boolean,
 
@@ -38,7 +38,7 @@ type SessionImpl<T> = {
 	stopAutosaving: (self: Session<T>) -> (),
 
 	unload: (self: Session<T>) -> Promise.Promise,
-	get: (self: Session<T>) -> Promise.TypedPromise<T>,
+	get: (self: Session<T>) -> Promise.TPromise<T>,
 	update: (self: Session<T>, transformFunction: (data: T) -> boolean) -> Promise.Promise,
 	save: (self: Session<T>) -> Promise.Promise,
 }
@@ -282,7 +282,7 @@ local function createSession<T>(params: CreateSessionParams): Session<T>
 	return setmetatable(props, Session) :: Session<T>
 end
 
-function Session.load<T>(params: LoadSessionParams<T>): Promise.TypedPromise<Session<T>>
+function Session.load<T>(params: LoadSessionParams<T>): Promise.TPromise<Session<T>>
 	local ctx = params.storeContext
 	local logger = ctx.logger:extend({ method = "load", key = params.key })
 
@@ -335,7 +335,7 @@ function Session.load<T>(params: LoadSessionParams<T>): Promise.TypedPromise<Ses
 end
 Session.load = t.wrap(Session.load, t.tuple(loadSessionParamsCheck))
 
-function Session:updateRecord(): Promise.TypedPromise<any>
+function Session:updateRecord(): Promise.TPromise<any>
 	local logger = self.logger:extend({ method = "updateRecord" })
 	logger:log("trace", "updateRecord called")
 
@@ -351,7 +351,7 @@ function Session:updateRecord(): Promise.TypedPromise<any>
 end
 Session.updateRecord = t.wrap(Session.updateRecord, t.tuple(t.any))
 
-function Session:writeRecord(txInfo: Types.TxInfo): Promise.TypedPromise<any>
+function Session:writeRecord(txInfo: Types.TxInfo): Promise.TPromise<any>
 	local logger = self.logger:extend({ method = "writeRecord" })
 	logger:log("trace", "writeRecord called")
 
@@ -520,7 +520,7 @@ function Session:unload(): Promise.Promise
 end
 Session.unload = t.wrap(Session.unload, t.tuple(t.any))
 
-function Session:get<T>(): Promise.TypedPromise<T>
+function Session:get<T>(): Promise.TPromise<T>
 	return Promise.resolve(self.frozenData) :: any
 end
 Session.get = t.wrap(Session.get, t.tuple(t.any))

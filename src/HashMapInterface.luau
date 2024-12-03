@@ -1,8 +1,6 @@
 --!strict
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local Promise = require(ReplicatedStorage.Packages.Promise)
+local Promise = require(script.Parent.Promise)
 local Types = require(script.Parent.Types)
 
 local MAX_RETRIES = 5
@@ -32,10 +30,10 @@ function HashMapInterface:_getHashMap(scope: string): MemoryStoreHashMap
 	return self._hashMaps[scope]
 end
 
-function HashMapInterface:_retry(func: () -> any): Types.RetryHandle<Promise.TypedPromise<any>>
+function HashMapInterface:_retry(func: () -> any): Types.RetryHandle<Promise.TPromise<any>>
 	local cancel = false
 
-	local handle: Types.RetryHandle<Promise.TypedPromise<any>> = {
+	local handle: Types.RetryHandle<Promise.TPromise<any>> = {
 		promise = Promise.new(function(resolve, reject)
 			local lastError
 			for i = 1, MAX_RETRIES do
@@ -84,7 +82,7 @@ function HashMapInterface:_retry(func: () -> any): Types.RetryHandle<Promise.Typ
 	return handle
 end
 
-function HashMapInterface:get(scope: string, key: string): Types.RetryHandle<Promise.TypedPromise<any?>>
+function HashMapInterface:get(scope: string, key: string): Types.RetryHandle<Promise.TPromise<any?>>
 	local hashMap = self:_getHashMap(scope)
 	return self:_retry(function()
 		return hashMap:GetAsync(key)
@@ -96,7 +94,7 @@ function HashMapInterface:set(
 	key: string,
 	value: any,
 	expiration: number
-): Types.RetryHandle<Promise.TypedPromise<boolean>>
+): Types.RetryHandle<Promise.TPromise<boolean>>
 	local hashMap = self:_getHashMap(scope)
 	return self:_retry(function()
 		return hashMap:SetAsync(key, value, expiration)
@@ -108,7 +106,7 @@ function HashMapInterface:update(
 	key: string,
 	transformFunction: (currentValue: any?) -> any?,
 	expiration: number
-): Types.RetryHandle<Promise.TypedPromise<any?>>
+): Types.RetryHandle<Promise.TPromise<any?>>
 	local hashMap = self:_getHashMap(scope)
 	return self:_retry(function()
 		return hashMap:UpdateAsync(key, transformFunction, expiration)

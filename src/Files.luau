@@ -3,7 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(script.Parent.Types)
 local splitUtf8String = require(script.Parent.splitUtf8String)
-local Promise = require(ReplicatedStorage.Packages.Promise)
+local Promise = require(script.Parent.Promise)
 local Sift = require(ReplicatedStorage.Packages.Sift)
 
 local Array = Sift.Array
@@ -25,7 +25,7 @@ export type WriteError = {
 	file: Types.File,
 }
 
-local function write(params: WriteParams): Promise.TypedPromise<Types.File>
+local function write(params: WriteParams): Promise.TPromise<Types.File>
 	local str = HttpService:JSONEncode(params.data)
 	if #str <= params.maxShardSize then
 		return Promise.resolve({ data = params.data } :: Types.File)
@@ -53,7 +53,7 @@ export type ReadParams = {
 	file: Types.File,
 }
 
-local function read(params: ReadParams): Promise.TypedPromise<any>
+local function read(params: ReadParams): Promise.TPromise<any>
 	if not isLargeFile(params.file) then
 		return Promise.resolve(params.file.data)
 	end

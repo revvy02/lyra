@@ -1,12 +1,11 @@
 --!strict
 
 local HttpService = game:GetService("HttpService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LOCK_TTL_ERROR_MARGIN_SECS = 0.2
 
 local Types = require(script.Parent.Types)
-local Promise = require(ReplicatedStorage.Packages.Promise)
+local Promise = require(script.Parent.Promise)
 
 type LockStatus = "acquiring" | "held" | "released"
 
@@ -24,7 +23,7 @@ export type AcquireLockParams = {
 	refreshInterval: number,
 }
 
-local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<LockHandle>
+local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHandle>
 	local lockId = HttpService:GenerateGUID(false)
 	local expiredCallbacks: { () -> () } = {}
 	local expiryThread: thread? = nil
@@ -112,7 +111,7 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 		transitionTo("acquiring")
 
 		local start = os.clock()
-		local currentRetry: Types.RetryHandle<Promise.TypedPromise<any>>? = nil
+		local currentRetry: Types.RetryHandle<Promise.TPromise<any>>? = nil
 		local attemptCount = 0
 
 		return Promise.new(function(resolve, reject, onCancel)
@@ -165,7 +164,7 @@ local function acquireLock(params: AcquireLockParams): Promise.TypedPromise<Lock
 	local function setupLockRefresh()
 		logger:log("trace", "setting up lock refresh")
 
-		local currentRefreshHandle: Types.RetryHandle<Promise.TypedPromise<any>>? = nil
+		local currentRefreshHandle: Types.RetryHandle<Promise.TPromise<any>>? = nil
 		transitionTo("held")
 
 		refreshPromise = Promise.new(function(resolve, _, onCancel)
@@ -237,7 +236,7 @@ export type ProbeLockActiveParams = {
 	key: string,
 }
 
-local function probeLockActive(params: ProbeLockActiveParams): Promise.TypedPromise<boolean>
+local function probeLockActive(params: ProbeLockActiveParams): Promise.TPromise<boolean>
 	local ctx = params.storeContext
 	local key = params.key
 	local scope = ctx.lockScope

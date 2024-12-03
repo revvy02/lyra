@@ -1,9 +1,8 @@
 --!strict
 
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Promise = require(ReplicatedStorage.Packages.Promise)
+local Promise = require(script.Parent.Promise)
 local Store = require(script.Parent.Store)
 local Types = require(script.Parent.Types)
 
@@ -11,7 +10,7 @@ type PlayerStoreImpl<T> = {
 	__index: PlayerStoreImpl<T>,
 	_kickPlayer: (self: PlayerStore<T>, keyOrPlayer: string | Player, message: string) -> (),
 
-	get: (self: PlayerStore<T>, player: Player) -> Promise.TypedPromise<T>,
+	get: (self: PlayerStore<T>, player: Player) -> Promise.TPromise<T>,
 	load: (self: PlayerStore<T>, player: Player) -> Promise.Promise,
 	unload: (self: PlayerStore<T>, player: Player) -> Promise.Promise,
 	update: (self: PlayerStore<T>, player: Player, transformFunction: (data: T) -> boolean) -> Promise.Promise,

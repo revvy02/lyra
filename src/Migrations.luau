@@ -1,7 +1,7 @@
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Promise = require(ReplicatedStorage.Packages.Promise)
+local Promise = require(script.Parent.Promise)
 local Types = require(script.Parent.Types)
 local Sift = require(ReplicatedStorage.Packages.Sift)
 
@@ -71,7 +71,7 @@ export type ApplyResult = {
 	appliedMigrations: { string },
 }
 
-local function apply(params: ApplyParams): Promise.TypedPromise<ApplyResult>
+local function apply(params: ApplyParams): Promise.TPromise<ApplyResult>
 	local logger = params.logger:extend({ method = "applyMigrations" })
 	local currentData = params.data
 	local appliedMigrations = params.appliedMigrations

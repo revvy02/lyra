@@ -3,7 +3,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(script.Parent.Types)
-local Promise = require(ReplicatedStorage.Packages.Promise)
+local Promise = require(script.Parent.Promise)
 local Sift = require(ReplicatedStorage.Packages.Sift)
 
 type PromiseQueueImpl = {
@@ -12,7 +12,7 @@ type PromiseQueueImpl = {
 	new: (params: CreatePromiseQueueParams) -> PromiseQueue,
 
 	_processQueue: (self: PromiseQueue) -> (),
-	_addResumableBlock: (queue: PromiseQueue) -> Promise.TypedPromise<() -> ()>,
+	_addResumableBlock: (queue: PromiseQueue) -> Promise.TPromise<() -> ()>,
 	_getLogContext: (self: PromiseQueue, item: QueueItem?) -> { [string]: any },
 
 	multiQueueAdd: (queues: { PromiseQueue }, callback: () -> ()) -> Promise.Promise,
@@ -127,7 +127,7 @@ end
 
 -- Returns a promise that resolves when the queue is blocked by this. The
 -- resolved value is a function to unblock the queue.
-local function addResumableBlock(queue: PromiseQueue): Promise.TypedPromise<() -> ()>
+local function addResumableBlock(queue: PromiseQueue): Promise.TPromise<() -> ()>
 	return Promise.new(function(resolve)
 		queue:add(function()
 			return Promise.new(function(resume)

@@ -1,8 +1,6 @@
 --!strict
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local Promise = require(ReplicatedStorage.Packages.Promise)
+local Promise = require(script.Parent.Promise)
 local Types = require(script.Parent.Types)
 
 local MAX_RETRIES = 5
@@ -40,7 +38,7 @@ function DataStoreInterface:_getDataStore(scope: string): DataStore
 	return self._dataStores[scope]
 end
 
-function DataStoreInterface:_retry(func: () -> any): Promise.TypedPromise<any>
+function DataStoreInterface:_retry(func: () -> any): Promise.TPromise<any>
 	return Promise.new(function(resolve, reject)
 		local lastError
 		for i = 1, MAX_RETRIES do
@@ -75,7 +73,7 @@ function DataStoreInterface:getRequestBudgetForBudgetType(budgetType: Enum.DataS
 	return self._dataStoreService:GetRequestBudgetForRequestType(budgetType)
 end
 
-function DataStoreInterface:get(scope: string, key: string): Promise.TypedPromise<(any?, DataStoreKeyInfo?)>
+function DataStoreInterface:get(scope: string, key: string): Promise.TPromise<(any?, DataStoreKeyInfo?)>
 	local dataStore = self:_getDataStore(scope)
 	return self:_retry(function()
 		return dataStore:GetAsync(key, nil :: any)
@@ -88,7 +86,7 @@ function DataStoreInterface:set(
 	value: any,
 	userIds: { number }?,
 	metadata: { [string]: any }?
-): Promise.TypedPromise<string>
+): Promise.TPromise<string>
 	local dataStore = self:_getDataStore(scope)
 	return self:_retry(function()
 		local setOptions = Instance.new("DataStoreSetOptions")
@@ -103,14 +101,14 @@ function DataStoreInterface:update(
 	scope: string,
 	key: string,
 	transformFunction: (currentValue: any, keyInfo: DataStoreKeyInfo) -> (any, { number }?, {}?)
-): Promise.TypedPromise<(any, DataStoreKeyInfo)>
+): Promise.TPromise<(any, DataStoreKeyInfo)>
 	local dataStore = self:_getDataStore(scope)
 	return self:_retry(function()
 		return dataStore:UpdateAsync(key, transformFunction)
 	end) :: any
 end
 
-function DataStoreInterface:remove(scope: string, key: string): Promise.TypedPromise<(any?, DataStoreKeyInfo?)>
+function DataStoreInterface:remove(scope: string, key: string): Promise.TPromise<(any?, DataStoreKeyInfo?)>
 	local dataStore = self:_getDataStore(scope)
 	return self:_retry(function()
 		return dataStore:RemoveAsync(key)
@@ -124,7 +122,7 @@ function DataStoreInterface:listVersions(
 	minDate: number?,
 	maxDate: number?,
 	pageSize: number?
-): Promise.TypedPromise<DataStoreVersionPages>
+): Promise.TPromise<DataStoreVersionPages>
 	local dataStore = self:_getDataStore(scope)
 	return self:_retry(function()
 		return dataStore:ListVersionsAsync(key, sortDirection, minDate, maxDate, pageSize)
@@ -135,7 +133,7 @@ function DataStoreInterface:getVersion(
 	scope: string,
 	key: string,
 	version: string
-): Promise.TypedPromise<(any?, DataStoreKeyInfo?)>
+): Promise.TPromise<(any?, DataStoreKeyInfo?)>
 	local dataStore = self:_getDataStore(scope)
 	return self:_retry(function()
 		return dataStore:GetVersionAsync(key, version)
