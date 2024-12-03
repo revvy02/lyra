@@ -57,6 +57,37 @@ local t = require(ReplicatedStorage.Packages.t)
 local Types = require(script.Parent.Types)
 local noYield = require(script.Parent.noYield)
 
+--[=[
+	Configuration for creating a new Store.
+
+	@interface StoreConfig
+	.name string -- Name of the store
+	.template T -- Template/default value for new data
+	.schema (value: any) -> (boolean, string?) -- Validates data format
+	.migrationSteps? { MigrationStep } -- Steps to migrate old data formats
+	.importLegacyData? (key: string) -> any? -- Function to import legacy data
+	.dataStoreInterface? DataStoreInterface -- Custom DataStore implementation
+	.useMock? boolean -- Use mock DataStore (Studio only)
+	.changedCallbacks? { (key: string, newData: T, oldData: T?) -> () -> () } -- Run when data changes
+	.logCallback? (logMessage: LogMessage) -> () -- Custom logging function
+	.onLockLost? (key: string) -> () -- Called if DataStore lock is lost
+
+	Example usage:
+	```lua
+	local config: StoreConfig<PlayerData> = {
+		name = "PlayerData",
+		template = {
+			coins = 0,
+			items = {},
+		},
+		schema = function(value)
+			return type(value.coins) == "number", "coins must be a number"
+		end,
+	}
+	```
+
+	@within Store
+]=]
 export type StoreConfig<T> = {
 	name: string,
 	template: T,
@@ -160,6 +191,8 @@ Store.__index = Store
 	If schema validation fails at any point, operations will be rejected with the error message.
 	:::
 
+	@param config StoreConfig<T> -- Configuration for the store
+	@return Store<T>
 	@within Store
 	@function createStore
 ]=]
@@ -304,6 +337,7 @@ end
 
 	@error "Load already in progress" -- Another load is already in progress for this key
 	@error "Store is closed" -- The store has been closed
+	@return Promise -- Resolves when data is loaded
 	@within Store 
 ]=]
 function Store:load(key: string, userIds: { number }?): Promise.Promise
@@ -387,6 +421,7 @@ end
 	```
 
 	@error "Store is closed" -- The store has been closed
+	@return Promise -- Resolves when data is unloaded
 	@within Store
 ]=]
 function Store:unload(key: string): Promise.Promise
@@ -430,6 +465,7 @@ end
 	Internal helper to manage sessions.
 
 	@within Store
+	@return Promise -- Resolves with the result of the callback
 	@private
 ]=]
 function Store:_withSession(key: string, callback: (session: Session.Session<any>) -> any): Promise.Promise
@@ -473,6 +509,7 @@ end
 	Returns the DataStoreKeyInfo associated with the given key, if available.
 
 	@within Store
+	@return Promise<DataStoreKeyInfo?> -- Resolves with the key info, or nil if not available
 	@private
 ]=]
 function Store:_getKeyInfo(key: string): Promise.TPromise<DataStoreKeyInfo?>
@@ -494,6 +531,7 @@ end
 
 	@error "Key not loaded" -- The key hasn't been loaded with store:load()
 	@error "Store is closed" -- The store has been closed
+	@return Promise<T> -- Resolves with the current data
 	@within Store
 ]=]
 function Store:get<T>(key: string): Promise.TPromise<T>
@@ -526,6 +564,7 @@ end
 	@error "Key not loaded" -- The key hasn't been loaded with store:load()
 	@error "Store is closed" -- The store has been closed
 	@error "Schema validation failed" -- The transformed data failed schema validation
+	@return Promise -- Resolves when the update is complete
 	@within Store
 ]=]
 function Store:update<T>(key: string, transformFunction: (data: T) -> boolean): Promise.Promise
@@ -561,6 +600,7 @@ end
 	@error "Store is closed" -- The store has been closed
 	@error "Schema validation failed" -- The transformed data failed schema validation
 	@error "Keys changed in transaction" -- The transform function modified the keys table
+	@return Promise -- Resolves when the transaction is complete
 	@within Store
 ]=]
 function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T }) -> boolean): Promise.Promise
@@ -776,6 +816,7 @@ end
 
 	@error "Key not loaded" -- The key hasn't been loaded with store:load()
 	@error "Store is closed" -- The store has been closed
+	@return Promise -- Resolves when the save is complete
 	@within Store
 ]=]
 function Store:save(key: string): Promise.Promise
@@ -788,8 +829,9 @@ end
 
 --[=[
 	Closes the store and unloads all active sessions.
-	The store cannot be used after closing.
+	The store cannot be used after closing
 
+	@return Promise -- Resolves when the store is closed
 	@within Store
 ]=]
 function Store:close(): Promise.Promise
@@ -822,6 +864,7 @@ end
 --[=[
 	Checks if a lock is currently active for the given key.
 
+	@return Promise<boolean>
 	@within Store
 ]=]
 function Store:probeLockActive(key: string): Promise.TPromise<boolean>
@@ -834,6 +877,7 @@ end
 --[=[
 	Returns DataStoreVersionPages for the given key.
 
+	@return Promise<DataStoreVersionPages>
 	@within Store
 ]=]
 function Store:listVersions(params: ListVersionParams): Promise.TPromise<DataStoreVersionPages>
@@ -850,6 +894,7 @@ end
 --[=[
 	Reads a specific version of data for the given key.
 
+	@return Promise<T, DataStoreKeyInfo>
 	@within Store
 ]=]
 function Store:readVersion<T>(key: string, version: string): Promise.TPromise<(T, DataStoreKeyInfo)>

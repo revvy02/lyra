@@ -1,5 +1,11 @@
 --!strict
 
+--[=[
+	Common types shared among different modules.
+
+	@class Types
+]=]
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Promise = require(script.Parent.Promise)
@@ -50,6 +56,15 @@ type OrphanedFileQueueProps = {
 
 export type OrphanedFileQueue = typeof(setmetatable({} :: OrphanedFileQueueProps, {} :: OrphanedFileQueueImpl))
 
+--[=[
+	A migration step
+
+	@interface MigrationStep
+	.name string -- The name of the migration step
+	.apply (data: { [string]: any }) -> { [string]: any } -- The function to apply the migration step
+
+	@within Types
+]=]
 export type MigrationStep = {
 	name: string,
 	apply: (data: { [string]: any }) -> { [string]: any },
@@ -83,13 +98,37 @@ local txInfoCheck = t.some(
 )
 local fileCheck = t.some(t.strictInterface({ data = t.any }), t.strictInterface({ shard = t.string, count = t.number }))
 
+--[=[
+	An enum value representing a log level.
+
+	@interface Level
+	.fatal "fatal"
+	.error "error"
+	.warn "warn"
+	.info "info"
+	.debug "debug"
+	.trace "trace"
+
+	@tag enum
+	@within Types
+]=]
+export type Level = "fatal" | "error" | "warn" | "info" | "debug" | "trace"
+
+--[=[
+	Represents a log message.
+
+	@interface LogMessage
+	.message string
+	.level Level
+	.context { [string]: any }?
+
+	@within Types
+]=]
 export type LogMessage = {
 	message: string,
 	level: Level,
 	context: { [string]: any }?,
 }
-
-export type Level = "fatal" | "error" | "warn" | "info" | "debug" | "trace"
 
 export type LoggerImpl = {
 	__index: LoggerImpl,
