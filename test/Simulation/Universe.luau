@@ -1,8 +1,8 @@
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Tables = require(ReplicatedStorage.Packages.Lyra.Tables)
 local Promise = require(ReplicatedStorage.Packages.Promise)
-local Sift = require(ReplicatedStorage.Packages.Sift)
 
 local Server = {}
 Server.__index = Server
@@ -173,12 +173,12 @@ function Server:validate(id)
 	return self.store
 		:get(id)
 		:andThen(function(data)
-			data = Sift.Dictionary.copyDeep(data)
+			data = Tables.copyDeep(data)
 			local playerData = self.simulationConfig.playerData[id]
 			if playerData == nil then
 				self.simulationConfig.playerData[id] = data
 			else
-				if not Sift.Dictionary.equalsDeep(playerData, data) then
+				if not Tables.equalsDeep(playerData, data) then
 					local diff = getDiff(data, playerData)
 					warn(`Data mismatch for player {id}: {HttpService:JSONEncode(diff)}`)
 				else
@@ -276,7 +276,7 @@ function Universe.new(config)
 	for _ = 1, config.maxPlayers do
 		local id = string.sub(game.HttpService:GenerateGUID(false), 1, 8)
 		table.insert(self.playerPool, id)
-		-- self.playerData[id] = Sift.Dictionary.copyDeep(storeConfig.template)
+		-- self.playerData[id] = Tables.copyDeep(storeConfig.template)
 	end
 	return self
 end

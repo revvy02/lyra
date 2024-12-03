@@ -1,8 +1,6 @@
 --!strict
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local Sift = require(ReplicatedStorage.Packages.Sift)
+local Tables = require(script.Parent.Tables)
 
 local mockData = {}
 local mockKeyInfo = {}
@@ -171,13 +169,13 @@ local function createMockStore(datastoreName: string, scope: string?): DataStore
 		local scopedData = getScopedData(self)
 		local keyInfo = mockKeyInfo[`{self.datastoreName}|{self.scope}|{key}`] or createMockKeyInfo()
 		local oldScopedData = scopedData[key]
-		local previousValue = oldScopedData ~= nil and Sift.Dictionary.copyDeep(oldScopedData)
-		local thisValue = oldScopedData ~= nil and Sift.Dictionary.copyDeep(oldScopedData)
+		local previousValue = oldScopedData ~= nil and Tables.copyDeep(oldScopedData)
+		local thisValue = oldScopedData ~= nil and Tables.copyDeep(oldScopedData)
 
 		local newValue, newUserIds, newMetadata = transformFunction(thisValue, keyInfo)
 
 		if newValue ~= nil then
-			if not Sift.Dictionary.equalsDeep(previousValue, thisValue) then
+			if not Tables.equalsDeep(previousValue, thisValue) then
 				error("DataStoreService:UpdateAsync() Data store value has changed, retrying.", 2)
 			end
 

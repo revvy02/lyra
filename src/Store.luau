@@ -51,14 +51,11 @@ local MockDataStoreService = require(script.Parent.MockDataStoreService)
 local OrphanedFileQueue = require(script.Parent.OrphanedFileQueue)
 local PromiseQueue = require(script.Parent.PromiseQueue)
 local Transactions = require(script.Parent.Transactions)
-local Promise = require(ReplicatedStorage.Packages.Promise)
-local Sift = require(ReplicatedStorage.Packages.Sift)
+local Promise = require(script.Parent.Promise)
+local Tables = require(script.Parent.Tables)
 local t = require(ReplicatedStorage.Packages.t)
 local Types = require(script.Parent.Types)
 local noYield = require(script.Parent.noYield)
-
-local Dictionary = Sift.Dictionary
-local Array = Sift.Array
 
 export type StoreConfig<T> = {
 	name: string,
@@ -101,11 +98,11 @@ type StoreImpl<T> = {
 
 	_processOrphanedFile: (self: Store<T>, item: Types.OrphanedFileQueueItem) -> boolean,
 	_withSession: (self: Store<T>, key: string, callback: (session: Session.Session<any>) -> ()) -> Promise.Promise,
-	_getKeyInfo: (self: Store<T>, key: string) -> Promise.TypedPromise<DataStoreKeyInfo?>,
+	_getKeyInfo: (self: Store<T>, key: string) -> Promise.TPromise<DataStoreKeyInfo?>,
 
 	load: (self: Store<T>, key: string, userIds: { number }?) -> Promise.Promise,
 	unload: (self: Store<T>, key: string) -> Promise.Promise,
-	get: (self: Store<T>, key: string) -> Promise.TypedPromise<T>,
+	get: (self: Store<T>, key: string) -> Promise.TPromise<T>,
 	update: (self: Store<T>, key: string, transformFunction: (data: T) -> boolean) -> Promise.Promise,
 	tx: (
 		self: Store<T>,
@@ -115,9 +112,9 @@ type StoreImpl<T> = {
 	save: (self: Store<T>, key: string) -> Promise.Promise,
 	close: (self: Store<T>) -> Promise.Promise,
 
-	probeLockActive: (self: Store<T>, key: string) -> Promise.TypedPromise<boolean>,
-	listVersions: (self: Store<T>, params: ListVersionParams) -> Promise.TypedPromise<DataStoreVersionPages>,
-	readVersion: (self: Store<T>, key: string, version: string) -> Promise.TypedPromise<T, DataStoreKeyInfo>,
+	probeLockActive: (self: Store<T>, key: string) -> Promise.TPromise<boolean>,
+	listVersions: (self: Store<T>, params: ListVersionParams) -> Promise.TPromise<DataStoreVersionPages>,
+	readVersion: (self: Store<T>, key: string, version: string) -> Promise.TPromise<T, DataStoreKeyInfo>,
 }
 
 type StoreProps<T> = {
@@ -273,9 +270,12 @@ function Store:_processOrphanedFile(item: Types.OrphanedFileQueueItem): boolean
 			logger:log("trace", "successfully removed shards")
 			local session = self._sessions[item.key]
 			if session then
-				session.orphanedFiles = Array.filter(session.orphanedFiles, function(file)
-					return not Dictionary.equals(file, item.file)
-				end)
+				for i, file in session.orphanedFiles do
+					if Tables.equalsDeep(file, item.file) then
+						table.remove(session.orphanedFiles, i)
+						break
+					end
+				end
 			end
 		end)
 		:catch(function(err)
@@ -471,7 +471,7 @@ end
 	@within Store
 	@private
 ]=]
-function Store:_getKeyInfo(key: string): Promise.TypedPromise<DataStoreKeyInfo?>
+function Store:_getKeyInfo(key: string): Promise.TPromise<DataStoreKeyInfo?>
 	return self:_withSession(key, function(session)
 		return session.keyInfo
 	end)
@@ -492,7 +492,7 @@ end
 	@error "Store is closed" -- The store has been closed
 	@within Store
 ]=]
-function Store:get<T>(key: string): Promise.TypedPromise<T>
+function Store:get<T>(key: string): Promise.TPromise<T>
 	return self:_withSession(key, function(session)
 		return session:get()
 	end)
@@ -584,7 +584,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 		txLockResolve = resolve
 	end)
 
-	local queues = Array.map(keys, function(key)
+	local queues = Tables.map(keys, function(key)
 		return self._sessions[key].queue
 	end)
 
@@ -636,7 +636,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 				currentState[key] = session.data
 			end
 
-			local nextState = Dictionary.copyDeep(currentState)
+			local nextState = Tables.copyDeep(currentState)
 			local transformOk, result = pcall(noYield, transformFunction, nextState :: any)
 			if not transformOk then
 				logger:log("error", "tx transformFunction failed", { error = result })
@@ -653,7 +653,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			-- We deep copy here to prevent references to internal state from being
 			-- leaked. If we didn't, the transform function could modify the state
 			-- after it runs, which shouldn't be allowed.
-			nextState = Dictionary.copyDeep(nextState)
+			nextState = Tables.copyDeep(nextState)
 
 			for _, key in keys do
 				local schemaOk, err = self._ctx.schema(nextState[key] :: any)
@@ -663,18 +663,32 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 				end
 			end
 
-			local currentKeys = Dictionary.keys(currentState)
-			local nextKeys = Dictionary.keys(nextState)
-			if #Array.differenceSymmetric(currentKeys, nextKeys) ~= 0 then
+			local didKeysChange = false
+			for key in currentState do
+				if nextState[key] == nil then
+					didKeysChange = true
+					break
+				end
+			end
+			for key in nextState do
+				if currentState[key] == nil then
+					didKeysChange = true
+					break
+				end
+			end
+			if didKeysChange then
 				logger:log("error", "keys changed in transaction")
 				return Promise.reject("Keys changed in transaction")
 			end
 
 			-- If no keys changed we can exit early, and if only one key changed, we
 			-- can treat it as a normal :update.
-			local changedKeys = Array.filter(keys, function(key)
-				return not Dictionary.equalsDeep(currentState[key] :: any, nextState[key] :: any)
-			end)
+			local changedKeys = {}
+			for key in currentState do
+				if not Tables.equalsDeep(currentState[key] :: any, nextState[key] :: any) then
+					table.insert(changedKeys, key)
+				end
+			end
 
 			if #changedKeys == 0 then
 				logger:log("trace", "tx had no mutations, skipping update")
@@ -688,7 +702,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 
 			logger:log("trace", "tx changed multiple keys, beginning multi-key update")
 
-			local keyWritePromises = Array.map(keys, function(key)
+			local keyWritePromises = Tables.map(keys, function(key)
 				local txInfo = {
 					txId = txId,
 					txData = nextState[key],
@@ -701,7 +715,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			local function revert(err)
 				logger:log("error", "multi-key update or tx commit failed, reverting", { error = err })
 
-				local cleanupPromises = Array.map(keys, function(key)
+				local cleanupPromises = Tables.map(keys, function(key)
 					local txInfo = { committedData = currentState[key] }
 					return self._sessions[key]:writeRecord(txInfo)
 				end)
@@ -800,7 +814,7 @@ end
 
 	@within Store
 ]=]
-function Store:probeLockActive(key: string): Promise.TypedPromise<boolean>
+function Store:probeLockActive(key: string): Promise.TPromise<boolean>
 	return Locks.probeLockActive({
 		storeContext = self._ctx,
 		key = key,
@@ -812,7 +826,7 @@ end
 
 	@within Store
 ]=]
-function Store:listVersions(params: ListVersionParams): Promise.TypedPromise<DataStoreVersionPages>
+function Store:listVersions(params: ListVersionParams): Promise.TPromise<DataStoreVersionPages>
 	return self._ctx.dataStoreInterface:listVersions(
 		self._ctx.recordScope,
 		params.key,
@@ -828,7 +842,7 @@ end
 
 	@within Store
 ]=]
-function Store:readVersion<T>(key: string, version: string): Promise.TypedPromise<(T, DataStoreKeyInfo)>
+function Store:readVersion<T>(key: string, version: string): Promise.TPromise<(T, DataStoreKeyInfo)>
 	return self._ctx.dataStoreInterface
 		:getVersion(self._ctx.recordScope, key, version)
 		:andThen(function(record, keyInfo)

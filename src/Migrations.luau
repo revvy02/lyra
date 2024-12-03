@@ -1,9 +1,8 @@
 --!strict
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Promise = require(script.Parent.Promise)
+local Tables = require(script.Parent.Tables)
 local Types = require(script.Parent.Types)
-local Sift = require(ReplicatedStorage.Packages.Sift)
 
 type Data = { [string]: any }
 
@@ -32,7 +31,7 @@ function Migration:fields(name: string, fields: Data): Migration
 	table.insert(self.steps, {
 		name = name,
 		apply = function(data)
-			return Sift.Dictionary.mergeDeep(fields, data)
+			return Tables.mergeDeep(fields, data)
 		end,
 	})
 	return self
@@ -86,14 +85,14 @@ local function apply(params: ApplyParams): Promise.TPromise<ApplyResult>
 			if not appliedSet[step.name] then
 				logger:log("trace", "applying migration step", { stepName = step.name })
 
-				local staged = Sift.Dictionary.copyDeep(currentData)
+				local staged = Tables.copyDeep(currentData)
 				local ok, result = pcall(step.apply, staged)
 				if not ok then
 					logger:log("error", "failed to apply migration step", { stepName = step.name, error = result })
 					return reject(result)
 				end
 
-				currentData = Sift.Dictionary.copyDeep(result)
+				currentData = Tables.copyDeep(result)
 				table.insert(appliedMigrations, step.name)
 			end
 		end

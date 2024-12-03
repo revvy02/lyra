@@ -1,12 +1,9 @@
 local HttpService = game:GetService("HttpService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(script.Parent.Types)
 local splitUtf8String = require(script.Parent.splitUtf8String)
 local Promise = require(script.Parent.Promise)
-local Sift = require(ReplicatedStorage.Packages.Sift)
-
-local Array = Sift.Array
+local Tables = require(script.Parent.Tables)
 
 local function isLargeFile(file: Types.File): boolean
 	return file.shard ~= nil
@@ -35,7 +32,7 @@ local function write(params: WriteParams): Promise.TPromise<Types.File>
 	local shards = splitUtf8String(str, params.maxShardSize)
 	local file = { shard = shardId, count = #shards }
 
-	local shardPromises = Array.map(shards, function(shard, index)
+	local shardPromises = Tables.map(shards, function(shard, index)
 		return params.dataStoreInterface:set(params.scope, `{shardId}-{index}`, shard, params.userIds)
 	end)
 

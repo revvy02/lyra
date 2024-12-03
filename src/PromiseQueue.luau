@@ -1,10 +1,8 @@
 --!strict
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 local Types = require(script.Parent.Types)
 local Promise = require(script.Parent.Promise)
-local Sift = require(ReplicatedStorage.Packages.Sift)
+local Tables = require(script.Parent.Tables)
 
 type PromiseQueueImpl = {
 	__index: PromiseQueueImpl,
@@ -141,7 +139,7 @@ PromiseQueue._addResumableBlock = addResumableBlock
 function PromiseQueue.multiQueueAdd(queues: { PromiseQueue }, callback: () -> ()): Promise.Promise
 	local trace = debug.traceback(nil, 2)
 	return Promise.new(function(resolve, reject)
-		local promises = Sift.Array.map(queues, addResumableBlock)
+		local promises = Tables.map(queues, addResumableBlock)
 
 		Promise.all(promises):andThen(function(resumes)
 			Promise.try(callback)

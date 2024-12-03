@@ -9,17 +9,13 @@ local Locks = require(script.Parent.Locks)
 local Migrations = require(script.Parent.Migrations)
 local PromiseQueue = require(script.Parent.PromiseQueue)
 local Promise = require(script.Parent.Promise)
-local Sift = require(ReplicatedStorage.Packages.Sift)
+local Tables = require(script.Parent.Tables)
 local t = require(ReplicatedStorage.Packages.t)
 local Types = require(script.Parent.Types)
 local Transactions = require(script.Parent.Transactions)
 local noYield = require(script.Parent.noYield)
 
-local Dictionary = Sift.Dictionary
-local Array = Sift.Array
-local Set = Sift.Set
-
-type Set = { [string]: boolean }
+type Set = { [string]: true }
 
 type SessionImpl<T> = {
 	__index: SessionImpl<T>,
@@ -196,7 +192,7 @@ local function load(params: LoadParams): any
 		:andThen(function(data: any?)
 			if data == nil then
 				logger:log("trace", "no data, using template")
-				data = Dictionary.copyDeep(ctx.template)
+				data = Tables.copyDeep(ctx.template)
 			end
 			assert(data, "luau")
 
@@ -344,7 +340,7 @@ function Session:updateRecord(): Promise.TPromise<any>
 		return Promise.resolve()
 	end
 
-	local txInfo = { committedData = Dictionary.copyDeep(self.data) }
+	local txInfo = { committedData = Tables.copyDeep(self.data) }
 
 	logger:log("trace", "writing record", { txInfo = txInfo })
 	return self:writeRecord(txInfo)
@@ -390,10 +386,13 @@ function Session:writeRecord(txInfo: Types.TxInfo): Promise.TPromise<any>
 				return Promise.reject("lock was lost while writing file")
 			end
 
+			local stagedOrphanedFiles = table.clone(self.orphanedFiles)
+			table.insert(stagedOrphanedFiles, self.currentFile :: any)
+
 			local record = {
 				appliedMigrations = self.appliedMigrations,
 				file = file,
-				orphanedFiles = Array.push(self.orphanedFiles, self.currentFile :: any),
+				orphanedFiles = stagedOrphanedFiles,
 			}
 
 			logger:log("trace", "writing record", { record = record })
@@ -419,20 +418,20 @@ end
 Session.writeRecord = t.wrap(Session.writeRecord, t.tuple(t.any))
 
 function Session:isSaved(): boolean
-	return Set.count(self.changeSet) == 0
+	return next(self.changeSet) == nil
 end
 Session.isSaved = t.wrap(Session.isSaved, t.tuple(t.any))
 
 function Session:setData(data: any): ()
 	local mutationId = HttpService:GenerateGUID(false)
-	self.changeSet = Set.add(self.changeSet, mutationId)
+	self.changeSet[mutationId] = true
 	self.data = data
-	self.frozenData = Dictionary.freezeDeep(data :: any)
+	self.frozenData = Tables.freezeDeep(data :: any)
 end
 Session.setData = t.wrap(Session.setData, t.tuple(t.any))
 
 function Session:mutateKey(newData: any): ()
-	local oldData = if self.data then Dictionary.freezeDeep(self.data :: any) else nil
+	local oldData = if self.data then Tables.freezeDeep(self.data :: any) else nil
 
 	self:setData(newData)
 
@@ -541,7 +540,7 @@ function Session:update<T>(transformFunction: (data: T) -> boolean): Promise.Pro
 		logger:log("trace", `UPDATING KEY`)
 
 		local currentData = self.data
-		local nextData = Dictionary.copyDeep(currentData)
+		local nextData = Tables.copyDeep(currentData)
 
 		local transformOk, result = pcall(noYield, transformFunction, nextData :: any)
 		if not transformOk then
@@ -562,7 +561,7 @@ function Session:update<T>(transformFunction: (data: T) -> boolean): Promise.Pro
 		-- We deep copy here to prevent references to internal state from being
 		-- leaked. If we didn't, the transform function could modify the state
 		-- after it runs, which shouldn't be allowed.
-		nextData = Dictionary.copyDeep(nextData)
+		nextData = Tables.copyDeep(nextData)
 
 		local schemaOk, err = self.ctx.schema(nextData :: any)
 		if not schemaOk then
@@ -570,7 +569,7 @@ function Session:update<T>(transformFunction: (data: T) -> boolean): Promise.Pro
 			return reject(`Store:update schema validation failed: {err}`)
 		end
 
-		if Dictionary.equalsDeep(nextData :: any, currentData :: any) then
+		if Tables.equalsDeep(nextData :: any, currentData :: any) then
 			return resolve()
 		end
 
@@ -596,27 +595,34 @@ function Session:save(): Promise.Promise
 		return Promise.resolve()
 	end
 
-	local changes = Set.copy(self.changeSet)
+	local changes = table.clone(self.changeSet)
 
 	logger:log("trace", "queueing save")
 	return self.queue:add(function()
 		logger:log("trace", "save task running")
 
-		local changesWereSaved = Set.count(Set.intersection(changes, self.changeSet)) == 0
+		local changesWereSaved = true
+		for id in self.changeSet do
+			if changes[id] then
+				changesWereSaved = false
+				break
+			end
+		end
+
 		if changesWereSaved then
 			logger:log("trace", "changes were saved by another task, returning")
 			return Promise.resolve()
 		end
 
-		changes = Set.copy(self.changeSet)
+		changes = table.clone(self.changeSet)
 
 		logger:log("trace", "saving changes", { changes = changes })
 		return self:updateRecord():andThen(function()
-			local newChangeSet = Set.difference(self.changeSet, changes)
+			for id in changes do
+				self.changeSet[id] = nil
+			end
 
-			logger:log("trace", "changes saved", { latestChanges = self.changeSet, newChanges = newChangeSet })
-
-			self.changeSet = newChangeSet
+			logger:log("trace", "changes saved", { latestChanges = self.changeSet })
 		end)
 	end)
 end
