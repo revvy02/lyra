@@ -16,3 +16,6 @@ external
 node_modules
 
 /test/Simulation/Cases/TDSMigrate
+
+# Moonwave build output
+/build

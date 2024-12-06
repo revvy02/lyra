@@ -3,7 +3,8 @@
   "version": "0.2.14",
   "description": "A DataStoreService wrapper",
   "scripts": {
-    "test": "exit 0"
+    "test": "exit 0",
+    "postversion": "git push && git push --tags"
   },
   "repository": {
     "type": "git",
