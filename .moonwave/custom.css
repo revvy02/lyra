@@ -1,0 +1,40 @@
+:root {
+	--ifm-color-primary: #2563eb;
+	--ifm-color-primary-dark: #1d4ed8;
+	--ifm-color-primary-darker: #1e40af;
+	--ifm-color-primary-darkest: #1e3a8a;
+	--ifm-color-primary-light: #3b82f6;
+	--ifm-color-primary-lighter: #60a5fa;
+	--ifm-color-primary-lightest: #93c5fd;
+	--ifm-code-font-size: 95%;
+	--ifm-font-family-base: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+	--ifm-font-family-monospace: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Monaco, Consolas, "DejaVu Sans Mono", monospace;
+}
+
+.hero {
+	background: linear-gradient(45deg, var(--ifm-color-primary-darkest), var(--ifm-color-primary));
+}
+
+.hero__title,
+.hero__subtitle {
+	color: white;
+	text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.button.button--primary {
+	background: white;
+	color: var(--ifm-color-primary);
+	border: none;
+	transition: all 0.2s;
+}
+
+.button.button--primary:hover {
+	background: var(--ifm-color-primary-lightest);
+	color: var(--ifm-color-primary-darkest);
+	transform: translateY(-1px);
+}
+
+.codeBlock {
+	background: #1e293b;
+	color: #e2e8f0;
+}

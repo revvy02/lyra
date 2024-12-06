@@ -1,0 +1,50 @@
+.heroBanner {
+	padding: 4rem 0;
+	text-align: center;
+	position: relative;
+	overflow: hidden;
+	background-color: var(--ifm-color-primary);
+	color: var(--ifm-color-white);
+}
+
+@media screen and (max-width: 966px) {
+	.heroBanner {
+		padding: 2rem;
+	}
+}
+
+.buttons {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin-top: 2rem;
+}
+
+.features {
+	display: flex;
+	align-items: center;
+	padding: 4rem 0;
+	width: 100%;
+}
+
+.codeExample {
+	background-color: var(--ifm-color-emphasis-100);
+	padding: 4rem 0;
+}
+
+.codeBlock {
+	background-color: var(--ifm-color-emphasis-0);
+	border-radius: var(--ifm-code-border-radius);
+	box-shadow: var(--ifm-global-shadow-lw);
+	padding: 1rem;
+	margin: 0;
+	overflow: auto;
+}
+
+.codeBlock code {
+	display: block;
+	font-family: var(--ifm-font-family-monospace);
+	font-size: 0.9rem;
+	line-height: 1.5;
+	white-space: pre;
+}

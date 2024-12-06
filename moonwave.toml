@@ -1,15 +1,39 @@
 title = "Lyra"
 gitRepoUrl = "placeholder"
-
 gitSourceBranch = "main"
 changelog = true
 
 [docusaurus]
 onBrokenLinks = "throw"
 onBrokenMarkdownLinks = "warn"
+tagline = "Safe and efficient player data storage for Roblox games"
 
 [home]
 enabled = true
+includeReadme = false
+
+[[home.features]]
+title = "Data Safety"
+description = "Session locking prevents data corruption, atomic transactions enable safe trading, and built-in validation catches bad data before it's saved."
+
+[[home.features]]
+title = "High Performance"
+description = "Auto-sharding handles large datasets, efficient DataStore usage minimizes costs, and automatic retries handle service limits gracefully."
+
+[[home.features]]
+title = "Developer Friendly"
+description = "Schema migrations let you evolve your data format, drop-in compatibility makes switching easy, and type-safe APIs prevent common mistakes."
+
+[footer]
+style = "dark"
+copyright = "Built with Moonwave and Docusaurus"
+
+[[footer.links]]
+title = "Links"
+
+[[footer.links.items]]
+label = "GitHub"
+href = "https://github.com/paradoxum-games/lyra"
 
 [[navbar.items]]
 href = "placeholder"
