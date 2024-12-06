@@ -4,16 +4,24 @@ sidebar_position: 3
 
 # Debugging
 
-Lyra provides logging capabilities through its `logCallback` to help you track operations and errors.
+Lyra provides detailed logging to help you understand what's happening with your data and diagnose issues. You can access these logs through the `logCallback` option.
 
-## Basic Setup
+## Understanding Logs
+
+Each log message contains:
+- A severity level
+- A descriptive message
+- Optional context with additional details
+
+Here's a basic setup that prints all logs:
 
 ```lua
-local function handleLogs(message: LogMessage)
-    if message.level == "error" then
-        Analytics:captureError(message.message)
-    elseif message.level == "warn" then
-        Analytics:captureWarning(message.message)
+local function handleLogs(message)
+    print(`[Lyra][{message.level}] {message.message}`)
+    
+    if message.context then
+        -- Context contains relevant data like keys, session info, etc.
+        print("Context:", message.context)
     end
 end
 
@@ -27,22 +35,48 @@ local store = Lyra.createPlayerStore({
 
 ## Log Levels
 
-Lyra uses the following log levels:
-- `fatal` - Unrecoverable errors
-- `error` - Operation failures
-- `warn` - Potential issues
-- `info` - Important operations
-- `debug` - Detailed operation info
-- `trace` - Very detailed debugging info
-
-## Development vs Production
-
-You might want different logging behavior in different environments:
+Lyra uses different levels to categorize logs:
 
 ```lua
+local function handleLogs(message)
+    -- Handle based on severity
+    if message.level == "fatal" then
+        -- Unrecoverable errors (e.g., corrupted data)
+        warn("FATAL:", message.message)
+        
+    elseif message.level == "error" then
+        -- Operation failures (e.g., update failed)
+        warn("Error:", message.message)
+        
+    elseif message.level == "warn" then
+        -- Potential issues (e.g., slow operations)
+        warn("Warning:", message.message)
+        
+    elseif message.level == "info" then
+        -- Important operations (e.g., session started)
+        print("Info:", message.message)
+        
+    elseif message.level == "debug" then
+        -- Detailed operation info
+        print("Debug:", message.message)
+        
+    elseif message.level == "trace" then
+        -- Very detailed debugging info
+        print("Trace:", message.message)
+    end
+end
+```
+
+## Development Mode
+
+You often want more detailed logs in Studio:
+
+```lua
+local RunService = game:GetService("RunService")
+
 local function createLogger()
-    if game:GetService("RunService"):IsStudio() then
-        -- Detailed logging in Studio
+    if RunService:IsStudio() then
+        -- Show all logs in Studio
         return function(message)
             print(`[Lyra][{message.level}] {message.message}`)
             if message.context then
@@ -50,22 +84,23 @@ local function createLogger()
             end
         end
     else
-        -- Only log important things in production
+        -- Only show errors in production
         return function(message)
             if message.level == "error" or message.level == "fatal" then
-                Analytics:captureError(message.message, message.context)
+                warn(`[Lyra] {message.message}`)
             end
         end
     end
 end
 
 local store = Lyra.createPlayerStore({
-    name = "PlayerData",
-    template = template,
-    schema = schema,
     logCallback = createLogger(),
 })
 ```
+
+:::tip
+The context object often contains useful debugging information like session IDs, keys being operated on, and timing data.
+:::
 
 ## See Also
 

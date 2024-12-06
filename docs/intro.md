@@ -8,54 +8,19 @@ Lyra makes it easy to save player data in your Roblox game. It handles all the t
 
 ## Features
 
-⚔️ **Transactions** - Safe trading between players - no more item duplication bugs
+**Data Safety**
+- 🔒 **Session Locking** - Prevents multiple servers from corrupting each other's data
+- ⚔️ **Transactions** - Safe trading between players - no more item duplication bugs
+- 👁️ **Validation** - Catches bad data before it gets saved
 
-🔒 **Session Locking** - Prevents multiple servers from corrupting each other's data
+**Performance**
+- 💎 **Auto-Sharding** - Handles large data by automatically splitting across multiple keys
+- ⚡ **Efficient** - Minimizes DataStore calls and bandwidth usage
+- 🎯 **Auto-Retry** - Handles DataStore errors and throttling automatically
 
-💎 **Auto-Sharding** - Handles large data by automatically splitting across multiple keys
-
-🦋 **Migrations** - Update your data format without breaking existing saves
-
-🔄 **Drop-in** - Import your existing data and switch over seamlessly
-
-⚡ **Efficient** - Minimizes DataStore calls and bandwidth usage
-
-👁️ **Validation** - Catches bad data before it gets saved
-
-🎯 **Auto-Retry** - Handles DataStore errors and throttling automatically
-
-## Importing Existing Data
-
-When switching to Lyra, you'll want to bring your existing data:
-
-```lua
-local store = Lyra.createPlayerStore({
-    name = "PlayerData",
-    template = template,
-    schema = schema,
-    importLegacyData = function(key)
-        local success, data = pcall(function()
-            return YourCurrentSystem.getData(key)
-        end)
-        
-        -- if something goes wrong, just error and lyra will kick the player so they can rejoin and try importing again
-        if not success then
-            error("Failed to reach data system")
-        end
-        
-        -- if the player's new, return nil to use template data
-        if not data then
-            return nil
-        end
-        
-        return data
-    end,
-})
-```
-
-:::caution
-Take care implementing `importLegacyData`. Return `nil` for expected cases (like new players) to use template data. For temporary failures accessing your old system, you can `error()` which will kick the player and let them try again.
-:::
+**Development**
+- 🦋 **Migrations** - Update your data format without breaking existing saves
+- 🔄 **Drop-in** - Import your existing data and switch over seamlessly
 
 ## Quick Example
 
@@ -79,40 +44,73 @@ Players.PlayerAdded:Connect(function(player)
     store:load(player):expect()
 end)
 
--- Update data
+-- Safe updates with validation
 store:update(player, function(data)
-    -- Always work with the data passed to this function
-    -- Don't use data from an earlier :get() call!
-    data.coins += 100
+    if data.coins < itemPrice then
+        return false -- Abort if can't afford
+    end
+    data.coins -= itemPrice
+    table.insert(data.inventory, itemId)
     return true
 end):expect()
 
--- Trade items safely
+-- Atomic trades between players
 store:tx({player1, player2}, function(state)
-    local temp = state[player1].item
-    state[player1].item = state[player2].item
-    state[player2].item = temp
+    -- Either both changes happen or neither does
+    state[player1].coins -= 100
+    state[player2].coins += 100
     return true
 end):expect()
 ```
 
 :::warning Avoid Stale Data
-Never use data from a previous `:get()` call in your updates:
+Always modify data through update functions. Never use data from a previous `:get()` call:
 ```lua
 -- 🚫 Don't do this:
-local data = store:get(player):expect()
-store:update(player, function()
-    data.coins += 100 -- This data might be stale!
+local oldData = store:get(player):expect()
+store:update(player, function(newData)
+    if not oldData.hasGift then -- This data might be stale!
+        return false
+    end
+    newData.coins += 500
+    newData.hasGift = false
     return true
-end):expect()
+end)
 
 -- ✅ Do this instead:
 store:update(player, function(data)
     data.coins += 100 -- This data is always current
     return true
-end):expect()
+end)
 ```
 :::
+
+## Importing Existing Data
+
+When switching to Lyra, you can bring your existing data:
+
+```lua
+local store = Lyra.createPlayerStore({
+    name = "PlayerData",
+    template = template,
+    schema = schema,
+    importLegacyData = function(key)
+        local success, data = pcall(function()
+            return YourCurrentSystem.getData(key)
+        end)
+        
+        if not success then
+            error("Failed to reach data system") -- Player will be kicked and can retry
+        end
+
+        if data ~= nil then
+            return data -- Return existing data to import
+        end
+        
+        return nil -- Return nil for new players to use template
+    end,
+})
+```
 
 ## Installation
 

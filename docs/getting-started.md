@@ -19,31 +19,9 @@ Lyra = "paradoxum-games/lyra@0.1.0"
 If you're new to Wally, check out the [Wally installation guide](https://wally.run/install).
 :::
 
-## Importing Existing Data
-
-If you're migrating from another data system, Lyra makes it easy to bring your existing data:
-
-```lua
-local store = Lyra.createPlayerStore({
-    name = "PlayerData",
-    template = template,
-    schema = schema,
-    -- Import data from your current system
-    importLegacyData = function(key)
-        local success, data = pcall(function()
-            return DataStoreService:GetDataStore("OldData"):GetAsync(key)
-        end)
-        if success then
-            return data
-        end
-        return nil -- Return nil to use template data
-    end,
-})
-```
-
 ## Basic Setup
 
-Here's a complete example of setting up Lyra with proper typing and error handling:
+Here's how to set up Lyra with a simple data structure:
 
 ```lua
 local Players = game:GetService("Players")
@@ -53,22 +31,12 @@ local Lyra = require(path.to.Lyra)
 local template = {
     coins = 0,
     inventory = {},
-    stats = {
-        wins = 0,
-        losses = 0,
-        playtime = 0,
-    },
 }
 
--- Create typed schema
+-- Create schema to validate data
 local schema = t.strictInterface({
     coins = t.number,
     inventory = t.table,
-    stats = t.strictInterface({
-        wins = t.number,
-        losses = t.number,
-        playtime = t.number,
-    }),
 })
 
 -- Create the store
@@ -78,75 +46,52 @@ local store = Lyra.createPlayerStore({
     schema = schema,
 })
 
--- Set up player handling
+-- Load data when players join
 Players.PlayerAdded:Connect(function(player)
     store:load(player):andThen(function()
         print("Data loaded for", player.Name)
-    end):catch(function(err)
-        warn("Failed to load data for", player.Name, "-", err)
-    end)
+    end):catch(warn)
 end)
 
+-- Save and clean up when they leave
 Players.PlayerRemoving:Connect(function(player)
-    store:unload(player):catch(function(err)
-        warn("Failed to unload data for", player.Name, "-", err)
-    end)
+    store:unload(player):catch(warn)
 end)
 ```
 
-## Reading Data
+## Working with Data
 
-Lyra provides a simple way to read player data:
+### Reading Data
+
+You can read player data, but remember that it might change between reads:
 
 ```lua
--- Get current data
 store:get(player):andThen(function(data)
+    -- ⚠️ Only use this data for reading
+    -- Don't save it for later use
     print(player.Name, "has", data.coins, "coins")
-end):catch(warn)
-
--- Check stats
-store:get(player):andThen(function(data)
-    local winRate = data.stats.wins / (data.stats.wins + data.stats.losses)
-    print(player.Name, "win rate:", winRate)
 end)
 ```
 
-## Modifying Data
+### Modifying Data
 
-### Simple Updates
-
-For basic changes, use `update`:
+Always modify data through update functions:
 
 ```lua
--- Add coins
+-- Simple update
 store:update(player, function(data)
     data.coins += 100
     return true
-end):expect()
+end)
 
--- Add inventory item
+-- Conditional update
 store:update(player, function(data)
-    table.insert(data.inventory, {
-        id = "sword",
-        acquired = os.time(),
-    })
-    return true
-end):expect()
-```
-
-### Conditional Updates
-
-You can also make decisions inside updates:
-
-```lua
--- Try to purchase an item
-store:update(player, function(data)
-    if data.coins < 100 then
+    if data.coins < itemPrice then
         return false -- Abort the update
     end
     
-    data.coins -= 100
-    table.insert(data.inventory, "premium_sword")
+    data.coins -= itemPrice
+    table.insert(data.inventory, itemId)
     return true
 end):andThen(function()
     print("Purchase successful!")
@@ -159,59 +104,73 @@ end):catch(function(err)
 end)
 ```
 
-## Working with DataStore Limits
+### Trading Between Players
 
-Lyra automatically handles many DataStore limits for you:
+Use transactions for operations involving multiple players:
 
-### Request Throttling
 ```lua
--- Lyra auto-retries when hitting DataStore limits
-for i = 1, 100 do
-    store:update(player, function(data)
-        data.coins += 1
-        return true
-    end):expect() -- Will pace requests appropriately
-end
+store:tx({player1, player2}, function(state)
+    -- Transfer coins
+    if state[player1].coins < amount then
+        return false -- Abort if not enough coins
+    end
+    
+    state[player1].coins -= amount
+    state[player2].coins += amount
+    return true
+end)
 ```
 
-### Large Data
+## Error Handling
+
+Lyra operations return promises that you can handle in different ways:
+
 ```lua
--- Lyra automatically shards data when it gets too big
+-- Using :expect(), which will throw an error if the operation fails
 store:update(player, function(data)
-    -- Even if this makes the data too large for one key,
-    -- Lyra will handle it automatically
-    data.replayData = hugeReplayTable
+    data.coins -= itemPrice
+    data.inventory.weapon = "starter_sword"
     return true
 end):expect()
+
+-- Using :andThen() and :catch()
+store:update(player, function(data)
+    data.coins -= itemPrice
+    data.inventory.weapon = "starter_sword"
+    return true
+end):andThen(function()
+    print("Purchase successful!")
+end):catch(function(err)
+    print("Purchase failed:", err)
+end)
 ```
 
-## Handling Errors
+## Importing Existing Data
 
-It's important to handle errors appropriately:
+If you're migrating from another system, you can import your existing data:
 
 ```lua
--- Using :expect() for critical operations
-function onCriticalPurchase()
-    store:update(player, grantItem):expect() -- Throws on failure
-    store:save(player):expect() -- Ensures data is saved
-end
+local store = Lyra.createPlayerStore({
+    name = "PlayerData",
+    template = template,
+    schema = schema,
+    importLegacyData = function(key)
+        local success, data = pcall(function()
+            return YourCurrentSystem.getData(key)
+        end)
+        
+        if not success then
+            error("Failed to reach data system") -- Player will be kicked and can retry
+        end
 
--- Using :catch() for graceful fallbacks
-function onOptionalFeature()
-    store:update(player, updateData)
-        :andThen(function()
-            print("Feature success!")
-        end)
-        :catch(function(err)
-            -- Gracefully handle failure
-            print("Feature unavailable:", err)
-        end)
-end
+        if data ~= nil then
+            return data -- Return existing data to import
+        end
+        
+        return nil -- Return nil for new players to use template
+    end,
+})
 ```
-
-:::tip
-Use `:expect()` when the operation must succeed, and `:catch()` when you want to handle failures gracefully.
-:::
 
 ## Next Steps
 

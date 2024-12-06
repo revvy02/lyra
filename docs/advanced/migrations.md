@@ -4,16 +4,26 @@ sidebar_position: 1
 
 # Data Migrations
 
-Data formats evolve as your game grows. You might need to add new fields, rename existing ones, or completely restructure your data. Lyra's migration system helps you transform existing player data safely and automatically.
+As your game evolves, you'll need to update your data format - adding new fields, renaming existing ones, or restructuring data entirely. Lyra's migration system helps you transform existing player data safely and automatically.
 
-## Overview
+:::danger Never Change Published Migrations
+Once your game is live, never:
+- Change the content of existing migrations
+- Reorder existing migrations
+- Remove existing migrations
 
-Migrations in Lyra:
-- Run automatically when loading player data
-- Execute only once per player
-- Run in the order you define them
-- Can add fields, remove fields, or transform data structure
-- Validate data after each step
+Lyra tracks which migrations have run for each player. Changing existing migrations means some players will run different versions of the same migration, corrupting their data. Always add new migrations instead of modifying existing ones.
+:::
+
+## How Migrations Work
+
+When a player's data is loaded, Lyra:
+1. Checks which migrations have already run for this player
+2. Runs any new migrations in order
+3. Records which migrations were applied
+4. Validates the final data against your schema
+
+This means each migration runs exactly once per player, even if they join multiple times or on different servers.
 
 ## Basic Migrations
 
@@ -35,7 +45,9 @@ local store = Lyra.createPlayerStore({
 })
 ```
 
-This adds a `settings` table to any player data that doesn't have it.
+:::warning Migration Names Are Permanent
+Migration names (like "add_player_settings") are permanent and help Lyra track which migrations have run. Choose descriptive names that indicate what the migration does, as you can't change them later.
+:::
 
 ## Transform Steps
 
@@ -50,7 +62,6 @@ migrationSteps = Lyra.Migration.new()
             table.insert(data.items, {
                 id = item,
                 acquired = os.time(),
-                metadata = {},
             })
         end
         data.inventory = nil
@@ -74,111 +85,24 @@ migrationSteps = Lyra.Migration.new()
         data.inventory = {
             items = data.inventory,
             maxSlots = 20,
-            version = 2,
         }
         return data
     end)
-    -- Add achievement tracking
-    :fields("add_achievements", {
-        achievements = {},
-        lastAchievementAt = 0,
-    })
     :finalize()
 ```
 
-:::tip Order Matters
-Migration steps run in the order you define them. If one step depends on data from another, make sure they're in the right order!
+:::caution Migration Order Is Critical
+Migrations always run in the order they're defined. This order becomes permanent once published - you can't change it later. If a new migration needs data from an older one, add it after the existing migrations.
 :::
-
-## Testing Migrations
-
-Before deploying migrations to production, you should test them thoroughly. Here's a testing strategy:
-
-1. Create test data in the old format
-2. Run migrations
-3. Verify the new format
-
-```lua
-local function testMigrations()
-    -- Old data format
-    local oldData = {
-        coins = 100,
-        inventory = {"sword", "shield"},
-    }
-
-    -- Create test store
-    local store = Lyra.createPlayerStore({
-        name = "TestStore",
-        template = template,
-        schema = schema,
-        migrationSteps = yourMigrations,
-    })
-
-    -- Run migrations on test data
-    local newData = store:_runMigrations(oldData)
-    
-    -- Verify new format
-    assert(type(newData.items) == "table", "Items should be a table")
-    assert(newData.items[1].id == "sword", "First item should be sword")
-    assert(type(newData.items[1].acquired) == "number", "Acquired time should be number")
-end
-```
 
 ## Best Practices
 
 When working with migrations:
 
-1. **Never modify existing migrations** - Add new ones instead
+1. **Plan carefully** - Once published, migrations can't be changed
 2. **Keep migrations simple** - One logical change per step
 3. **Handle edge cases** - Check if fields exist before accessing them
 4. **Test thoroughly** - Migrations run once and can't be undone
-5. **Back up data** - Consider backing up before major migrations
-
-## Common Patterns
-
-### Adding New Systems
-
-When adding new game systems, start with sensible defaults:
-
-```lua
-:fields("add_crafting", {
-    craftingLevel = 1,
-    recipes = {},
-    materialsInventory = {},
-    currentProject = nil,
-})
-```
-
-### Data Structure Changes
-
-When changing how data is organized:
-
-```lua
-:transform("normalize_inventory", function(data)
-    -- Convert from array to dictionary for faster lookups
-    local newInventory = {}
-    for _, item in data.inventory do
-        newInventory[item.id] = item
-    end
-    data.inventory = newInventory
-    return data
-end)
-```
-
-### Calculated Fields
-
-Add fields based on existing data:
-
-```lua
-:transform("calculate_total_value", function(data)
-    local total = 0
-    for _, item in data.inventory do
-        total += ItemValues[item.id] or 0
-    end
-    data.inventoryValue = total
-    return data
-end)
-```
 
 ## See Also
 
