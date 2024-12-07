@@ -64,6 +64,12 @@ local function read(params: ReadParams): Promise.TPromise<any>
 	end
 
 	return Promise.all(promises):andThen(function(shards)
+		for i = 1, params.file.count do
+			if shards[i] == nil then
+				return Promise.reject(`Missing shard {i} for file {shardId}`)
+			end
+		end
+
 		local ok, result = pcall(function()
 			return HttpService:JSONDecode(table.concat(shards))
 		end)
