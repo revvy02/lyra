@@ -1,6 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local RUN_SIMULATIONS = true
+local RUN_SIMULATIONS = workspace:GetAttribute("LYRA_RUN_SIMULATIONS")
 
 local Simulation = require(script.Parent.Simulation)
 
