@@ -131,7 +131,7 @@ local function createMockStore(datastoreName: string, scope: string?)
 		if cached and (os.time() - cached.timestamp) < CACHE_DURATION then
 			return cached.value, cached.keyInfo
 		end
-		return nil, nil
+		return nil, nil :: any
 	end
 
 	local function setCachedValue(self: any, key: string, value: any, keyInfo: any)
@@ -346,7 +346,7 @@ local function createMockStore(datastoreName: string, scope: string?)
 				return v.Value, createMockKeyInfo(v.UserIds, v.Metadata)
 			end
 		end
-		return nil, nil
+		return nil, nil :: any
 	end
 
 	tbl.ListVersionsAsync = function(self, key, sortDirection, minDate, maxDate)
