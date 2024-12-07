@@ -4,6 +4,8 @@ local Tables = require(script.Parent.Tables)
 
 local mockData = {}
 local mockKeyInfo = {}
+local mockVersions = {}
+local mockCache = {}
 
 local requestQueues = {
 	GetAsync = {},
@@ -23,12 +25,14 @@ local RATE_LIMITS = {
 	SetAsync = { Base = 60, PlayerMultiplier = 10 },
 	UpdateAsync = { Base = 60, PlayerMultiplier = 10 },
 	RemoveAsync = { Base = 60, PlayerMultiplier = 10 },
+	GetVersion = { Base = 5, PlayerMultiplier = 2 },
 }
 
 local MAX_KEY_LENGTH = 50
 local MAX_DATA_SIZE = 4_194_304
+local MAX_METADATA_SIZE = 300
+local CACHE_DURATION = 4
 
--- Custom delay function for Jest fake timers
 local function delayWait(n: number)
 	local thread = coroutine.running()
 	task.delay(n, function()
@@ -41,23 +45,53 @@ local function getNow()
 	return DateTime.now().UnixTimestampMillis
 end
 
-local function createMockKeyInfo(userIds: any, metadata: any)
-	local tbl = {
-		CreatedTime = getNow(),
-		UpdatedTime = getNow(),
-		userIds = userIds or {},
-		metadata = metadata or {},
-	}
-	tbl.GetUserIds = function(self)
-		return self.userIds
-	end
-	tbl.GetMetadata = function(self)
-		return self.metadata
-	end
-	return tbl
+local function getUtcHour()
+	return math.floor(getNow() / (60 * 60 * 1000))
 end
 
-local function createMockStore(datastoreName: string, scope: string?): DataStoreService
+local function createVersion(value: any, userIds: any, metadata: any)
+	return {
+		Value = value,
+		UserIds = userIds or {},
+		Metadata = metadata or {},
+		CreatedTime = getNow(),
+		Version = tostring(getNow()),
+	}
+end
+
+local function createMockKeyInfo(userIds: any, metadata: any)
+	local info = {
+		CreatedTime = getNow(),
+		UpdatedTime = getNow(),
+		Version = tostring(getNow()),
+		userIds = userIds or {},
+		metadata = metadata or {},
+		GetUserIds = function(self)
+			return self.userIds
+		end,
+		GetMetadata = function(self)
+			return self.metadata
+		end,
+	}
+	return info
+end
+
+local function validateMetadata(metadata: any)
+	if metadata == nil then
+		return
+	end
+
+	if typeof(metadata) ~= "table" then
+		error("DataStoreService: Metadata must be a table", 2)
+	end
+
+	local serialized = game:GetService("HttpService"):JSONEncode(metadata)
+	if #serialized > MAX_METADATA_SIZE then
+		error(`DataStoreService: Metadata size exceeds {MAX_METADATA_SIZE} limit`, 2)
+	end
+end
+
+local function createMockStore(datastoreName: string, scope: string?)
 	local tbl = {
 		datastoreName = datastoreName,
 		scope = scope or "global",
@@ -79,33 +113,73 @@ local function createMockStore(datastoreName: string, scope: string?): DataStore
 		return scopedData
 	end
 
+	local function getVersionsForKey(self: any, key: string)
+		local versionKey = `{self.datastoreName}|{self.scope}|{key}`
+		if not mockVersions[versionKey] then
+			mockVersions[versionKey] = {}
+		end
+		return mockVersions[versionKey]
+	end
+
+	local function getCacheKey(self: any, key: string)
+		return `{self.datastoreName}|{self.scope}|{key}`
+	end
+
+	local function getCachedValue(self: any, key: string)
+		local cacheKey = getCacheKey(self, key)
+		local cached = mockCache[cacheKey]
+		if cached and (os.time() - cached.timestamp) < CACHE_DURATION then
+			return cached.value, cached.keyInfo
+		end
+		return nil, nil
+	end
+
+	local function setCachedValue(self: any, key: string, value: any, keyInfo: any)
+		local cacheKey = getCacheKey(self, key)
+		mockCache[cacheKey] = {
+			value = value,
+			keyInfo = keyInfo,
+			timestamp = os.time(),
+		}
+	end
+
 	local function enforceKeyLimits(key: any)
+		if typeof(key) ~= "string" then
+			error("DataStoreService: Key must be a string", 2)
+		end
+
 		if #key == 0 then
-			error("DataStoreService:SetAsync() Key name can't be empty.", 2) -- Error code 101
+			error("DataStoreService: Key name can't be empty", 2)
 		end
 
 		if #key > MAX_KEY_LENGTH then
-			error(`DataStoreService:SetAsync() Key name exceeds the {MAX_KEY_LENGTH} character limit.`, 2) -- Error code 102
+			error(`DataStoreService: Key name exceeds the {MAX_KEY_LENGTH} character limit`, 2)
 		end
 	end
 
 	local function enforceDataLimits(value: any)
-		local success = pcall(function()
-			game:GetService("HttpService"):JSONEncode(value)
-		end)
-		if not success then
-			error(`DataStoreService:SetAsync() Cannot store {typeof(value)} in DataStore.`, 2) -- Error code 104, include serialization error
+		if value == nil then
+			return
 		end
 
-		local serializedValue = game:GetService("HttpService"):JSONEncode(value)
-		if #serializedValue > MAX_DATA_SIZE then
-			error(`DataStoreService:SetAsync() Serialized value exceeds {MAX_DATA_SIZE} limit.`, 2) -- Error code 105
+		local success, result = pcall(function()
+			return game:GetService("HttpService"):JSONEncode(value)
+		end)
+		if not success then
+			error(`DataStoreService: Cannot store {typeof(value)} in DataStore`, 2)
+		end
+
+		if #result > MAX_DATA_SIZE then
+			error(`DataStoreService: Serialized value exceeds {MAX_DATA_SIZE} limit`, 2)
 		end
 	end
 
 	local function checkRateLimit(requestType)
 		local queue = requestQueues[requestType]
 		local limitData = RATE_LIMITS[requestType]
+		if not limitData then
+			limitData = RATE_LIMITS.GetAsync
+		end
 		local currentPlayers = 15
 		local requestsPerMinute = limitData.Base + (currentPlayers * limitData.PlayerMultiplier)
 
@@ -120,9 +194,9 @@ local function createMockStore(datastoreName: string, scope: string?): DataStore
 		local queue = requestQueues[requestType]
 		if #queue >= MAX_QUEUE_SIZE then
 			error(
-				`DataStoreService:{requestType}() request dropped. Request was throttled, but throttled request queue was full.`,
+				`DataStoreService:{requestType}() request dropped. Request was throttled, but throttled request queue was full`,
 				2
-			) -- Error code 302, 304, or 306
+			)
 		end
 
 		table.insert(queue, true)
@@ -136,6 +210,9 @@ local function createMockStore(datastoreName: string, scope: string?): DataStore
 	tbl.SetAsync = function(self, key, value, userIds, options)
 		enforceKeyLimits(key)
 		enforceDataLimits(value)
+		if options then
+			validateMetadata(options:GetMetadata())
+		end
 
 		if not checkRateLimit("SetAsync") then
 			enqueueRequest("SetAsync")
@@ -143,12 +220,28 @@ local function createMockStore(datastoreName: string, scope: string?): DataStore
 		delayWait(0.1)
 
 		local scopedData = getScopedData(self)
+		local versions = getVersionsForKey(self, key)
+		local currentHour = getUtcHour()
+
+		if #versions == 0 or versions[#versions].CreatedTime ~= currentHour then
+			table.insert(versions, createVersion(value, userIds, options and options:GetMetadata()))
+		end
+
 		scopedData[key] = value
-		mockKeyInfo[`{self.datastoreName}|{self.scope}|{key}`] =
-			createMockKeyInfo(userIds, options and options:GetMetadata())
+		local keyInfo = createMockKeyInfo(userIds, options and options:GetMetadata())
+		mockKeyInfo[`{self.datastoreName}|{self.scope}|{key}`] = keyInfo
+
+		setCachedValue(self, key, value, keyInfo)
 	end
 
-	tbl.GetAsync = function(self, key): any
+	tbl.GetAsync = function(self, key)
+		enforceKeyLimits(key)
+
+		local cachedValue, cachedKeyInfo = getCachedValue(self, key)
+		if cachedValue ~= nil then
+			return cachedValue, cachedKeyInfo
+		end
+
 		if not checkRateLimit("GetAsync") then
 			enqueueRequest("GetAsync")
 		end
@@ -156,30 +249,50 @@ local function createMockStore(datastoreName: string, scope: string?): DataStore
 
 		local scopedData = getScopedData(self)
 		local data = scopedData[key]
+		local keyInfo = mockKeyInfo[`{self.datastoreName}|{self.scope}|{key}`]
 
-		return data, mockKeyInfo[`{self.datastoreName}|{self.scope}|{key}`]
+		if data ~= nil then
+			setCachedValue(self, key, data, keyInfo)
+		end
+
+		return data, keyInfo
 	end
 
-	tbl.UpdateAsync = function(self, key, transformFunction): any
+	tbl.UpdateAsync = function(self, key, transformFunction)
+		enforceKeyLimits(key)
+
 		if not checkRateLimit("UpdateAsync") then
 			enqueueRequest("UpdateAsync")
 		end
-		delayWait(0.1)
 
-		local scopedData = getScopedData(self)
-		local keyInfo = mockKeyInfo[`{self.datastoreName}|{self.scope}|{key}`] or createMockKeyInfo()
-		local oldScopedData = scopedData[key]
-		local previousValue = oldScopedData ~= nil and Tables.copyDeep(oldScopedData)
-		local thisValue = oldScopedData ~= nil and Tables.copyDeep(oldScopedData)
+		while true do
+			local scopedData = getScopedData(self)
+			local keyInfo = mockKeyInfo[`{self.datastoreName}|{self.scope}|{key}`] or createMockKeyInfo()
+			local currentValue = scopedData[key]
+			local valueForCallback = currentValue ~= nil and Tables.copyDeep(currentValue)
 
-		local newValue, newUserIds, newMetadata = transformFunction(thisValue, keyInfo)
-
-		if newValue ~= nil then
-			if not Tables.equalsDeep(previousValue, thisValue) then
-				error("DataStoreService:UpdateAsync() Data store value has changed, retrying.", 2)
+			local newValue, newUserIds, newMetadata = transformFunction(valueForCallback, keyInfo)
+			if newValue == nil then
+				return currentValue, keyInfo
 			end
 
 			enforceDataLimits(newValue)
+			validateMetadata(newMetadata)
+
+			if not Tables.equalsDeep(currentValue, scopedData[key]) then
+				continue
+			end
+
+			local versions = getVersionsForKey(self, key)
+			local currentHour = getUtcHour()
+
+			if #versions == 0 or versions[#versions].CreatedTime ~= currentHour then
+				table.insert(
+					versions,
+					createVersion(newValue, newUserIds or keyInfo:GetUserIds(), newMetadata or keyInfo:GetMetadata())
+				)
+			end
+
 			scopedData[key] = newValue
 			if newUserIds ~= nil then
 				keyInfo.userIds = newUserIds
@@ -188,12 +301,16 @@ local function createMockStore(datastoreName: string, scope: string?): DataStore
 				keyInfo.metadata = newMetadata
 			end
 			keyInfo.UpdatedTime = getNow()
+			keyInfo.Version = tostring(getNow())
+
+			setCachedValue(self, key, newValue, keyInfo)
 			return newValue, keyInfo
 		end
-		return scopedData[key], keyInfo
 	end
 
-	tbl.RemoveAsync = function(self, key): any
+	tbl.RemoveAsync = function(self, key)
+		enforceKeyLimits(key)
+
 		if not checkRateLimit("RemoveAsync") then
 			enqueueRequest("RemoveAsync")
 		end
@@ -202,8 +319,71 @@ local function createMockStore(datastoreName: string, scope: string?): DataStore
 		local scopedData = getScopedData(self)
 		local data = scopedData[key]
 		local keyInfo = mockKeyInfo[`{self.datastoreName}|{self.scope}|{key}`]
+
+		if data ~= nil then
+			local versions = getVersionsForKey(self, key)
+			table.insert(versions, createVersion(nil, nil, nil))
+		end
+
 		scopedData[key] = nil
+
+		local cacheKey = getCacheKey(self, key)
+		mockCache[cacheKey] = nil
+
 		return data, keyInfo
+	end
+
+	tbl.GetVersionAsync = function(self, key, version)
+		enforceKeyLimits(key)
+
+		if not checkRateLimit("GetVersion") then
+			enqueueRequest("GetVersion")
+		end
+
+		local versions = getVersionsForKey(self, key)
+		for _, v in versions do
+			if v.Version == version then
+				return v.Value, createMockKeyInfo(v.UserIds, v.Metadata)
+			end
+		end
+		return nil, nil
+	end
+
+	tbl.ListVersionsAsync = function(self, key, sortDirection, minDate, maxDate)
+		enforceKeyLimits(key)
+
+		if not checkRateLimit("GetVersion") then
+			enqueueRequest("GetVersion")
+		end
+
+		local versions = getVersionsForKey(self, key)
+		local results = {}
+
+		for _, v in versions do
+			if (not minDate or v.CreatedTime >= minDate) and (not maxDate or v.CreatedTime <= maxDate) then
+				table.insert(results, {
+					Version = v.Version,
+					CreatedTime = v.CreatedTime,
+				})
+			end
+		end
+
+		if sortDirection == Enum.SortDirection.Descending then
+			table.sort(results, function(a, b)
+				return a.CreatedTime > b.CreatedTime
+			end)
+		else
+			table.sort(results, function(a, b)
+				return a.CreatedTime < b.CreatedTime
+			end)
+		end
+
+		return {
+			IsFinished = true,
+			GetCurrentPage = function()
+				return results
+			end,
+		}
 	end
 
 	tbl._setInternalData = function(self, newData, newKeyInfo)
@@ -215,7 +395,7 @@ local function createMockStore(datastoreName: string, scope: string?): DataStore
 		table.insert(queuedErrors[requestType], errorMessage)
 	end
 
-	return (tbl :: any) :: DataStoreService
+	return tbl
 end
 
 local function createMockService()
@@ -223,7 +403,7 @@ local function createMockService()
 		dataStores = {},
 	}
 
-	tbl.GetDataStore = function(self, datastoreName: string, scope: string?): any
+	tbl.GetDataStore = function(self, datastoreName: string, scope: string?)
 		local store = self.dataStores[`{datastoreName}{scope or ""}`]
 		if not store then
 			store = createMockStore(datastoreName, scope)
@@ -232,7 +412,7 @@ local function createMockService()
 		return store
 	end
 
-	return tbl
+	return (tbl :: any) :: DataStoreService
 end
 
 return {
