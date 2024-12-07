@@ -37,13 +37,7 @@ jobs:
               env:
                   NODE_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
-            - name: Install Moonwave
-              run: npm install -g moonwave@latest
-
-            - name: Build & Publish Docs
-              run: |
-                  git config --global user.email "github-actions[bot]@users.noreply.github.com"
-                  git config --global user.name "github-actions[bot]"
-                  moonwave build --publish
-              env:
-                  GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+    docs:
+        needs: release
+        uses: ./.github/workflows/publish-docs.yml
+        secrets: inherit

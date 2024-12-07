@@ -1,5 +1,5 @@
 title = "Lyra"
-gitRepoUrl = "placeholder"
+gitRepoUrl = "https://github.com/paradoxum-games/lyra"
 gitSourceBranch = "main"
 changelog = true
 
@@ -7,6 +7,7 @@ changelog = true
 onBrokenLinks = "throw"
 onBrokenMarkdownLinks = "warn"
 tagline = "Safe and efficient player data storage for Roblox games"
+baseUrl = "/"
 
 [home]
 enabled = true
@@ -36,6 +37,6 @@ label = "GitHub"
 href = "https://github.com/paradoxum-games/lyra"
 
 [[navbar.items]]
-href = "placeholder"
+href = "https://wally.run/package/paradoxum-games/lyra"
 label = "Wally"
 position = "right"
