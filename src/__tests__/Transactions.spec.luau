@@ -72,5 +72,37 @@ describe.each({
 				expect(data2).toEqual(txInfo2.committedData)
 			end)
 		end)
+
+		it("handles datastore errors gracefully", function()
+			local errorMessage = "DataStore error"
+			params.txInfo = {
+				txId = "tx789",
+				committedData = { foo = "bar" },
+				txData = { foo = "baz" },
+			}
+
+			dataStoreInterface.get = function()
+				return Promise.reject(errorMessage)
+			end
+
+			local promise = Transactions.readTx(params)
+			return expect(promise).rejects.toBe(errorMessage)
+		end)
+
+		it("handles invalid transaction data", function()
+			params.txInfo = {
+				txId = "tx789",
+				committedData = { foo = "bar" },
+				txData = { foo = "baz" },
+			}
+
+			dataStoreInterface.get = function()
+				return Promise.resolve({ invalid = "data" })
+			end
+
+			return Transactions.readTx(params):andThen(function(data)
+				expect(data).toEqual(params.txInfo.committedData)
+			end)
+		end)
 	end)
 end)
