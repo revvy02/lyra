@@ -638,20 +638,14 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 		return self._sessions[key].queue
 	end)
 
-	-- Normally we'd represent 'committed' as `true` and 'failed' as `false`.
-	-- This leaves a dangling DataStore entry (TX_SCOPE, txId). To clean it up,
-	-- we need to write all the keys again, committing their staged data and
-	-- removing txId from them. If all those succeed, *then* we can remove the
-	-- status entry. However, if we invert this so that 'committed' is `nil` and
-	-- 'failed' is `false`, we get a neat bonus where committing the tx also
-	-- cleans up what would be the dangling entry. Because `nil` means
-	-- 'committed', we can just leave the keys alone, and remove the status
-	-- entry. Assuming most transactions succeed, this saves a lot of writes.
+	-- Represent 'failed' as `false` and 'committed' as `nil`. When committing,
+	-- we can simply remove the status entry rather than updating all keys,
+	-- saving writes for successful transactions.
 	local txStatusPromise = self._ctx.dataStoreInterface:set(Constants.TX_SCOPE, txId, false)
 
-	-- Session:update waits for txLockPromise to resolve if it exists. We only
-	-- want to resolve it when the transaction logic has completely finished, so
-	-- we use this helper function to wrap the transaction logic.
+	-- Block Session:update calls during transaction execution by setting a lock
+	-- promise on affected sessions. Promise resolves when transaction
+	-- completes.
 	local function withTxLock(fn: () -> Promise.Promise): Promise.Promise
 		for _, key in keys do
 			local session = self._sessions[key]
@@ -700,9 +694,9 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 				return Promise.reject("Transaction transform function returned false")
 			end
 
-			-- We deep copy here to prevent references to internal state from being
-			-- leaked. If we didn't, the transform function could modify the state
-			-- after it runs, which shouldn't be allowed.
+			-- We deep copy here to prevent references to internal state from
+			-- being leaked. If we didn't, the transform function could modify
+			-- the state after it runs, which shouldn't be allowed.
 			nextState = Tables.copyDeep(nextState)
 
 			for _, key in keys do
@@ -731,8 +725,8 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 				return Promise.reject("Keys changed in transaction")
 			end
 
-			-- If no keys changed we can exit early, and if only one key changed, we
-			-- can treat it as a normal :update.
+			-- If no keys changed we can exit early, and if only one key
+			-- changed, we can treat it as a normal :update.
 			local changedKeys = {}
 			for key in currentState do
 				if not Tables.equalsDeep(currentState[key] :: any, nextState[key] :: any) then
@@ -790,8 +784,8 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 				:andThen(function()
 					logger:log("debug", "transaction committed successfully")
 
-					-- We just technically performed a save, so let's
-					-- reflect that in the Sessions.
+					-- We just technically performed a save, so let's reflect
+					-- that in the Sessions.
 					for _, key in keys do
 						local session = self._sessions[key]
 						session:setData(nextState[key])
