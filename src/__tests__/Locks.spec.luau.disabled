@@ -1,0 +1,178 @@
+local MemoryStoreService = game:GetService("MemoryStoreService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
+local HashMapInterface = require(ReplicatedStorage.Packages.Lyra.HashMapInterface)
+local Locks = require(ReplicatedStorage.Packages.Lyra.Locks)
+local Promise = require(ReplicatedStorage.Packages.Promise)
+local Log = require(ReplicatedStorage.Packages.Lyra.Log)
+
+local expect = JestGlobals.expect
+local describe = JestGlobals.describe
+local it = JestGlobals.it
+local beforeEach = JestGlobals.beforeEach
+local beforeAll = JestGlobals.beforeAll
+local jest = JestGlobals.jest
+
+describe("Locks", function()
+    local hashMapInterface
+    local storeContext
+    local logger
+
+    beforeAll(function()
+        jest.useFakeTimers()
+    end)
+
+    beforeEach(function()
+        hashMapInterface = HashMapInterface.new(MemoryStoreService)
+        logger = Log.createLogger(function() end)
+        storeContext = {
+            hashMapInterface = hashMapInterface,
+            lockScope = "test-locks",
+            logger = logger,
+        }
+    end)
+
+    local function acquireLock(key: string?, config: { [string]: any }?)
+        local params = {
+            storeContext = storeContext,
+            key = key or "testKey",
+            acquireAttempts = 3,
+            duration = 30,
+            refreshInterval = 5,
+        }
+        if config then
+            for k, v in config do
+                params[k] = v
+            end
+        end
+        return Locks.acquireLock(params)
+    end
+
+    describe("lock acquisition", function()
+        it("should acquire lock when none exists", function()
+            local promise = acquireLock()
+                :andThen(function(lock)
+                    expect(lock.isLocked()).toBe(true)
+                    return lock:release()
+                end)
+            jest.runAllTimers()
+            return promise
+        end)
+
+        it("should fail to acquire lock when already held", function()
+            local promise = acquireLock()
+                :andThen(function(lock1)
+                    expect(lock1.isLocked()).toBe(true)
+                    
+                    local lock2Promise = acquireLock()
+                    jest.runAllTimers()
+                    return Promise.all({
+                        expect(lock2Promise).rejects.toMatch("lock remained"),
+                        lock1:release(),
+                    })
+                end)
+            jest.runAllTimers()
+            return promise
+        end)
+
+        it("should acquire lock after previous lock expires", function()
+            local promise = acquireLock("testKey", { duration = 5 })
+                :andThen(function(lock1)
+                    expect(lock1.isLocked()).toBe(true)
+                    jest.advanceTimersByTime(6000) -- 6 seconds
+                    expect(lock1.isLocked()).toBe(false)
+                    
+                    return acquireLock("testKey")
+                        :andThen(function(lock2)
+                            expect(lock2.isLocked()).toBe(true)
+                            return lock2:release()
+                        end)
+                end)
+            jest.runAllTimers()
+            return promise
+        end)
+    end)
+
+    describe("lock refresh", function()
+        it("should maintain lock through refresh intervals", function()
+            local promise = acquireLock("testKey", { duration = 10, refreshInterval = 2 })
+                :andThen(function(lock)
+                    expect(lock.isLocked()).toBe(true)
+                    
+                    jest.advanceTimersByTime(3000) -- 3 seconds
+                    expect(lock.isLocked()).toBe(true)
+                    
+                    jest.advanceTimersByTime(3000) -- another 3 seconds
+                    expect(lock.isLocked()).toBe(true)
+                    
+                    return lock:release()
+                end)
+            jest.runAllTimers()
+            return promise
+        end)
+    end)
+
+    describe("lock callbacks", function()
+        it("should trigger callback when lock expires", function()
+            local callbackFired = false
+            local promise = acquireLock("testKey", { duration = 5 })
+                :andThen(function(lock)
+                    lock.onLockLost(function()
+                        callbackFired = true
+                    end)
+                    
+                    jest.advanceTimersByTime(6000) -- 6 seconds
+                    expect(callbackFired).toBe(true)
+                    return lock:release()
+                end)
+            jest.runAllTimers()
+            return promise
+        end)
+
+        it("should not trigger callback after unsubscribe", function()
+            local callbackFired = false
+            local promise = acquireLock("testKey", { duration = 5 })
+                :andThen(function(lock)
+                    local unsubscribe = lock.onLockLost(function()
+                        callbackFired = true
+                    end)
+                    unsubscribe()
+                    
+                    jest.advanceTimersByTime(6000) -- 6 seconds
+                    expect(callbackFired).toBe(false)
+                    return lock:release()
+                end)
+            jest.runAllTimers()
+            return promise
+        end)
+    end)
+
+    describe("probeLockActive", function()
+        it("should return true when lock exists", function()
+            local promise = acquireLock()
+                :andThen(function(lock)
+                    return Locks.probeLockActive({
+                        storeContext = storeContext,
+                        key = "testKey",
+                    }):andThen(function(isActive)
+                        expect(isActive).toBe(true)
+                        return lock:release()
+                    end)
+                end)
+            jest.runAllTimers()
+            return promise
+        end)
+
+        it("should return false when no lock exists", function()
+            local promise = Locks.probeLockActive({
+                storeContext = storeContext,
+                key = "testKey",
+            }):andThen(function(isActive)
+                expect(isActive).toBe(false)
+            end)
+            jest.runAllTimers()
+            return promise
+        end)
+    end)
+end)

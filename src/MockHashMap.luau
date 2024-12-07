@@ -1,8 +1,8 @@
 --!strict
 
-local Tables = require(script.Parent.Tables)
+local HttpService = game:GetService("HttpService")
 
-local mockData = {}
+local Tables = require(script.Parent.Tables)
 
 local requestQueues = {
 	GetAsync = {},
@@ -104,7 +104,7 @@ local function enforceExpirationLimits(expiration: number)
 	end
 end
 
-local function createMockHashMap(name: string): any
+local function createMockHashMap(name: string, mockData): any
 	local tbl = {
 		name = name,
 	}
@@ -161,6 +161,12 @@ local function createMockHashMap(name: string): any
 			return false
 		end
 
+		local serialized = HttpService:JSONEncode(value)
+		print(serialized)
+		if serialized == nil then
+			return false
+		end
+
 		scopedData[key] = {
 			value = value,
 			expiration = getNow() + expiration * 1000,
@@ -206,7 +212,7 @@ local function createMockHashMap(name: string): any
 				if retries >= MAX_UPDATE_RETRIES then
 					error("DataUpdateConflict", 2)
 				end
-				task.wait(2 ^ retries) -- Exponential backoff
+				-- task.wait(2 ^ retries) -- Exponential backoff
 				continue
 			end
 
@@ -244,12 +250,13 @@ end
 
 local function createMockService()
 	local tbl = {
+		_mockData = {},
 		_hashMaps = {},
 	}
 
 	tbl.GetHashMap = function(self, name: string): any
 		if not self._hashMaps[name] then
-			self._hashMaps[name] = createMockHashMap(name)
+			self._hashMaps[name] = createMockHashMap(name, tbl._mockData)
 		end
 		return self._hashMaps[name]
 	end

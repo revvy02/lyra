@@ -1,0 +1,176 @@
+local HttpService = game:GetService("HttpService")
+local MemoryStoreService = game:GetService("MemoryStoreService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
+local DataStoreInterface = require(ReplicatedStorage.Packages.Lyra.DataStoreInterface)
+local HashMapInterface = require(ReplicatedStorage.Packages.Lyra.HashMapInterface)
+local Session = require(ReplicatedStorage.Packages.Lyra.Session)
+local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataStoreService)
+local Promise = require(ReplicatedStorage.Packages.Promise)
+local Log = require(ReplicatedStorage.Packages.Lyra.Log)
+
+local expect = JestGlobals.expect
+local describe = JestGlobals.describe
+local it = JestGlobals.it
+local beforeEach = JestGlobals.beforeEach
+local beforeAll = JestGlobals.beforeAll
+local jest = JestGlobals.jest
+
+describe("Session", function()
+    local mockDataStoreService
+    local dataStoreInterface
+    local hashMapInterface
+    local storeContext
+    local logger
+
+    beforeAll(function()
+        jest.useFakeTimers()
+    end)
+
+    beforeEach(function()
+        mockDataStoreService = MockDataStoreService.createMockService()
+        dataStoreInterface = DataStoreInterface.new(mockDataStoreService)
+        hashMapInterface = HashMapInterface.new(MemoryStoreService)
+        logger = Log.createLogger(function() end)
+        
+        local name = `test-{string.sub(HttpService:GenerateGUID(false), 1, 8)}`
+        storeContext = {
+            name = name,
+            dataStoreInterface = dataStoreInterface,
+            hashMapInterface = hashMapInterface,
+            migrationSteps = {},
+            template = { initialized = true },
+            schema = function(data)
+                return typeof(data) == "table"
+            end,
+            logger = logger,
+        }
+    end)
+
+    local function getSession(key: string?, config: { [string]: any }?)
+        local params = {
+            key = key or "testKey",
+            storeContext = storeContext,
+        }
+        if config then
+            for k, v in config do
+                params[k] = v
+            end
+        end
+        return Session.load(params)
+    end
+
+    local function getData(session)
+        return session:get()
+    end
+
+    describe("data access", function()
+        it.only("should load session with template data when no existing data", function()
+            local promise = getSession()
+                -- :andThen(getData)
+                -- :andThen(function(data)
+                --     expect(data).toEqual(storeContext.template)
+                -- end)
+            jest.runAllTimers()
+            return promise
+        end)
+
+        it("should load existing data", function()
+            local existingData = { foo = "bar" }
+            local promise = dataStoreInterface:set(storeContext.recordScope, "testKey", {
+                file = { data = { committedData = existingData } },
+            })
+                :andThen(getSession)
+                :andThen(getData)
+                :andThen(function(data)
+                    expect(data).toEqual(existingData)
+                end)
+            jest.runAllTimers()
+            return promise
+        end)
+
+        it("should load with custom userIds", function()
+            local userIds = { 123, 456 }
+            local promise = getSession("testKey", { userIds = userIds })
+                :andThen(function(session)
+                    expect(session.userIds).toEqual(userIds)
+                end)
+            jest.runAllTimers()
+            return promise
+        end)
+    end)
+
+    describe("data updates", function()
+        it("should apply valid transform function", function()
+            local promise = getSession()
+                :andThen(function(session)
+                    return session:update(function(data)
+                        data.value = "new"
+                        return true
+                    end):andThenReturn(session)
+                end)
+                :andThen(getData)
+                :andThen(function(data)
+                    expect(data.value).toBe("new")
+                end)
+            jest.runAllTimers()
+            return promise
+        end)
+
+        it("should not update when transform returns false", function()
+            local promise = getSession()
+                :andThen(function(session)
+                    return session:update(function(data)
+                        data.value = "new"
+                        return false
+                    end):andThenReturn(session)
+                end)
+                :andThen(getData)
+                :andThen(function(data)
+                    expect(data.value).toBeNil()
+                end)
+            jest.runAllTimers()
+            return promise
+        end)
+
+        it("should reject invalid data via schema", function()
+            storeContext.schema = function(data)
+                return data.required ~= nil
+            end
+
+            local promise = getSession()
+                :andThen(function(session)
+                    return session:update(function(data)
+                        data.required = nil
+                        return true
+                    end)
+                end)
+            jest.runAllTimers()
+            return expect(promise).rejects.toMatch("schema validation failed")
+        end)
+
+        it("should handle concurrent updates correctly", function()
+            local promise = getSession()
+                :andThen(function(session)
+                    local updates = {
+                        session:update(function(data)
+                            data.count = (data.count or 0) + 1
+                            return true
+                        end),
+                        session:update(function(data)
+                            data.count = (data.count or 0) + 2
+                            return true
+                        end),
+                    }
+                    return Promise.all(updates):andThenReturn(session)
+                end)
+                :andThen(getData)
+                :andThen(function(data)
+                    expect(data.count).toBe(3)
+                end)
+            jest.runAllTimers()
+            return promise
+        end)
+    end)
+end)

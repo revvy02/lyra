@@ -1,6 +1,10 @@
 --!strict
 
 local function copyDeep<T>(t: T): T
+	if typeof(t) ~= "table" then
+		return t
+	end
+
 	local new = table.clone(t :: any)
 
 	for key, value in t :: any do
