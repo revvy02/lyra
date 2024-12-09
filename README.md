@@ -64,5 +64,3 @@ Lyra = "paradoxum-games/lyra@0.1.0"
 ```
 
 Check out the [documentation](https://github.com/paradoxum-games/lyra/tree/main/docs) for guides, examples, and API reference.
-
-## License
