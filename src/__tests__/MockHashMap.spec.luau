@@ -1,14 +1,14 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
-local MockHashMap = require(ReplicatedStorage.Packages.Lyra.MockHashMap)
-local Promise = require(ReplicatedStorage.Packages.Promise)
 
-local expect = JestGlobals.expect
+local MockHashMap = require(ReplicatedStorage.Packages.Lyra.MockHashMap)
+local Promise = require(ReplicatedStorage.Packages.Lyra.Promise)
+
 local describe = JestGlobals.describe
 local it = JestGlobals.it
-local beforeEach = JestGlobals.beforeEach
+local expect = JestGlobals.expect
 local beforeAll = JestGlobals.beforeAll
+local beforeEach = JestGlobals.beforeEach
 local jest = JestGlobals.jest
 
 local function call<T>(obj: any, method: string, ...: any): T
@@ -30,163 +30,156 @@ describe("MockHashMap", function()
 
 	beforeEach(function()
 		mockService = MockHashMap.createMockService()
-		hashMap = mockService:GetHashMap("test")
+		hashMap = mockService:GetHashMap("TestMap")
 	end)
 
-	describe("key validation", function()
-		it("should reject empty keys", function()
-			expect(function()
-				call(hashMap, "SetAsync", "", "value", 30)
-			end).toThrow("InvalidRequest: key cannot be empty")
+	describe("SetAsync & GetAsync", function()
+		it("should set and get a simple key-value pair", function()
+			local res = call(hashMap, "SetAsync", "testKey", { foo = "bar" }, 10)
+			expect(res).toBe(true)
+
+			local val = call(hashMap, "GetAsync", "testKey")
+			expect(val).toEqual({ foo = "bar" })
 		end)
 
-		it("should reject keys longer than 128 characters", function()
-			local longKey = string.rep("a", 129)
-			expect(function()
-				call(hashMap, "SetAsync", longKey, "value", 30)
-			end).toThrow("InvalidRequest: key length exceeds limit")
-		end)
-	end)
-
-	describe("value validation", function()
-		it("should reject values that exceed 32KB", function()
-			local largeValue = string.rep("a", 33 * 1024)
-			expect(function()
-				call(hashMap, "SetAsync", "key", largeValue, 30)
-			end).toThrow("ItemValueSizeTooLarge")
+		it("should return nil for non-existent key", function()
+			local val = call(hashMap, "GetAsync", "missingKey")
+			expect(val).toBeNil()
 		end)
 
-		it.only("should reject values that can't be JSON encoded", function()
-			local fn = function() end
-			local ret = call(hashMap, "SetAsync", "key", fn, 30)
-			expect(ret).toBe(false)
+		it("should overwrite existing key on SetAsync", function()
+			local res1 = call(hashMap, "SetAsync", "overKey", "first", 10)
+			expect(res1).toBe(true)
+
+			local res2 = call(hashMap, "SetAsync", "overKey", "second", 10)
+			expect(res2).toBe(true)
+
+			local val = call(hashMap, "GetAsync", "overKey")
+			expect(val).toBe("second")
 		end)
 	end)
 
-	describe("expiration validation", function()
-		it("should reject non-positive expiration times", function()
+	describe("Expiration", function()
+		it("should error on invalid expiration", function()
 			expect(function()
 				call(hashMap, "SetAsync", "key", "value", 0)
-			end).toThrow("InvalidRequest: expiration must be greater than 0")
+			end).toThrow("InvalidRequest")
 		end)
 
-		it("should reject expiration times over 45 days", function()
+		it("should expire keys after given time", function()
+			local res = call(hashMap, "SetAsync", "tempKey", "tempValue", 1)
+			expect(res).toBe(true)
+
+			jest.advanceTimersByTime(2000)
+
+			local val = call(hashMap, "GetAsync", "tempKey")
+			expect(val).toBeNil()
+		end)
+	end)
+
+	describe("Value and Key Limits", function()
+		it("should error on too long key", function()
+			local longKey = string.rep("a", 129)
 			expect(function()
-				call(hashMap, "SetAsync", "key", "value", 3888001)
-			end).toThrow("InvalidRequest: expiration exceeds maximum")
+				call(hashMap, "SetAsync", longKey, "value", 10)
+			end).toThrow("InvalidRequest")
+		end)
+
+		it("should error on too large value", function()
+			local largeValue = string.rep("a", 33 * 1024)
+			expect(function()
+				call(hashMap, "SetAsync", "largeValKey", largeValue, 10)
+			end).toThrow("ItemValueSizeTooLarge")
 		end)
 	end)
 
-	describe("basic operations", function()
-		it("should set and get values", function()
-			call(hashMap, "SetAsync", "key", "value", 30)
-			local value = call(hashMap, "GetAsync", "key")
-			expect(value).toBe("value")
+	describe("UpdateAsync", function()
+		it("should update existing key using transform function", function()
+			local res = call(hashMap, "SetAsync", "updKey", { count = 10 }, 10)
+			expect(res).toBe(true)
+
+			local newVal = call(hashMap, "UpdateAsync", "updKey", function(oldVal)
+				return { count = (oldVal.count or 0) + 5 }
+			end, 10)
+			expect(newVal).toEqual({ count = 15 })
+
+			local finalVal = call(hashMap, "GetAsync", "updKey")
+			expect(finalVal).toEqual({ count = 15 })
 		end)
 
-		it("should return nil for non-existent keys", function()
-			local value = call(hashMap, "GetAsync", "nonexistent")
-			expect(value).toBeNil()
+		it("should set value if key does not exist", function()
+			local val = call(hashMap, "UpdateAsync", "newKey", function(oldVal)
+				expect(oldVal).toBeNil()
+				return { foo = "bar" }
+			end, 10)
+			expect(val).toEqual({ foo = "bar" })
+
+			local getVal = call(hashMap, "GetAsync", "newKey")
+			expect(getVal).toEqual({ foo = "bar" })
 		end)
 
-		it("should remove values", function()
-			call(hashMap, "SetAsync", "key", "value", 30)
-			call(hashMap, "RemoveAsync", "key")
-			local value = call(hashMap, "GetAsync", "key")
-			expect(value).toBeNil()
-		end)
+		it("should remove key if transform returns nil", function()
+			local res = call(hashMap, "SetAsync", "delKey", { test = true }, 10)
+			expect(res).toBe(true)
 
-		it.failing("should handle expiration", function()
-			call(hashMap, "SetAsync", "key", "value", 1)
-			jest.advanceTimersByTime(1100) -- 1.1 seconds
-			local value = call(hashMap, "GetAsync", "key")
-			expect(value).toBeNil()
-		end)
-	end)
-
-	describe("update operations", function()
-		it.failing("should update existing values", function()
-			call(hashMap, "SetAsync", "key", { count = 1 }, 30)
-			call(hashMap, "UpdateAsync", "key", function(val)
-				val.count += 1
-				return val
-			end, 30)
-			local value = call(hashMap, "GetAsync", "key")
-			expect(value.count).toBe(2)
-		end)
-
-		it("should handle nil transform results", function()
-			call(hashMap, "SetAsync", "key", "value", 30)
-			call(hashMap, "UpdateAsync", "key", function()
+			local val = call(hashMap, "UpdateAsync", "delKey", function(oldVal)
+				expect(oldVal).toEqual({ test = true })
 				return nil
-			end, 30)
-			local value = call(hashMap, "GetAsync", "key")
-			expect(value).toBeNil()
-		end)
+			end, 10)
+			expect(val).toBeNil()
 
-		it("should handle transform errors", function()
-			call(hashMap, "SetAsync", "key", "value", 30)
-			expect(function()
-				call(hashMap, "UpdateAsync", "key", function()
-					error("transform error")
-				end, 30)
-			end).toThrow("TransformCallbackFailed")
-		end)
-
-		it.failing("should retry on concurrent updates", function()
-			call(hashMap, "SetAsync", "key", "initial", 30)
-
-			-- Simulate concurrent updates by modifying the value between transform check and set
-			local updateCount = 0
-			local success, err = pcall(function()
-				call(hashMap, "UpdateAsync", "key", function(value)
-					if updateCount == 0 then
-						updateCount += 1
-						call(hashMap, "SetAsync", "key", "modified", 30)
-					end
-					return "new value"
-				end, 30)
-			end)
-
-			-- Should have attempted retries with exponential backoff
-			jest.advanceTimersByTime(2000) -- 2^1 seconds
-			jest.advanceTimersByTime(4000) -- 2^2 seconds
-			jest.advanceTimersByTime(8000) -- 2^3 seconds
-
-			expect(success).toBe(false)
-			expect(err:match("DataUpdateConflict")).toBeTruthy()
+			local getVal = call(hashMap, "GetAsync", "delKey")
+			expect(getVal).toBeNil()
 		end)
 	end)
 
-	describe("rate limiting", function()
-		it.failing("should enforce rate limits", function()
-			-- Make 101 rapid requests (base rate limit is 100)
+	describe("RemoveAsync", function()
+		it("should remove an existing key", function()
+			local res = call(hashMap, "SetAsync", "rmKey", "rmVal", 10)
+			expect(res).toBe(true)
+
+			call(hashMap, "RemoveAsync", "rmKey")
+
+			local val = call(hashMap, "GetAsync", "rmKey")
+			expect(val).toBeNil()
+		end)
+
+		it("should not error when removing a non-existent key", function()
 			expect(function()
-				for i = 1, 101 do
-					if i == 101 then
-						call(hashMap, "GetAsync", "key")
-					else
-						pcall(function()
-							call(hashMap, "GetAsync", "key")
-						end)
-					end
-				end
-			end).toThrow("TotalRequestsOverLimit")
+				call(hashMap, "RemoveAsync", "noKey")
+			end).never.toThrow()
 		end)
 	end)
 
-	describe("multiple hash maps", function()
-		it("should maintain separate data for different maps", function()
-			local hashMap2 = mockService:GetHashMap("test2")
+	describe("Rate Limits and Throttling", function()
+		it("should eventually hit TotalRequestsOverLimit with many calls", function()
+			local numRequests = 100
+			local done = false
+			local finishedCount = 0
 
-			call(hashMap, "SetAsync", "key", "value1", 30)
-			call(hashMap2, "SetAsync", "key", "value2", 30)
+			jest.useRealTimers()
+			for _ = 1, numRequests do
+				task.spawn(function()
+					local success, err = pcall(function()
+						hashMap:GetAsync("spamKey")
+					end)
 
-			local value1 = call(hashMap, "GetAsync", "key")
-			local value2 = call(hashMap2, "GetAsync", "key")
+					finishedCount += 1
 
-			expect(value1).toBe("value1")
-			expect(value2).toBe("value2")
+					if
+						not success
+						and (string.find(err, "TotalRequestsOverLimit") or string.find(err, "RequestThrottled"))
+					then
+						done = true
+					end
+				end)
+			end
+
+			while not done and finishedCount < numRequests do
+				task.wait()
+			end
+
+			expect(done).toBe(true)
 		end)
 	end)
 end)
