@@ -35,7 +35,7 @@ local function getNow()
 	return DateTime.now().UnixTimestampMillis
 end
 
-local function checkRateLimit(requestType)
+local function doRateLimitAndQueue(requestType)
 	local queue = requestQueues[requestType]
 	local limitData = RATE_LIMITS[requestType]
 	local currentPlayers = 15
@@ -45,11 +45,6 @@ local function checkRateLimit(requestType)
 		error("TotalRequestsOverLimit", 2)
 	end
 
-	return true
-end
-
-local function enqueueRequest(requestType)
-	local queue = requestQueues[requestType]
 	if #queue >= MAX_QUEUE_SIZE then
 		error("RequestThrottled", 2)
 	end
@@ -128,9 +123,8 @@ local function createMockHashMap(name: string, mockData): any
 	tbl.GetAsync = function(self, key: string): any?
 		enforceKeyLimits(key)
 
-		if not checkRateLimit("GetAsync") then
-			enqueueRequest("GetAsync")
-		end
+		doRateLimitAndQueue("GetAsync")
+
 		delayWait(0.1)
 
 		local scopedData = getScopedData(self)
@@ -149,20 +143,11 @@ local function createMockHashMap(name: string, mockData): any
 		enforceValueLimits(value)
 		enforceExpirationLimits(expiration)
 
-		if not checkRateLimit("SetAsync") then
-			enqueueRequest("SetAsync")
-		end
+		doRateLimitAndQueue("SetAsync")
 		delayWait(0.1)
 
 		local scopedData = getScopedData(self)
-		local entry = scopedData[key]
-
-		if entry and not isExpired(entry) then
-			return false
-		end
-
 		local serialized = HttpService:JSONEncode(value)
-		print(serialized)
 		if serialized == nil then
 			return false
 		end
@@ -179,9 +164,7 @@ local function createMockHashMap(name: string, mockData): any
 		enforceKeyLimits(key)
 		enforceExpirationLimits(expiration)
 
-		if not checkRateLimit("UpdateAsync") then
-			enqueueRequest("UpdateAsync")
-		end
+		doRateLimitAndQueue("UpdateAsync")
 		delayWait(0.1)
 
 		local scopedData = getScopedData(self)
@@ -212,7 +195,6 @@ local function createMockHashMap(name: string, mockData): any
 				if retries >= MAX_UPDATE_RETRIES then
 					error("DataUpdateConflict", 2)
 				end
-				-- task.wait(2 ^ retries) -- Exponential backoff
 				continue
 			end
 
@@ -227,22 +209,14 @@ local function createMockHashMap(name: string, mockData): any
 		error("UpdateConflict: Exceeded max number of retries", 2)
 	end
 
-	tbl.RemoveAsync = function(self, key: string): any?
+	tbl.RemoveAsync = function(self, key: string)
 		enforceKeyLimits(key)
 
-		if not checkRateLimit("RemoveAsync") then
-			enqueueRequest("RemoveAsync")
-		end
+		doRateLimitAndQueue("RemoveAsync")
 		delayWait(0.1)
 
 		local scopedData = getScopedData(self)
-		local entry = scopedData[key]
 		scopedData[key] = nil
-
-		if entry and not isExpired(entry) then
-			return entry.value
-		end
-		return nil
 	end
 
 	return tbl
