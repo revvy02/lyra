@@ -109,9 +109,6 @@ PlayerStore.__index = PlayerStore
 		changedCallbacks = {
 			function(key, newData, oldData)
 				print(key, "changed from", oldData.coins, "to", newData.coins)
-				return function()
-					print("Cleanup!") -- Called when session ends
-				end
 			end,
 		},
 	})

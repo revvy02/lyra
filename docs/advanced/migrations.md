@@ -101,8 +101,7 @@ When working with migrations:
 
 1. **Plan carefully** - Once published, migrations can't be changed
 2. **Keep migrations simple** - One logical change per step
-3. **Handle edge cases** - Check if fields exist before accessing them
-4. **Test thoroughly** - Migrations run once and can't be undone
+3. **Test thoroughly** - Migrations run once and can't be undone
 
 ## See Also
 

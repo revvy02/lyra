@@ -69,17 +69,21 @@ Always modify data through update functions. Never use data from a previous `:ge
 -- 🚫 Don't do this:
 local oldData = store:get(player):expect()
 store:update(player, function(newData)
-    if not oldData.hasGift then -- This data might be stale!
+    if not oldData.claimedDailyReward then -- This data might be stale!
         return false
     end
     newData.coins += 500
-    newData.hasGift = false
+    newData.claimedDailyReward = true
     return true
 end)
 
 -- ✅ Do this instead:
 store:update(player, function(data)
-    data.coins += 100 -- This data is always current
+    if not data.claimedDailyReward then -- This data is always current
+        return false
+    end
+    data.coins += 500
+    data.claimedDailyReward = true
     return true
 end)
 ```
@@ -100,7 +104,9 @@ local store = Lyra.createPlayerStore({
         end)
         
         if not success then
-            error("Failed to reach data system") -- Player will be kicked and can retry
+            -- If there's an error, Lyra will kick the player and prompt them
+            -- to rejoin to try again.
+            error("Failed to reach data system")
         end
 
         if data ~= nil then

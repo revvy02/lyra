@@ -10,16 +10,14 @@ To effectively use Lyra, it's important to understand how it thinks about data. 
 
 When a player joins your game, you need a way to work with their data. A session is Lyra's way of managing this connection between your game and a player's saved data.
 
-Sessions work like file locks in a distributed system. When you load a player's data, Lyra establishes a session that gives your server exclusive access to that data. This is crucial in Roblox's multi-server environment - without sessions, multiple servers might try to modify the same player's data simultaneously, leading to race conditions and data corruption.
+Sessions utilize 'session locking' to keep data safe. When you load a player's data, Lyra 'locks' it, which gives your server exclusive access to that data. This is crucial - without session locking, multiple servers might try to modify the same player's data simultaneously, leading to race conditions and lost data.
 
 Here's how you work with sessions:
 
 ```lua
 Players.PlayerAdded:Connect(function(player)
     -- Establish exclusive access to the player's data
-    store:load(player):andThen(function()
-        print("Session established")
-    end)
+    store:load(player):expect()
 end)
 
 Players.PlayerRemoving:Connect(function(player)
@@ -34,7 +32,7 @@ Loading a session is always your first step. Any attempts to access or modify da
 
 Once you have a session, you can start working with the player's data. Lyra provides a structured way to make changes through updates.
 
-An update is a function that receives the current data and can modify it. The function must return true to commit the changes, providing an atomic way to perform conditional updates:
+An update is a function that receives the current data and can modify it mutably. The function must return true to commit the changes, providing an atomic way to perform conditional updates:
 
 ```lua
 store:update(player, function(data)
@@ -50,9 +48,17 @@ end)
 
 This pattern enables you to encapsulate your game's logic within updates while ensuring data consistency. The update either succeeds completely or fails entirely - there's no possibility of partial changes.
 
+:::warning Don't Yield!
+Lyra enforces that updates are synchronous and non-blocking - if you yield inside the update function, it will error and abort the operation.
+:::
+
 ## Handling Multiple Players
 
-Sometimes you need to coordinate changes across multiple players, like in a trading system. This is where transactions come in.
+Sometimes you need to coordinate changes across multiple players, like in a trading system. 
+
+If you update each player individually, there's no guarantee that one player's changes will succeed while the other's fail - imagine a server crashing at exactly the right moment.
+
+This is where transactions come in.
 
 A transaction lets you modify multiple players' data atomically. Either all the changes succeed, or none of them do. This is crucial for maintaining data consistency:
 
@@ -81,21 +87,18 @@ local store = Lyra.createPlayerStore({
         coins = 0,
         inventory = {},
     },
-    schema = function(data)
-        return type(data.coins) == "number" 
-            and type(data.inventory) == "table",
-            "Invalid data format"
-    end,
+    schema = t.strictInterface({
+        coins = t.number,
+        inventory = t.table,
+    }),
 })
 ```
 
-Lyra enforces this schema on every operation, creating a type-safe boundary between your game logic and your persistent storage. If an operation would result in invalid data, Lyra rejects it before it can be saved.
+Lyra enforces this schema on every operation, creating a safe boundary between your game logic and DataStores. If an operation would result in invalid data, Lyra rejects it before it can be saved.
 
-## Putting It All Together
-
-These concepts - sessions, updates, transactions, and validation - form a cohesive system for managing player data. Sessions provide concurrency control, updates offer atomic operations, transactions handle multi-player interactions, and validation maintains data integrity.
-
-By understanding these core concepts, you can build complex game systems with confidence, knowing that Lyra is handling the complexities of distributed data management.
+:::tip
+We recommend using ['t', a Runtime Typechecker for Roblox](https://github.com/osyrisrblx/t) for defining schemas!
+:::
 
 ## Next Steps
 

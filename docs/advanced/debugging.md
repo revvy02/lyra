@@ -17,7 +17,7 @@ Here's a basic setup that prints all logs:
 
 ```lua
 local function handleLogs(message)
-    print(`[Lyra][{message.level}] {message.message}`)
+    print(`[Lyra][{string.upper(message.level)}] {message.message}`)
     
     if message.context then
         -- Context contains relevant data like keys, session info, etc.

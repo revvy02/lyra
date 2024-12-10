@@ -48,14 +48,12 @@ local store = Lyra.createPlayerStore({
 
 -- Load data when players join
 Players.PlayerAdded:Connect(function(player)
-    store:load(player):andThen(function()
-        print("Data loaded for", player.Name)
-    end):catch(warn)
+    store:load(player):expect()
 end)
 
 -- Save and clean up when they leave
 Players.PlayerRemoving:Connect(function(player)
-    store:unload(player):catch(warn)
+    store:unload(player):expect()
 end)
 ```
 
@@ -69,7 +67,7 @@ You can read player data, but remember that it might change between reads:
 store:get(player):andThen(function(data)
     -- ⚠️ Only use this data for reading
     -- Don't save it for later use
-    print(player.Name, "has", data.coins, "coins")
+    print(`{player.Name} has {data.coins} coins`)
 end)
 ```
 
@@ -93,14 +91,6 @@ store:update(player, function(data)
     data.coins -= itemPrice
     table.insert(data.inventory, itemId)
     return true
-end):andThen(function()
-    print("Purchase successful!")
-end):catch(function(err)
-    if err:match("Update aborted") then
-        print("Not enough coins!")
-    else
-        warn("Error:", err)
-    end
 end)
 ```
 
@@ -141,7 +131,7 @@ store:update(player, function(data)
 end):andThen(function()
     print("Purchase successful!")
 end):catch(function(err)
-    print("Purchase failed:", err)
+    print(`Purchase failed: {err}`)
 end)
 ```
 
