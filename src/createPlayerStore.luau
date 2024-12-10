@@ -195,6 +195,7 @@ end
 
 	@error "Load already in progress" -- Another load is in progress for this player
 	@error "Store is closed" -- The store has been closed
+	@return Promise -- Resolves when data is loaded
 	@within PlayerStore
 ]=]
 function PlayerStore:load(player: Player)
@@ -215,6 +216,7 @@ end
 	```
 
 	@error "Store is closed" -- The store has been closed
+	@return Promise -- Resolves when data is unloaded
 	@within PlayerStore
 ]=]
 function PlayerStore:unload(player: Player)
@@ -239,6 +241,7 @@ end
 	@error "Key not loaded" -- The player's data hasn't been loaded
 	@error "Store is closed" -- The store has been closed
 	@error "Schema validation failed" -- The transformed data failed schema validation
+	@return Promise -- Resolves when the update is complete
 	@within PlayerStore
 ]=]
 function PlayerStore:update<T>(player: Player, transformFunction: (data: T) -> boolean)
@@ -265,6 +268,7 @@ end
 	@error "Key not loaded" -- One or more players' data hasn't been loaded
 	@error "Store is closed" -- The store has been closed
 	@error "Schema validation failed" -- The transformed data failed schema validation
+	@return Promise -- Resolves when the transaction is complete
 	@within PlayerStore
 ]=]
 function PlayerStore:tx<T>(players: { Player }, transformFunction: (state: { [Player]: T }) -> boolean)
@@ -312,6 +316,7 @@ end
 
 	@error "Key not loaded" -- The player's data hasn't been loaded
 	@error "Store is closed" -- The store has been closed
+	@return Promise -- Resolves when the save is complete
 	@within PlayerStore
 ]=]
 function PlayerStore:save(player: Player)
@@ -323,6 +328,7 @@ end
 	Closes the store and unloads all active sessions.
 	The store cannot be used after closing.
 
+	@return Promise -- Resolves when the store is closed
 	@within PlayerStore
 ]=]
 function PlayerStore:close()

@@ -52,6 +52,10 @@ This pattern enables you to encapsulate your game's logic within updates while e
 Lyra enforces that updates are synchronous and non-blocking - if you yield inside the update function, it will error and abort the operation.
 :::
 
+## Automatic Data Persistence
+
+Lyra takes care of saving your data automatically. Every 5 minutes, it performs an autosave operation for all active sessions, ensuring your players' progress is regularly persisted to DataStore without any manual intervention required.
+
 ## Handling Multiple Players
 
 Sometimes you need to coordinate changes across multiple players, like in a trading system. 

@@ -45,7 +45,7 @@ local store = Lyra.createPlayerStore({
 })
 ```
 
-:::warning Migration Names Are Permanent
+:::danger Migration Names Are Permanent
 Migration names (like "add_player_settings") are permanent and help Lyra track which migrations have run. Choose descriptive names that indicate what the migration does, as you can't change them later.
 :::
 
@@ -91,7 +91,7 @@ migrationSteps = Lyra.Migration.new()
     :finalize()
 ```
 
-:::caution Migration Order Is Critical
+:::danger Migration Order Is Critical
 Migrations always run in the order they're defined. This order becomes permanent once published - you can't change it later. If a new migration needs data from an older one, add it after the existing migrations.
 :::
 

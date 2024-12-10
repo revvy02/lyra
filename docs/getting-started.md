@@ -55,6 +55,11 @@ end)
 Players.PlayerRemoving:Connect(function(player)
     store:unload(player):expect()
 end)
+
+-- Ensure data is saved when the game closes
+game:BindToClose(function()
+    store:close():expect()
+end)
 ```
 
 ## Working with Data
