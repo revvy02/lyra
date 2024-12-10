@@ -7,7 +7,7 @@ changelog = true
 onBrokenLinks = "throw"
 onBrokenMarkdownLinks = "warn"
 tagline = "Safe and efficient player data storage for Roblox games"
-baseUrl = "/"
+baseUrl = "/lyra/"
 
 [home]
 enabled = true
