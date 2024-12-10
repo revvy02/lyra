@@ -12,6 +12,7 @@ local requestQueues = {
 	SetAsync = {},
 	UpdateAsync = {},
 	RemoveAsync = {},
+	GetVersion = {},
 }
 local queuedErrors = {
 	GetAsync = {},
@@ -45,8 +46,12 @@ local function getNow()
 	return DateTime.now().UnixTimestampMillis
 end
 
+local function msToHours(ms: number)
+	return math.floor(ms / (60 * 60 * 1000))
+end
+
 local function getUtcHour()
-	return math.floor(getNow() / (60 * 60 * 1000))
+	return msToHours(getNow())
 end
 
 local function createVersion(value: any, userIds: any, metadata: any)
@@ -174,7 +179,7 @@ local function createMockStore(datastoreName: string, scope: string?)
 		end
 	end
 
-	local function checkRateLimit(requestType)
+	local function doRateLimitAndQueue(requestType)
 		local queue = requestQueues[requestType]
 		local limitData = RATE_LIMITS[requestType]
 		if not limitData then
@@ -187,11 +192,6 @@ local function createMockStore(datastoreName: string, scope: string?)
 			return false
 		end
 
-		return true
-	end
-
-	local function enqueueRequest(requestType)
-		local queue = requestQueues[requestType]
 		if #queue >= MAX_QUEUE_SIZE then
 			error(
 				`DataStoreService:{requestType}() request dropped. Request was throttled, but throttled request queue was full`,
@@ -205,6 +205,8 @@ local function createMockStore(datastoreName: string, scope: string?)
 		if typeof(fn) == "function" then
 			fn()
 		end
+
+		return true
 	end
 
 	tbl.SetAsync = function(self, key, value, userIds, options)
@@ -214,24 +216,35 @@ local function createMockStore(datastoreName: string, scope: string?)
 			validateMetadata(options:GetMetadata())
 		end
 
-		if not checkRateLimit("SetAsync") then
-			enqueueRequest("SetAsync")
-		end
+		doRateLimitAndQueue("SetAsync")
+
 		delayWait(0.1)
 
 		local scopedData = getScopedData(self)
 		local versions = getVersionsForKey(self, key)
 		local currentHour = getUtcHour()
 
-		if #versions == 0 or versions[#versions].CreatedTime ~= currentHour then
+		if #versions == 0 or msToHours(versions[#versions].CreatedTime) ~= currentHour then
 			table.insert(versions, createVersion(value, userIds, options and options:GetMetadata()))
+		else
+			local currentVersion = versions[#versions]
+			currentVersion.Value = value
+			if userIds then
+				currentVersion.UserIds = userIds
+			end
+			if options then
+				currentVersion.Metadata = options:GetMetadata() or {}
+			end
 		end
 
+		local latestVersion = versions[#versions].Version
 		scopedData[key] = value
 		local keyInfo = createMockKeyInfo(userIds, options and options:GetMetadata())
 		mockKeyInfo[`{self.datastoreName}|{self.scope}|{key}`] = keyInfo
 
 		setCachedValue(self, key, value, keyInfo)
+
+		return latestVersion
 	end
 
 	tbl.GetAsync = function(self, key)
@@ -242,9 +255,8 @@ local function createMockStore(datastoreName: string, scope: string?)
 			return cachedValue, cachedKeyInfo
 		end
 
-		if not checkRateLimit("GetAsync") then
-			enqueueRequest("GetAsync")
-		end
+		doRateLimitAndQueue("GetAsync")
+
 		delayWait(0.1)
 
 		local scopedData = getScopedData(self)
@@ -261,9 +273,7 @@ local function createMockStore(datastoreName: string, scope: string?)
 	tbl.UpdateAsync = function(self, key, transformFunction)
 		enforceKeyLimits(key)
 
-		if not checkRateLimit("UpdateAsync") then
-			enqueueRequest("UpdateAsync")
-		end
+		doRateLimitAndQueue("UpdateAsync")
 
 		while true do
 			local scopedData = getScopedData(self)
@@ -291,6 +301,15 @@ local function createMockStore(datastoreName: string, scope: string?)
 					versions,
 					createVersion(newValue, newUserIds or keyInfo:GetUserIds(), newMetadata or keyInfo:GetMetadata())
 				)
+			else
+				local currentVersion = versions[#versions]
+				currentVersion.Value = newValue
+				if newUserIds then
+					currentVersion.UserIds = newUserIds
+				end
+				if newMetadata then
+					currentVersion.Metadata = newMetadata
+				end
 			end
 
 			scopedData[key] = newValue
@@ -311,9 +330,8 @@ local function createMockStore(datastoreName: string, scope: string?)
 	tbl.RemoveAsync = function(self, key)
 		enforceKeyLimits(key)
 
-		if not checkRateLimit("RemoveAsync") then
-			enqueueRequest("RemoveAsync")
-		end
+		doRateLimitAndQueue("RemoveAsync")
+
 		delayWait(0.01)
 
 		local scopedData = getScopedData(self)
@@ -336,9 +354,7 @@ local function createMockStore(datastoreName: string, scope: string?)
 	tbl.GetVersionAsync = function(self, key, version)
 		enforceKeyLimits(key)
 
-		if not checkRateLimit("GetVersion") then
-			enqueueRequest("GetVersion")
-		end
+		doRateLimitAndQueue("GetVersion")
 
 		local versions = getVersionsForKey(self, key)
 		for _, v in versions do
@@ -352,9 +368,7 @@ local function createMockStore(datastoreName: string, scope: string?)
 	tbl.ListVersionsAsync = function(self, key, sortDirection, minDate, maxDate)
 		enforceKeyLimits(key)
 
-		if not checkRateLimit("GetVersion") then
-			enqueueRequest("GetVersion")
-		end
+		doRateLimitAndQueue("GetVersion")
 
 		local versions = getVersionsForKey(self, key)
 		local results = {}
