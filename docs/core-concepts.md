@@ -56,6 +56,16 @@ Lyra enforces that updates are synchronous and non-blocking - if you yield insid
 
 Lyra takes care of saving your data automatically. Every 5 minutes, it performs an autosave operation for all active sessions, ensuring your players' progress is regularly persisted to DataStore without any manual intervention required.
 
+To ensure all data is properly saved when the game shuts down, you must call `store:close()` inside BindToClose. Lyra doesn't do this for you in case you need to do anything before calling it (usually not):
+
+```lua
+game:BindToClose(function()
+    store:close():expect()
+end)
+```
+
+Note the `:expect()` - this ensures we're waiting for the store to finish closing before allowing the server to shut down.
+
 ## Handling Multiple Players
 
 Sometimes you need to coordinate changes across multiple players, like in a trading system. 
