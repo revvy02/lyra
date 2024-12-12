@@ -836,6 +836,8 @@ function Store:close(): Promise.Promise
 		(loadPromise :: any):cancel()
 	end
 
+	local rejections = {}
+
 	local promises = {}
 	for key in self._sessions do
 		if self._unloadPromises[key] then
@@ -843,7 +845,12 @@ function Store:close(): Promise.Promise
 			table.insert(promises, self._unloadPromises[key])
 		else
 			logger:log("trace", "unloading key", { key = key })
-			table.insert(promises, self:unload(key))
+			table.insert(
+				promises,
+				self:unload(key):catch(function(err)
+					table.insert(rejections, err)
+				end)
+			)
 		end
 	end
 
@@ -852,6 +859,9 @@ function Store:close(): Promise.Promise
 
 	return Promise.allSettled(promises):andThen(function()
 		logger:log("debug", "store closed")
+		if #rejections > 0 then
+			return Promise.reject(rejections)
+		end
 	end)
 end
 
