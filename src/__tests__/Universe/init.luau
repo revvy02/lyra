@@ -24,9 +24,11 @@ type UniverseImpl = {
 	RemoveRandomPlayer: (self: Universe, placeId: number) -> (),
 	CrashRandomServer: (self: Universe, placeId: number) -> (),
 	StopRandomServer: (self: Universe, placeId: number) -> (),
+	CloseUniverse: (self: Universe) -> (),
 }
 
 type UniverseProps = {
+	closed: boolean,
 	seed: number,
 	rng: Random,
 	places: { [number]: PlaceConfig },
@@ -222,6 +224,10 @@ function Universe:_matchmakePlayerToPlace(placeId: number): string
 end
 
 function Universe:StartServer(placeId: number): string
+	if self.closed then
+		error("Cannot start server in closed universe.")
+	end
+
 	self:_getPlaceConfig(placeId)
 
 	local jobId = self:_generateJobId()
@@ -324,7 +330,12 @@ function Universe:StopServer(jobId: string)
 	for _, cb in callbacks do
 		task.spawn(function()
 			self:_traceEvent("BindToCloseStarted", { JobId = jobId })
-			cb()
+			local ok, err = pcall(function()
+				cb()
+			end)
+			if not ok then
+				warn("Error in BindToClose callback: " .. tostring(err))
+			end
 			self:_traceEvent("BindToCloseCompleted", { JobId = jobId })
 			onCbDone()
 		end)
@@ -515,6 +526,12 @@ function Universe:StopRandomServer(placeId: number)
 	end
 
 	self:StopServer(server.JobId)
+end
+
+function Universe:CloseUniverse()
+	for jobId in self.servers do
+		self:StopServer(jobId)
+	end
 end
 
 return Universe
