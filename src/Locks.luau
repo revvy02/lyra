@@ -28,6 +28,7 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 	local expiredCallbacks: { () -> () } = {}
 	local expiryThread: thread? = nil
 	local refreshPromise: Promise.Promise? = nil
+	local currentExpiryTicket = ""
 
 	local status: LockStatus
 	local lastConfirmedExpiry = nil
@@ -44,9 +45,16 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 
 	local function spawnExpiryCallbacks()
 		if status == "held" then
-			for _, callback in expiredCallbacks do
-				task.spawn(callback)
-			end
+			local ticket = HttpService:GenerateGUID(false)
+			currentExpiryTicket = ticket
+
+			expiryThread = task.delay(params.duration, function()
+				if currentExpiryTicket == ticket then
+					for _, callback in expiredCallbacks do
+						task.spawn(callback)
+					end
+				end
+			end)
 		end
 	end
 
@@ -70,7 +78,7 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 				end
 
 				if ttl > 0 then
-					expiryThread = task.delay(ttl, spawnExpiryCallbacks)
+					spawnExpiryCallbacks()
 				end
 			end
 		end)
