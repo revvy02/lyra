@@ -21,7 +21,7 @@ type UniverseImpl = {
 	GetServer: (self: Universe, jobId: string) -> {},
 	GetServersForPlace: (self: Universe, placeId: number) -> { string },
 	JoinRandomPlayerToPlace: (self: Universe, placeId: number) -> (),
-	RemoveRandomPlayer: (self: Universe, placeId: number) -> (),
+	RemoveRandomPlayer: (self: Universe) -> (),
 	CrashRandomServer: (self: Universe, placeId: number) -> (),
 	StopRandomServer: (self: Universe, placeId: number) -> (),
 	CloseUniverse: (self: Universe) -> (),
@@ -136,6 +136,7 @@ Universe.__index = Universe
 
 function Universe.new(config: UniverseConfig): Universe
 	local self = setmetatable({}, Universe)
+	self.closed = false
 	self.seed = config.seed
 	self.rng = Random.new(self.seed)
 
@@ -236,23 +237,20 @@ function Universe:StartServer(placeId: number): string
 
 	local playerAddedEvent, firePlayerAdded = createEvent()
 	local playerRemovingEvent, firePlayerRemoving = createEvent()
+
+	local server: Server
+
 	local PlayersService: MockPlayers = {
 		PlayerAdded = playerAddedEvent,
 		PlayerRemoving = playerRemovingEvent,
-		GetPlayers = function(_)
-			local server = self.servers[jobId]
-			if not server then
-				return {}
-			end
+		GetPlayers = function()
 			local users = {}
 			for _, plrId in server.players do
-				table.insert(users, self.playerPool[plrId])
+				table.insert(users, self.playerPool[plrId].object)
 			end
 			return (users :: any) :: { Player }
 		end,
 	}
-
-	local server: Server
 
 	local gameMock: MockGame = {
 		JobId = jobId,
@@ -497,17 +495,21 @@ end
 
 function Universe:JoinRandomPlayerToPlace(placeId: number)
 	local userId = self.rng:NextInteger(1, 1000)
+	local plr = self.playerPool[userId]
+	if plr and plr.currentServer then
+		return
+	end
 	self:JoinPlayerToServer(userId, self:_matchmakePlayerToPlace(placeId))
 end
 
-function Universe:RemoveRandomPlayer(placeId: number)
-	local server = self.servers[self:_matchmakePlayerToPlace(placeId)]
-	if not server then
-		return
+function Universe:RemoveRandomPlayer()
+	for _ = 1, 10 do
+		local plr = self.playerPool[self.rng:NextInteger(1, 1000)]
+		if plr and plr.currentServer then
+			self:RemovePlayerFromServer(plr.object.UserId, plr.currentServer)
+			return
+		end
 	end
-
-	local userId = server.players[self.rng:NextInteger(1, #server.players)]
-	self:RemovePlayerFromServer(userId, server.JobId)
 end
 
 function Universe:CrashRandomServer(placeId: number)

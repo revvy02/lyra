@@ -19,15 +19,25 @@ end)
 
 afterEach(function()
 	jest.clearAllTimers()
+	jest.useRealTimers()
 end)
 
 describe("PlayerStore chaos test", function()
-	it("runs a long-term chaos test for 10 hours", function()
-		local TEST_DURATION = 60 * 60 * 10
+	local seeds = { 1, 2, 3 }
+	local durations = { 60 * 60 * 2, 60 * 60 * 4, 60 * 60 * 6 }
+	local testData = {}
+	for _, seed in seeds do
+		for _, duration in durations do
+			table.insert(testData, { seed = seed, duration = duration })
+		end
+	end
+
+	it.each(testData)("runs a long-term chaos test with seed $seed for $duration secs", function(params)
+		local TEST_DURATION = params.duration
+		local SEED = params.seed
 		local MAX_PLAYERS = 20
 		local OPERATION_INTERVAL = 1
 		local failures = {}
-		local SEED = 10
 
 		local serverRandCount = 0
 		local serverScript = function(env)
@@ -79,6 +89,7 @@ describe("PlayerStore chaos test", function()
 								return true
 							end)
 							:catch(onRejection)
+							:await()
 					end,
 					function()
 						return store
@@ -87,6 +98,7 @@ describe("PlayerStore chaos test", function()
 								return true
 							end)
 							:catch(onRejection)
+							:await()
 					end,
 					function()
 						local itemId = tostring(serverRand:NextInteger(1, 100))
@@ -96,12 +108,37 @@ describe("PlayerStore chaos test", function()
 								return true
 							end)
 							:catch(onRejection)
+							:await()
 					end,
 					function()
-						return store:get(player):catch(onRejection)
+						return store:get(player):catch(onRejection):await()
 					end,
 					function()
-						return store:save(player):catch(onRejection)
+						return store:save(player):catch(onRejection):await()
+					end,
+					function()
+						local players = Players:GetPlayers()
+						if #players < 2 then
+							return
+						end
+						local otherPlayers = table.clone(players)
+						table.remove(otherPlayers, table.find(otherPlayers, player))
+						local otherPlayer = otherPlayers[serverRand:NextInteger(1, #otherPlayers)]
+						local amount = serverRand:NextInteger(1, 50)
+						return store
+							:tx({ player, otherPlayer }, function(state)
+								if state[player].coins >= amount then
+									state[player].coins -= amount
+									state[otherPlayer].coins += amount
+									return true
+								end
+								return false
+							end)
+							:catch(onRejection)
+							:andThen(function()
+								print("traded yay")
+							end)
+							:await()
 					end,
 				}
 
@@ -118,11 +155,10 @@ describe("PlayerStore chaos test", function()
 			end)
 
 			game:BindToClose(function()
-				store:close():catch(onRejection)
+				store:close():catch(onRejection):expect()
 			end)
 
-			local startTime = os.clock()
-			while os.clock() - startTime < TEST_DURATION do
+			while true do
 				local players = Players:GetPlayers()
 				if #players > 0 then
 					local randomPlayer = players[serverRand:NextInteger(1, #players)]
@@ -130,8 +166,6 @@ describe("PlayerStore chaos test", function()
 				end
 				task.wait(OPERATION_INTERVAL)
 			end
-
-			store:close():catch(onRejection)
 		end
 
 		local universe = Universe.new({
@@ -143,38 +177,48 @@ describe("PlayerStore chaos test", function()
 
 		local rand = Random.new(SEED)
 		local function simulatePlayerActivity()
-			if rand:NextNumber() < 0.1 then
+			if rand:NextNumber() < 0.5 then
 				universe:JoinRandomPlayerToPlace(1)
 			end
-			if rand:NextNumber() < 0.1 then
-				universe:RemoveRandomPlayer(1)
+			if rand:NextNumber() < 0.01 then
+				universe:RemoveRandomPlayer()
 			end
-			if rand:NextNumber() < 0.1 then
+			if rand:NextNumber() < 0.005 then
 				universe:StopRandomServer(1)
 			end
-			if rand:NextNumber() < 0.1 then
+			if rand:NextNumber() < 0.005 then
 				universe:CrashRandomServer(1)
 			end
 		end
 
 		local startTime = os.clock()
 		local t = 0
-		while os.clock() - startTime < TEST_DURATION and #failures == 0 do
-			simulatePlayerActivity()
-			jest.advanceTimersByTime(1000)
+		while os.clock() - startTime < TEST_DURATION do
+			task.spawn(simulatePlayerActivity)
+			jest.advanceTimersByTime(250)
 			t += 1
+			if t % 5000 == 0 then
+				task.wait()
+			end
+		end
+
+		local done = false
+		task.spawn(function()
+			universe:CloseUniverse()
+			done = true
+		end)
+		while not done do
+			jest.advanceTimersByTime(1000)
+			task.wait()
 		end
 
 		print(universe.seed, #failures, #universe:GetTrace())
 
 		if #failures > 0 then
-			error(failures[1].error)
-		end
-		expect(#failures).toBe(0)
-		if #failures > 0 then
 			for _, failure in failures do
 				print(string.format("[%.2f] %s", failure.time, failure.error))
 			end
 		end
+		expect(#failures).toBe(0)
 	end, 20_000)
 end)
