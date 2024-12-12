@@ -62,7 +62,7 @@ describe("MockHashMap", function()
 	describe("Expiration", function()
 		it("should error on invalid expiration", function()
 			expect(function()
-				call(hashMap, "SetAsync", "key", "value", 0)
+				call(hashMap, "SetAsync", "key", "value", -1)
 			end).toThrow("InvalidRequest")
 		end)
 

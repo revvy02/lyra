@@ -91,8 +91,8 @@ local function enforceExpirationLimits(expiration: number)
 	if typeof(expiration) ~= "number" then
 		error("InvalidRequest: expiration must be a number", 2)
 	end
-	if expiration <= 0 then
-		error("InvalidRequest: expiration must be greater than 0", 2)
+	if expiration < 0 then
+		error("InvalidRequest: expiration must be >= 0", 2)
 	end
 	if expiration > MAX_EXPIRATION then
 		error("InvalidRequest: expiration exceeds maximum", 2)
