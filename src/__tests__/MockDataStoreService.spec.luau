@@ -231,5 +231,21 @@ describe("MockDataStoreService", function()
 				expect(results[i]).toEqual(values[i])
 			end
 		end)
+
+		it("budget should change after calls", function()
+			local budget1 = mockDataStoreService:GetRequestBudgetForRequestType(Enum.DataStoreRequestType.GetAsync)
+
+			task.spawn(dataStore.GetAsync, dataStore, "key1")
+			task.spawn(dataStore.GetAsync, dataStore, "key2")
+
+			local budget2 = mockDataStoreService:GetRequestBudgetForRequestType(Enum.DataStoreRequestType.GetAsync)
+			expect(budget2).never.toBe(budget1)
+
+			task.spawn(dataStore.GetAsync, dataStore, "key3")
+			task.spawn(dataStore.GetAsync, dataStore, "key4")
+
+			local budget3 = mockDataStoreService:GetRequestBudgetForRequestType(Enum.DataStoreRequestType.GetAsync)
+			expect(budget3).never.toBe(budget2)
+		end)
 	end)
 end)

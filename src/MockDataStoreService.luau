@@ -426,6 +426,30 @@ local function createMockService()
 		return store
 	end
 
+	tbl.GetRequestBudgetForRequestType = function(self, requestType: Enum.DataStoreRequestType)
+		local requestTypeStr = tostring(requestType):gsub("Enum.DataStoreRequestType.", "")
+
+		if self._customBudgets[requestTypeStr] then
+			return self._customBudgets[requestTypeStr]
+		end
+
+		local limitData = RATE_LIMITS[requestTypeStr]
+		if not limitData then
+			limitData = RATE_LIMITS.GetAsync
+		end
+
+		local currentPlayers = 15
+		local totalBudget = limitData.Base + (currentPlayers * limitData.PlayerMultiplier)
+
+		local queueKey = requestTypeStr
+		if requestTypeStr == "GetVersionAsync" then
+			queueKey = "GetVersion"
+		end
+
+		local currentQueueSize = #self.requestQueues[queueKey]
+		return math.max(0, totalBudget - currentQueueSize)
+	end
+
 	return (tbl :: any) :: DataStoreService
 end
 
