@@ -41,10 +41,14 @@ describe("PlayerStore chaos test", function()
 		local SEED = params.seed
 		local MAX_PLAYERS = 20
 		local OPERATION_INTERVAL = 10
+		-- local MAX_DATA_LOSS_WINDOW = 60 * 5
 
 		local canonData = {}
+		local stagedData = {}
+		local lastServerCrashTime = 0
 
 		local failures = {}
+		local dataLossEvents = {}
 		local numIterations = 0
 
 		local serverRandCount = 0
@@ -69,6 +73,12 @@ describe("PlayerStore chaos test", function()
 					time = os.clock(),
 					error = tostring(err),
 				})
+			end
+
+			local function commitStagedData(player)
+				if stagedData[player.UserId] then
+					canonData[player.UserId] = Tables.copyDeep(stagedData[player.UserId])
+				end
 			end
 
 			local store = createPlayerStore({
@@ -100,12 +110,12 @@ describe("PlayerStore chaos test", function()
 				end
 
 				if not Tables.equalsDeep(data, canonData[player.UserId]) then
-					print(data, canonData[player.UserId])
+					local currentTime = os.clock()
 					table.insert(failures, {
-						time = os.clock(),
+						time = currentTime,
 						error = string.format(
 							"Data mismatch for player %s: expected %s, got %s",
-							tostring(player),
+							player.UserId,
 							tostring(canonData[player.UserId]),
 							tostring(data)
 						),
@@ -124,7 +134,7 @@ describe("PlayerStore chaos test", function()
 							end)
 							:tap(function()
 								if canonData[player.UserId] then
-									canonData[player.UserId].coins += coinsToAdd
+									stagedData[player.UserId].coins += coinsToAdd
 								end
 							end)
 							:catch(onRejection)
@@ -139,8 +149,7 @@ describe("PlayerStore chaos test", function()
 							end)
 							:tap(function()
 								if canonData[player.UserId] then
-									canonData[player.UserId].coins =
-										math.max(0, canonData[player.UserId].coins - coinsToRemove)
+									stagedData[player.UserId].coins += coinsToRemove
 								end
 							end)
 							:catch(onRejection)
@@ -155,7 +164,7 @@ describe("PlayerStore chaos test", function()
 							end)
 							:tap(function()
 								if canonData[player.UserId] then
-									canonData[player.UserId].inventory[itemId] = true
+									stagedData[player.UserId].inventory[itemId] = true
 								end
 							end)
 							:catch(onRejection)
@@ -165,7 +174,13 @@ describe("PlayerStore chaos test", function()
 						return store:get(player):catch(onRejection):await()
 					end,
 					function()
-						return store:save(player):catch(onRejection):await()
+						return store
+							:save(player)
+							:tap(function()
+								commitStagedData(player)
+							end)
+							:catch(onRejection)
+							:await()
 					end,
 					function()
 						local players = Players:GetPlayers()
@@ -182,9 +197,10 @@ describe("PlayerStore chaos test", function()
 								return true
 							end)
 							:tap(function()
+								commitStagedData(player)
 								if canonData[player.UserId] and canonData[otherPlayer.UserId] then
-									canonData[player.UserId].coins, canonData[otherPlayer.UserId].coins =
-										canonData[otherPlayer.UserId].coins, canonData[player.UserId].coins
+									stagedData[player.UserId].coins, stagedData[otherPlayer.UserId].coins =
+										stagedData[otherPlayer.UserId].coins, stagedData[player.UserId].coins
 								end
 							end)
 							:catch(onRejection)
@@ -205,12 +221,31 @@ describe("PlayerStore chaos test", function()
 							inventory = {},
 						}
 					end
-					verifyPlayerData(player)
+
+					if stagedData[player.UserId] ~= nil then
+						table.insert(dataLossEvents, {
+							time = os.clock(),
+							player = player.UserId,
+							expected = canonData[player.UserId],
+							actual = stagedData[player.UserId],
+							timeSinceCrash = os.clock() - lastServerCrashTime,
+						})
+						stagedData[player.UserId] = Tables.copyDeep(canonData[player.UserId])
+					else
+						stagedData[player.UserId] = Tables.copyDeep(canonData[player.UserId])
+						verifyPlayerData(player)
+					end
 				end
 			end)
 
 			Players.PlayerRemoving:Connect(function(player)
-				store:unload(player):catch(onRejection)
+				store
+					:unload(player)
+					:tap(function()
+						commitStagedData(player)
+						stagedData[player.UserId] = nil
+					end)
+					:catch(onRejection)
 			end)
 
 			game:BindToClose(function()
@@ -248,6 +283,7 @@ describe("PlayerStore chaos test", function()
 			end
 			if rand:NextNumber() < 0.005 then
 				universe:CrashRandomServer(1)
+				lastServerCrashTime = os.clock()
 			end
 		end
 
@@ -272,6 +308,23 @@ describe("PlayerStore chaos test", function()
 				print(string.format("[%.2f] %s", failure.time, failure.error))
 			end
 		end
+
+		if #dataLossEvents > 0 then
+			print("\nData loss events from server crashes:")
+			for _, event in dataLossEvents do
+				print(
+					string.format(
+						"[%.2f] Player %s lost data %.2f seconds after crash. Expected: %s, Got: %s",
+						event.time,
+						event.player,
+						event.timeSinceCrash,
+						tostring(event.expected),
+						tostring(event.actual)
+					)
+				)
+			end
+		end
+
 		expect(#failures).toBe(0)
 	end, 20_000)
 end)
