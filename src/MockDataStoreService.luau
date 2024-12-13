@@ -2,24 +2,6 @@
 
 local Tables = require(script.Parent.Tables)
 
-local mockData = {}
-local mockKeyInfo = {}
-local mockVersions = {}
-local mockCache = {}
-
-local requestQueues = {
-	GetAsync = {},
-	SetAsync = {},
-	UpdateAsync = {},
-	RemoveAsync = {},
-	GetVersion = {},
-}
-local queuedErrors = {
-	GetAsync = {},
-	SetAsync = {},
-	UpdateAsync = {},
-	RemoveAsync = {},
-}
 local MAX_QUEUE_SIZE = 30
 local RATE_LIMITS = {
 	GetAsync = { Base = 60, PlayerMultiplier = 10 },
@@ -96,17 +78,18 @@ local function validateMetadata(metadata: any)
 	end
 end
 
-local function createMockStore(datastoreName: string, scope: string?)
+local function createMockStore(service: any, datastoreName: string, scope: string?)
 	local tbl = {
 		datastoreName = datastoreName,
 		scope = scope or "global",
+		_service = service,
 	}
 
 	local function getScopedData(self: any)
-		local datastore = mockData[self.datastoreName]
+		local datastore = self._service.mockData[self.datastoreName]
 		if not datastore then
 			datastore = {}
-			mockData[self.datastoreName] = datastore
+			self._service.mockData[self.datastoreName] = datastore
 		end
 
 		local scopedData = datastore[self.scope]
@@ -120,10 +103,10 @@ local function createMockStore(datastoreName: string, scope: string?)
 
 	local function getVersionsForKey(self: any, key: string)
 		local versionKey = `{self.datastoreName}|{self.scope}|{key}`
-		if not mockVersions[versionKey] then
-			mockVersions[versionKey] = {}
+		if not self._service.mockVersions[versionKey] then
+			self._service.mockVersions[versionKey] = {}
 		end
-		return mockVersions[versionKey]
+		return self._service.mockVersions[versionKey]
 	end
 
 	local function getCacheKey(self: any, key: string)
@@ -132,7 +115,7 @@ local function createMockStore(datastoreName: string, scope: string?)
 
 	local function getCachedValue(self: any, key: string)
 		local cacheKey = getCacheKey(self, key)
-		local cached = mockCache[cacheKey]
+		local cached = self._service.mockCache[cacheKey]
 		if cached and (os.time() - cached.timestamp) < CACHE_DURATION then
 			return cached.value, cached.keyInfo
 		end
@@ -141,7 +124,7 @@ local function createMockStore(datastoreName: string, scope: string?)
 
 	local function setCachedValue(self: any, key: string, value: any, keyInfo: any)
 		local cacheKey = getCacheKey(self, key)
-		mockCache[cacheKey] = {
+		self._service.mockCache[cacheKey] = {
 			value = value,
 			keyInfo = keyInfo,
 			timestamp = os.time(),
@@ -179,8 +162,8 @@ local function createMockStore(datastoreName: string, scope: string?)
 		end
 	end
 
-	local function doRateLimitAndQueue(requestType)
-		local queue = requestQueues[requestType]
+	local function doRateLimitAndQueue(self: any, requestType: string)
+		local queue = self._service.requestQueues[requestType]
 		local limitData = RATE_LIMITS[requestType]
 		if not limitData then
 			limitData = RATE_LIMITS.GetAsync
@@ -216,7 +199,7 @@ local function createMockStore(datastoreName: string, scope: string?)
 			validateMetadata(options:GetMetadata())
 		end
 
-		doRateLimitAndQueue("SetAsync")
+		doRateLimitAndQueue(self, "SetAsync")
 
 		delayWait(0.1)
 
@@ -240,7 +223,7 @@ local function createMockStore(datastoreName: string, scope: string?)
 		local latestVersion = versions[#versions].Version
 		scopedData[key] = value
 		local keyInfo = createMockKeyInfo(userIds, options and options:GetMetadata())
-		mockKeyInfo[`{self.datastoreName}|{self.scope}|{key}`] = keyInfo
+		self._service.mockKeyInfo[`{self.datastoreName}|{self.scope}|{key}`] = keyInfo
 
 		setCachedValue(self, key, value, keyInfo)
 
@@ -255,13 +238,13 @@ local function createMockStore(datastoreName: string, scope: string?)
 			return cachedValue, cachedKeyInfo
 		end
 
-		doRateLimitAndQueue("GetAsync")
+		doRateLimitAndQueue(self, "GetAsync")
 
 		delayWait(0.1)
 
 		local scopedData = getScopedData(self)
 		local data = scopedData[key]
-		local keyInfo = mockKeyInfo[`{self.datastoreName}|{self.scope}|{key}`]
+		local keyInfo = self._service.mockKeyInfo[`{self.datastoreName}|{self.scope}|{key}`]
 
 		if data ~= nil then
 			setCachedValue(self, key, data, keyInfo)
@@ -273,11 +256,11 @@ local function createMockStore(datastoreName: string, scope: string?)
 	tbl.UpdateAsync = function(self, key, transformFunction)
 		enforceKeyLimits(key)
 
-		doRateLimitAndQueue("UpdateAsync")
+		doRateLimitAndQueue(self, "UpdateAsync")
 
 		while true do
 			local scopedData = getScopedData(self)
-			local keyInfo = mockKeyInfo[`{self.datastoreName}|{self.scope}|{key}`] or createMockKeyInfo()
+			local keyInfo = self._service.mockKeyInfo[`{self.datastoreName}|{self.scope}|{key}`] or createMockKeyInfo()
 			local currentValue = scopedData[key]
 			local valueForCallback = currentValue ~= nil and Tables.copyDeep(currentValue)
 
@@ -330,13 +313,13 @@ local function createMockStore(datastoreName: string, scope: string?)
 	tbl.RemoveAsync = function(self, key)
 		enforceKeyLimits(key)
 
-		doRateLimitAndQueue("RemoveAsync")
+		doRateLimitAndQueue(self, "RemoveAsync")
 
 		delayWait(0.01)
 
 		local scopedData = getScopedData(self)
 		local data = scopedData[key]
-		local keyInfo = mockKeyInfo[`{self.datastoreName}|{self.scope}|{key}`]
+		local keyInfo = self._service.mockKeyInfo[`{self.datastoreName}|{self.scope}|{key}`]
 
 		if data ~= nil then
 			local versions = getVersionsForKey(self, key)
@@ -346,7 +329,7 @@ local function createMockStore(datastoreName: string, scope: string?)
 		scopedData[key] = nil
 
 		local cacheKey = getCacheKey(self, key)
-		mockCache[cacheKey] = nil
+		self._service.mockCache[cacheKey] = nil
 
 		return data, keyInfo
 	end
@@ -354,7 +337,7 @@ local function createMockStore(datastoreName: string, scope: string?)
 	tbl.GetVersionAsync = function(self, key, version)
 		enforceKeyLimits(key)
 
-		doRateLimitAndQueue("GetVersion")
+		doRateLimitAndQueue(self, "GetVersion")
 
 		local versions = getVersionsForKey(self, key)
 		for _, v in versions do
@@ -368,7 +351,7 @@ local function createMockStore(datastoreName: string, scope: string?)
 	tbl.ListVersionsAsync = function(self, key, sortDirection, minDate, maxDate)
 		enforceKeyLimits(key)
 
-		doRateLimitAndQueue("GetVersion")
+		doRateLimitAndQueue(self, "GetVersion")
 
 		local versions = getVersionsForKey(self, key)
 		local results = {}
@@ -401,12 +384,12 @@ local function createMockStore(datastoreName: string, scope: string?)
 	end
 
 	tbl._setInternalData = function(self, newData, newKeyInfo)
-		mockData[self.datastoreName] = newData
-		mockKeyInfo = newKeyInfo
+		self._service.mockData[self.datastoreName] = newData
+		self._service.mockKeyInfo = newKeyInfo
 	end
 
-	tbl._queueError = function(_self, requestType, errorMessage)
-		table.insert(queuedErrors[requestType], errorMessage)
+	tbl._queueError = function(self, requestType, errorMessage)
+		table.insert(self._service.queuedErrors[requestType], errorMessage)
 	end
 
 	return tbl
@@ -415,12 +398,29 @@ end
 local function createMockService()
 	local tbl = {
 		dataStores = {},
+		mockData = {},
+		mockKeyInfo = {},
+		mockVersions = {},
+		mockCache = {},
+		requestQueues = {
+			GetAsync = {},
+			SetAsync = {},
+			UpdateAsync = {},
+			RemoveAsync = {},
+			GetVersion = {},
+		},
+		queuedErrors = {
+			GetAsync = {},
+			SetAsync = {},
+			UpdateAsync = {},
+			RemoveAsync = {},
+		},
 	}
 
 	tbl.GetDataStore = function(self, datastoreName: string, scope: string?)
 		local store = self.dataStores[`{datastoreName}{scope or ""}`]
 		if not store then
-			store = createMockStore(datastoreName, scope)
+			store = createMockStore(self, datastoreName, scope)
 			self.dataStores[`{datastoreName}{scope or ""}`] = store
 		end
 		return store
