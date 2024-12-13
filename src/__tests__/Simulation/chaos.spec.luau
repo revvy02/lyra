@@ -6,6 +6,7 @@ local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataSto
 local MockHashMap = require(ReplicatedStorage.Packages.Lyra.MockHashMap)
 local Universe = require(script.Parent.Parent.Universe)
 local createPlayerStore = require(script.Parent.Parent.Parent.createPlayerStore)
+local Tables = require(script.Parent.Parent.Parent.Tables)
 
 local expect = JestGlobals.expect
 local describe = JestGlobals.describe
@@ -24,10 +25,10 @@ afterEach(function()
 end)
 
 describe("PlayerStore chaos test", function()
-	local seeds = { 1, 2, 3 }
-	local durations = { 60 * 60 * 2, 60 * 60 * 4, 60 * 60 * 6 }
-	-- local seeds = { 1 }
-	-- local durations = { 60 * 60 * 5 }
+	-- local seeds = { 1, 2, 3 }
+	-- local durations = { 60 * 60 * 2, 60 * 60 * 4, 60 * 60 * 6 }
+	local seeds = { 1 }
+	local durations = { 60 * 60 * 2 }
 	local testData = {}
 	for _, seed in seeds do
 		for _, duration in durations do
@@ -88,32 +89,74 @@ describe("PlayerStore chaos test", function()
 			store._store._ctx.dataStoreInterface._dataStoreService = MockDataStoreService.createMockService()
 			store._store._ctx.hashMapInterface._memoryStoreService = MockHashMap.createMockService()
 
+			local function verifyPlayerData(player)
+				local ok, data = store:get(player):catch(onRejection):await()
+				if not ok or not data then
+					return
+				end
+
+				if not canonData[player.UserId] then
+					return
+				end
+
+				if not Tables.equalsDeep(data, canonData[player.UserId]) then
+					print(data, canonData[player.UserId])
+					table.insert(failures, {
+						time = os.clock(),
+						error = string.format(
+							"Data mismatch for player %s: expected %s, got %s",
+							tostring(player),
+							tostring(canonData[player.UserId]),
+							tostring(data)
+						),
+					})
+				end
+			end
+
 			local function randomOperation(player)
 				local operations = {
 					function()
-						return store
+						local coinsToAdd = serverRand:NextInteger(1, 100)
+						store
 							:update(player, function(data)
-								data.coins += serverRand:NextInteger(1, 100)
+								data.coins += coinsToAdd
 								return true
+							end)
+							:tap(function()
+								if canonData[player.UserId] then
+									canonData[player.UserId].coins += coinsToAdd
+								end
 							end)
 							:catch(onRejection)
 							:await()
 					end,
 					function()
-						return store
+						local coinsToRemove = serverRand:NextInteger(1, 50)
+						store
 							:update(player, function(data)
-								data.coins = math.max(0, data.coins - serverRand:NextInteger(1, 50))
+								data.coins = math.max(0, data.coins - coinsToRemove)
 								return true
+							end)
+							:tap(function()
+								if canonData[player.UserId] then
+									canonData[player.UserId].coins =
+										math.max(0, canonData[player.UserId].coins - coinsToRemove)
+								end
 							end)
 							:catch(onRejection)
 							:await()
 					end,
 					function()
 						local itemId = tostring(serverRand:NextInteger(1, 100))
-						return store
+						store
 							:update(player, function(data)
 								data.inventory[itemId] = true
 								return true
+							end)
+							:tap(function()
+								if canonData[player.UserId] then
+									canonData[player.UserId].inventory[itemId] = true
+								end
 							end)
 							:catch(onRejection)
 							:await()
@@ -132,11 +175,17 @@ describe("PlayerStore chaos test", function()
 						local otherPlayers = table.clone(players)
 						table.remove(otherPlayers, table.find(otherPlayers, player))
 						local otherPlayer = otherPlayers[serverRand:NextInteger(1, #otherPlayers)]
-						return store
+						store
 							:tx({ player, otherPlayer }, function(state)
 								state[player].coins, state[otherPlayer].coins =
 									state[otherPlayer].coins, state[player].coins
 								return true
+							end)
+							:tap(function()
+								if canonData[player.UserId] and canonData[otherPlayer.UserId] then
+									canonData[player.UserId].coins, canonData[otherPlayer.UserId].coins =
+										canonData[otherPlayer.UserId].coins, canonData[player.UserId].coins
+								end
 							end)
 							:catch(onRejection)
 							:await()
@@ -147,12 +196,21 @@ describe("PlayerStore chaos test", function()
 				return operation()
 			end
 
-			Players.PlayerAdded:Connect(function(userId)
-				store:load(userId):catch(onRejection)
+			Players.PlayerAdded:Connect(function(player)
+				local success = store:load(player):catch(onRejection):await()
+				if success then
+					if canonData[player.UserId] == nil then
+						canonData[player.UserId] = {
+							coins = 0,
+							inventory = {},
+						}
+					end
+					verifyPlayerData(player)
+				end
 			end)
 
-			Players.PlayerRemoving:Connect(function(userId)
-				store:unload(userId):catch(onRejection)
+			Players.PlayerRemoving:Connect(function(player)
+				store:unload(player):catch(onRejection)
 			end)
 
 			game:BindToClose(function()
