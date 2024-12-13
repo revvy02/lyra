@@ -459,6 +459,7 @@ local function createMockService()
 			SetAsync = {},
 			UpdateAsync = {},
 			RemoveAsync = {},
+			GetVersion = {},
 		},
 
 		_globalLatency = nil,
@@ -520,9 +521,6 @@ return {
 		service._randomLatencyRange = { min = minSeconds, max = maxSeconds }
 	end,
 	queueError = function(service: any, requestType: string, errorMessage: string)
-		if not service.queuedErrors[requestType] then
-			service.queuedErrors[requestType] = {}
-		end
 		table.insert(service.queuedErrors[requestType], errorMessage)
 	end,
 	setErrorRate = function(service: any, requestType: string, rate: number)
