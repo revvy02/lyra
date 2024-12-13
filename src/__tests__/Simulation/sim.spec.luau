@@ -104,6 +104,5 @@ describe("Game simulation example", function()
 
 		expect(countEvents("ServerStarted")).toBeGreaterThanOrEqual(2)
 		expect(countEvents("PlayerJoined")).toBeGreaterThanOrEqual(4)
-		print(trace)
 	end)
 end)

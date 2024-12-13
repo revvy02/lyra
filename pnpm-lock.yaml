@@ -11,9 +11,6 @@ importers:
       '@paradoxum-games/promise':
         specifier: 4.0.1
         version: 4.0.1
-      '@paradoxum-games/sift':
-        specifier: 0.0.9
-        version: 0.0.9
       '@paradoxum-games/t':
         specifier: 3.1.1
         version: 3.1.1
@@ -23,16 +20,11 @@ packages:
   '@paradoxum-games/promise@4.0.1':
     resolution: {integrity: sha512-dRvCdn6XnGNx73O37OWRviozca0GZQTZkb5eRSsuILsn/Ei2yyBJAEb+fHQsC4v3l3c30sGLTUio9eHOZvTtMQ==, tarball: https://npm.pkg.github.com/download/@paradoxum-games/promise/4.0.1/196a5076fd35985891935f1307df4ba090e9ece3}
 
-  '@paradoxum-games/sift@0.0.9':
-    resolution: {integrity: sha512-Dcvkf4riznCSbRS7ASThviwjpLbmCUR64KItnE6KtJhVOMMV+yBm5hYjP+p1f7ISJ5dI7YHKIbl3sALt9vq5WA==, tarball: https://npm.pkg.github.com/download/@paradoxum-games/sift/0.0.9/4aaf39bcb248db6525eceab30fdba0bc48ec13cf}
-
   '@paradoxum-games/t@3.1.1':
     resolution: {integrity: sha512-iKSk4KK6WXr3zguRq9v55ArgEXlaejdgF76KznaxKix3CTcWF5NusdCFks/qqMUdxkQlhEBipX7WxttpCSvvcg==, tarball: https://npm.pkg.github.com/download/@paradoxum-games/t/3.1.1/088091f51b46ab189b6674e506fab812878bfdf9}
 
 snapshots:
 
   '@paradoxum-games/promise@4.0.1': {}
-
-  '@paradoxum-games/sift@0.0.9': {}
 
   '@paradoxum-games/t@3.1.1': {}

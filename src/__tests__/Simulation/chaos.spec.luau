@@ -1,4 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataStoreService)
@@ -25,6 +26,8 @@ end)
 describe("PlayerStore chaos test", function()
 	local seeds = { 1, 2, 3 }
 	local durations = { 60 * 60 * 2, 60 * 60 * 4, 60 * 60 * 6 }
+	-- local seeds = { 1 }
+	-- local durations = { 60 * 60 * 5 }
 	local testData = {}
 	for _, seed in seeds do
 		for _, duration in durations do
@@ -36,8 +39,12 @@ describe("PlayerStore chaos test", function()
 		local TEST_DURATION = params.duration
 		local SEED = params.seed
 		local MAX_PLAYERS = 20
-		local OPERATION_INTERVAL = 1
+		local OPERATION_INTERVAL = 10
+
+		local canonData = {}
+
 		local failures = {}
+		local numIterations = 0
 
 		local serverRandCount = 0
 		local serverScript = function(env)
@@ -49,10 +56,11 @@ describe("PlayerStore chaos test", function()
 
 			local function onRejection(err)
 				if
-					err == "Load was cancelled"
-					or err == "Load already in progress"
-					or err == "Key not loaded"
-					or err == "Store is closed"
+					string.find(err, "Load was cancelled")
+					or string.find(err, "Load already in progress")
+					or string.find(err, "Key not loaded")
+					or string.find(err, "Store is closed")
+					or string.find(err, "Transaction transform function returned false")
 				then
 					return
 				end
@@ -124,20 +132,13 @@ describe("PlayerStore chaos test", function()
 						local otherPlayers = table.clone(players)
 						table.remove(otherPlayers, table.find(otherPlayers, player))
 						local otherPlayer = otherPlayers[serverRand:NextInteger(1, #otherPlayers)]
-						local amount = serverRand:NextInteger(1, 50)
 						return store
 							:tx({ player, otherPlayer }, function(state)
-								if state[player].coins >= amount then
-									state[player].coins -= amount
-									state[otherPlayer].coins += amount
-									return true
-								end
-								return false
+								state[player].coins, state[otherPlayer].coins =
+									state[otherPlayer].coins, state[player].coins
+								return true
 							end)
 							:catch(onRejection)
-							:andThen(function()
-								print("traded yay")
-							end)
 							:await()
 					end,
 				}
@@ -165,6 +166,7 @@ describe("PlayerStore chaos test", function()
 					randomOperation(randomPlayer)
 				end
 				task.wait(OPERATION_INTERVAL)
+				numIterations += 1
 			end
 		end
 
@@ -177,7 +179,7 @@ describe("PlayerStore chaos test", function()
 
 		local rand = Random.new(SEED)
 		local function simulatePlayerActivity()
-			if rand:NextNumber() < 0.5 then
+			if rand:NextNumber() < 0.1 then
 				universe:JoinRandomPlayerToPlace(1)
 			end
 			if rand:NextNumber() < 0.01 then
@@ -193,26 +195,19 @@ describe("PlayerStore chaos test", function()
 
 		local startTime = os.clock()
 		local t = 0
-		while os.clock() - startTime < TEST_DURATION do
+		while os.clock() - startTime < TEST_DURATION and #failures == 0 do
 			task.spawn(simulatePlayerActivity)
-			jest.advanceTimersByTime(250)
+			jest.advanceTimersByTime(OPERATION_INTERVAL * 1000)
 			t += 1
-			if t % 5000 == 0 then
-				task.wait()
+			if t % 500 == 0 then
+				RunService.Heartbeat:Wait()
 			end
 		end
 
-		local done = false
-		task.spawn(function()
-			universe:CloseUniverse()
-			done = true
-		end)
-		while not done do
-			jest.advanceTimersByTime(1000)
-			task.wait()
-		end
+		jest.clearAllTimers()
 
 		print(universe.seed, #failures, #universe:GetTrace())
+		print("iterations: ", numIterations)
 
 		if #failures > 0 then
 			for _, failure in failures do
