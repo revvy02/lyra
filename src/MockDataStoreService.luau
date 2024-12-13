@@ -16,12 +16,45 @@ local MAX_DATA_SIZE = 4_194_304
 local MAX_METADATA_SIZE = 300
 local CACHE_DURATION = 4
 
-local function delayWait(n: number)
-	local thread = coroutine.running()
-	task.delay(n, function()
-		coroutine.resume(thread)
-	end)
-	coroutine.yield()
+local function getLatencyForRequest(service: any, requestType: string): number
+	if service._latencyByRequestType[requestType] then
+		return service._latencyByRequestType[requestType]
+	end
+
+	if service._randomLatencyRange then
+		local min = service._randomLatencyRange.min
+		local max = service._randomLatencyRange.max
+		return min + math.random() * (max - min)
+	end
+
+	return service._globalLatency or 0.1
+end
+
+local function shouldSimulateError(service: any, requestType: string): (boolean, string?)
+	if #service.queuedErrors[requestType] > 0 then
+		return true, table.remove(service.queuedErrors[requestType], 1)
+	end
+
+	if service._errorRates[requestType] and math.random() < service._errorRates[requestType] then
+		return true, "DataStore request failed due to random error simulation"
+	end
+
+	if service._simulateThrottling then
+		return true, "DataStore request was throttled, try again later"
+	end
+
+	if service._simulateTimeout then
+		return true, "DataStore request timed out"
+	end
+
+	return false, nil
+end
+
+local function doLatency(service: any, requestType: string)
+	local latency = getLatencyForRequest(service, requestType)
+	if latency > 0 then
+		task.wait(latency)
+	end
 end
 
 local function getNow()
@@ -163,15 +196,24 @@ local function createMockStore(service: any, datastoreName: string, scope: strin
 	end
 
 	local function doRateLimitAndQueue(self: any, requestType: string)
+		local shouldError, errorMessage = shouldSimulateError(self._service, requestType)
+		if shouldError then
+			error(errorMessage, 2)
+		end
+
 		local queue = self._service.requestQueues[requestType]
 		local limitData = RATE_LIMITS[requestType]
 		if not limitData then
 			limitData = RATE_LIMITS.GetAsync
 		end
-		local currentPlayers = 15
-		local requestsPerMinute = limitData.Base + (currentPlayers * limitData.PlayerMultiplier)
 
-		if #queue >= requestsPerMinute then
+		local budget = self._service._customBudgets[requestType]
+		if not budget then
+			local currentPlayers = 15
+			budget = limitData.Base + (currentPlayers * limitData.PlayerMultiplier)
+		end
+
+		if #queue >= budget then
 			return false
 		end
 
@@ -182,8 +224,17 @@ local function createMockStore(service: any, datastoreName: string, scope: strin
 			)
 		end
 
+		if self._service._forcedThrottles[requestType] then
+			local throttleInfo = self._service._forcedThrottles[requestType]
+			if throttleInfo.endTime > os.time() then
+				error("DataStoreService: Request is currently throttled", 2)
+			else
+				self._service._forcedThrottles[requestType] = nil
+			end
+		end
+
 		table.insert(queue, true)
-		delayWait(0.01)
+		doLatency(self._service, requestType)
 		local fn = table.remove(queue, 1)
 		if typeof(fn) == "function" then
 			fn()
@@ -200,8 +251,6 @@ local function createMockStore(service: any, datastoreName: string, scope: strin
 		end
 
 		doRateLimitAndQueue(self, "SetAsync")
-
-		delayWait(0.1)
 
 		local scopedData = getScopedData(self)
 		local versions = getVersionsForKey(self, key)
@@ -239,8 +288,6 @@ local function createMockStore(service: any, datastoreName: string, scope: strin
 		end
 
 		doRateLimitAndQueue(self, "GetAsync")
-
-		delayWait(0.1)
 
 		local scopedData = getScopedData(self)
 		local data = scopedData[key]
@@ -314,8 +361,6 @@ local function createMockStore(service: any, datastoreName: string, scope: strin
 		enforceKeyLimits(key)
 
 		doRateLimitAndQueue(self, "RemoveAsync")
-
-		delayWait(0.01)
 
 		local scopedData = getScopedData(self)
 		local data = scopedData[key]
@@ -415,6 +460,15 @@ local function createMockService()
 			UpdateAsync = {},
 			RemoveAsync = {},
 		},
+
+		_globalLatency = nil,
+		_latencyByRequestType = {},
+		_randomLatencyRange = nil,
+		_errorRates = {},
+		_simulateThrottling = false,
+		_simulateTimeout = false,
+		_customBudgets = {},
+		_forcedThrottles = {},
 	}
 
 	tbl.GetDataStore = function(self, datastoreName: string, scope: string?)
@@ -455,4 +509,37 @@ end
 
 return {
 	createMockService = createMockService,
+
+	setGlobalLatency = function(service: any, seconds: number)
+		service._globalLatency = seconds
+	end,
+	setLatencyForRequestType = function(service: any, requestType: string, seconds: number)
+		service._latencyByRequestType[requestType] = seconds
+	end,
+	setRandomLatency = function(service: any, minSeconds: number, maxSeconds: number)
+		service._randomLatencyRange = { min = minSeconds, max = maxSeconds }
+	end,
+	queueError = function(service: any, requestType: string, errorMessage: string)
+		if not service.queuedErrors[requestType] then
+			service.queuedErrors[requestType] = {}
+		end
+		table.insert(service.queuedErrors[requestType], errorMessage)
+	end,
+	setErrorRate = function(service: any, requestType: string, rate: number)
+		service._errorRates[requestType] = rate
+	end,
+	simulateThrottling = function(service: any, enabled: boolean)
+		service._simulateThrottling = enabled
+	end,
+	simulateTimeout = function(service: any, enabled: boolean)
+		service._simulateTimeout = enabled
+	end,
+	setRequestBudget = function(service: any, requestType: string, budget: number)
+		service._customBudgets[requestType] = budget
+	end,
+	forceThrottle = function(service: any, requestType: string, duration: number)
+		service._forcedThrottles[requestType] = {
+			endTime = os.time() + duration,
+		}
+	end,
 }
