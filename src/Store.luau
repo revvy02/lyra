@@ -619,13 +619,13 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 	for _, key in keys do
 		local session = self._sessions[key]
 		if not session then
-			return Promise.reject(`Key {key} not loaded`)
+			return Promise.reject(`Key not loaded: {key}`)
 		end
 		if session.txLockPromise then
-			return Promise.reject(`Key {key} is already locked by another transaction`)
+			return Promise.reject(`Key is already locked by another transaction: {key}`)
 		end
 		if session.closed then
-			return Promise.reject(`Key {key} is closed`)
+			return Promise.reject(`Key is closed: {key}`)
 		end
 	end
 
