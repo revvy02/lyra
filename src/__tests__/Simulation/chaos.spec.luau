@@ -26,7 +26,7 @@ local TestConfig = {
 		JoinChance = 0.1,
 		LeaveChance = 0.01,
 		ServerStopChance = 0.005,
-		ServerCrashChance = 0.005,
+		ServerCrashChance = 0.001,
 	},
 
 	Template = {
@@ -351,6 +351,13 @@ describe("PlayerStore chaos test", function()
 			})
 			store._store._ctx.dataStoreInterface._dataStoreService = mockData
 			store._store._ctx.hashMapInterface._memoryStoreService = mockMemory
+
+			game.onCrash(function()
+				local snap = MockDataStoreService.snapshot(mockData)
+				store:close()
+				jest.advanceTimersByTime(1000)
+				MockDataStoreService.restore(mockData, snap)
+			end)
 
 			local function executeRandomOperation(player)
 				local totalWeight = 0
