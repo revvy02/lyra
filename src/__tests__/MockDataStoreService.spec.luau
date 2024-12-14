@@ -248,4 +248,74 @@ describe("MockDataStoreService", function()
 			expect(budget3).never.toBe(budget2)
 		end)
 	end)
+
+	describe("Snapshot / Restore", function()
+		it("should capture and restore service state", function()
+			call(dataStore, "SetAsync", "key1", { value = 1 })
+			call(dataStore, "SetAsync", "key2", { value = 2 })
+
+			local snapshot = MockDataStoreService.snapshot(mockDataStoreService)
+
+			call(dataStore, "SetAsync", "key1", { value = 100 })
+			call(dataStore, "RemoveAsync", "key2")
+			call(dataStore, "SetAsync", "key3", { value = 3 })
+
+			local key1Val = call(dataStore, "GetAsync", "key1")
+			local key2Val = call(dataStore, "GetAsync", "key2")
+			local key3Val = call(dataStore, "GetAsync", "key3")
+			expect(key1Val).toEqual({ value = 100 })
+			expect(key2Val).toBeNil()
+			expect(key3Val).toEqual({ value = 3 })
+
+			MockDataStoreService.restore(mockDataStoreService, snapshot)
+
+			key1Val = call(dataStore, "GetAsync", "key1")
+			key2Val = call(dataStore, "GetAsync", "key2")
+			key3Val = call(dataStore, "GetAsync", "key3")
+			expect(key1Val).toEqual({ value = 1 })
+			expect(key2Val).toEqual({ value = 2 })
+			expect(key3Val).toBeNil()
+		end)
+
+		it("should restore version history", function()
+			local key = "versionKey"
+			call(dataStore, "SetAsync", key, { ver = 1 })
+			jest.advanceTimersByTime(3600000)
+			call(dataStore, "SetAsync", key, { ver = 2 })
+
+			local snapshot = MockDataStoreService.snapshot(mockDataStoreService)
+
+			jest.advanceTimersByTime(3600000)
+			call(dataStore, "SetAsync", key, { ver = 3 })
+
+			local versionsPage = call(dataStore, "ListVersionsAsync", key)
+			local versions = versionsPage:GetCurrentPage()
+			expect(#versions).toBe(3)
+
+			MockDataStoreService.restore(mockDataStoreService, snapshot)
+
+			versionsPage = call(dataStore, "ListVersionsAsync", key)
+			versions = versionsPage:GetCurrentPage()
+			expect(#versions).toBe(2)
+
+			local latest = versions[#versions]
+			local val = call(dataStore, "GetVersionAsync", key, latest.Version)
+			expect(val).toEqual({ ver = 2 })
+		end)
+
+		it("should restore cache state", function()
+			call(dataStore, "SetAsync", "cacheKey", { cached = true })
+			call(dataStore, "GetAsync", "cacheKey")
+
+			local snapshot = MockDataStoreService.snapshot(mockDataStoreService)
+
+			call(dataStore, "SetAsync", "cacheKey", { cached = false })
+			call(dataStore, "GetAsync", "cacheKey")
+
+			MockDataStoreService.restore(mockDataStoreService, snapshot)
+
+			local value = call(dataStore, "GetAsync", "cacheKey")
+			expect(value).toEqual({ cached = true })
+		end)
+	end)
 end)

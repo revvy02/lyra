@@ -540,4 +540,18 @@ return {
 			endTime = os.time() + duration,
 		}
 	end,
+	snapshot = function(service: any)
+		return {
+			mockData = Tables.copyDeep(service.mockData),
+			mockKeyInfo = Tables.copyDeep(service.mockKeyInfo),
+			mockVersions = Tables.copyDeep(service.mockVersions),
+			mockCache = Tables.copyDeep(service.mockCache),
+		}
+	end,
+	restore = function(service: any, snapshot: any)
+		service.mockData = Tables.copyDeep(snapshot.mockData)
+		service.mockKeyInfo = Tables.copyDeep(snapshot.mockKeyInfo)
+		service.mockVersions = Tables.copyDeep(snapshot.mockVersions)
+		service.mockCache = Tables.copyDeep(snapshot.mockCache)
+	end,
 }
