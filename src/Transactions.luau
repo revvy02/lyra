@@ -18,7 +18,7 @@ local function readTx(params: ReadTxParams): Promise.TPromise<any>
 	end
 
 	return params.dataStoreInterface:get(params.scope, txId):andThen(function(committed)
-		-- To save on storage space, we consider a tx to be committed if its
+		-- To minimize boundless growth, we consider a tx to be committed if its
 		-- value is `nil`. Failed or in-progress txs are stored as `false`.
 		if committed == nil then
 			return txInfo.txData
