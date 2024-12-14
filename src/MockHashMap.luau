@@ -184,7 +184,6 @@ local function createMockHashMap(name: string, mockData): any
 			end
 
 			if newValue == nil then
-				scopedData[key] = nil
 				return nil
 			end
 
@@ -222,7 +221,7 @@ local function createMockHashMap(name: string, mockData): any
 	return tbl
 end
 
-local function createMockService()
+local function createMockService(): MemoryStoreService
 	local tbl = {
 		_mockData = {},
 		_hashMaps = {},
@@ -235,7 +234,7 @@ local function createMockService()
 		return self._hashMaps[name]
 	end
 
-	return tbl
+	return (tbl :: any) :: MemoryStoreService
 end
 
 return {

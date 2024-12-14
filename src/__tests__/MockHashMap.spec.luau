@@ -118,18 +118,19 @@ describe("MockHashMap", function()
 			expect(getVal).toEqual({ foo = "bar" })
 		end)
 
-		it("should remove key if transform returns nil", function()
-			local res = call(hashMap, "SetAsync", "delKey", { test = true }, 10)
+		it("should not remove key if transform returns nil", function()
+			local value = { test = true }
+			local res = call(hashMap, "SetAsync", "delKey", value, 10)
 			expect(res).toBe(true)
 
 			local val = call(hashMap, "UpdateAsync", "delKey", function(oldVal)
-				expect(oldVal).toEqual({ test = true })
+				expect(oldVal).toEqual(value)
 				return nil
 			end, 10)
 			expect(val).toBeNil()
 
 			local getVal = call(hashMap, "GetAsync", "delKey")
-			expect(getVal).toBeNil()
+			expect(getVal).toBe(value)
 		end)
 	end)
 
