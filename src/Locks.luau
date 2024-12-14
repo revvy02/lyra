@@ -116,12 +116,16 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 
 		return Promise.new(function(resolve, reject, onCancel)
 			onCancel(function()
+				local p = Promise.resolve()
 				if currentRetry then
 					currentRetry.cancel()
+					p = currentRetry.promise
 				end
 
-				release():catch(function(err)
-					logger:log("error", "failed to unlock", { error = err })
+				p:finally(function()
+					release():catch(function(err)
+						logger:log("error", "failed to unlock", { error = err })
+					end)
 				end)
 			end)
 
@@ -140,6 +144,7 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 					currentRetry = nil
 
 					if resolved and value ~= nil then
+						transitionTo("held")
 						return resolve()
 					elseif not resolved then
 						logger:log("warn", "attempt to acquire lock failed", {
@@ -165,7 +170,6 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 		logger:log("trace", "setting up lock refresh")
 
 		local currentRefreshHandle: Types.RetryHandle<Promise.TPromise<any>>? = nil
-		transitionTo("held")
 
 		refreshPromise = Promise.new(function(resolve, _, onCancel)
 			onCancel(function()
