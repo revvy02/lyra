@@ -169,7 +169,7 @@ describe("Locks", function()
 					end
 					local initialCount = refreshCount
 					lock.release()
-					initialCount += 1 -- release call
+					initialCount += 1 -- lock.release adds 1 update call
 					jest.advanceTimersByTime(500)
 					expect(refreshCount).toBe(initialCount)
 
