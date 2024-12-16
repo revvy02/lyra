@@ -16,7 +16,7 @@ describe("DataStoreInterface", function()
 	local dataStoreInterface
 
 	beforeEach(function()
-		mockDataStoreService = MockDataStoreService.createMockService()
+		mockDataStoreService = MockDataStoreService.new()
 		dataStoreInterface = DataStoreInterface.new(mockDataStoreService)
 		jest.useFakeTimers()
 	end)
