@@ -37,7 +37,7 @@
 +	local running = coroutine.running()
 +	local clock = fakeClock(self)
 +	fakeDelay(self, timeToWait or 0, function()
-+		if coroutine.status(running) == "dead" then
++		if coroutine.status(running) ~= "suspended" then
 +			return
 +		end
 +		realTask.spawn(running, fakeClock(self) - clock)
