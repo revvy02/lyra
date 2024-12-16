@@ -2,7 +2,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataStoreService)
-local MockHashMap = require(ReplicatedStorage.Packages.Lyra.MockHashMap)
+local MockMemoryStoreService = require(ReplicatedStorage.Packages.Lyra.MockMemoryStoreService)
 local Universe = require(script.Parent.Parent.Universe)
 local createPlayerStore = require(script.Parent.Parent.Parent.createPlayerStore)
 local Tables = require(script.Parent.Parent.Parent.Tables)
@@ -33,7 +33,7 @@ describe("PlayerStore basic functionality", function()
 
 	it("handles player join and leave correctly", function()
 		local mockData = MockDataStoreService.createMockService()
-		local mockMemory = MockHashMap.createMockService()
+		local mockMemory = MockMemoryStoreService.createMockService()
 		local universe
 
 		local serverScript = function(env)
@@ -126,7 +126,7 @@ describe("PlayerStore basic functionality", function()
 
 	it("handles server crash and data recovery", function()
 		local mockData = MockDataStoreService.createMockService()
-		local mockMemory = MockHashMap.createMockService()
+		local mockMemory = MockMemoryStoreService.createMockService()
 		local universe
 		local savedData
 

@@ -2,7 +2,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataStoreService)
-local MockHashMap = require(ReplicatedStorage.Packages.Lyra.MockHashMap)
+local MockMemoryStoreService = require(ReplicatedStorage.Packages.Lyra.MockMemoryStoreService)
 local Store = require(script.Parent.Parent.Parent.Store)
 
 local expect = JestGlobals.expect
@@ -42,7 +42,7 @@ describe("tx", function()
 		jest.useFakeTimers()
 
 		mockData = MockDataStoreService.createMockService()
-		mockMemory = MockHashMap.createMockService()
+		mockMemory = MockMemoryStoreService.createMockService()
 		resetStore()
 	end)
 

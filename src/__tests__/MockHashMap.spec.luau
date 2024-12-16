@@ -1,7 +1,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 
-local MockHashMap = require(ReplicatedStorage.Packages.Lyra.MockHashMap)
+local MockMemoryStoreService = require(ReplicatedStorage.Packages.Lyra.MockMemoryStoreService)
 local Promise = require(ReplicatedStorage.Packages.Lyra.Promise)
 
 local describe = JestGlobals.describe
@@ -20,7 +20,7 @@ local function call<T>(obj: any, method: string, ...: any): T
 	return result:expect()
 end
 
-describe("MockHashMap", function()
+describe("MockMemoryStoreService", function()
 	local mockService
 	local hashMap
 
@@ -29,7 +29,7 @@ describe("MockHashMap", function()
 	end)
 
 	beforeEach(function()
-		mockService = MockHashMap.createMockService()
+		mockService = MockMemoryStoreService.createMockService()
 		hashMap = mockService:GetHashMap("TestMap")
 	end)
 

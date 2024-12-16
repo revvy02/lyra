@@ -7,7 +7,7 @@ local HashMapInterface = require(ReplicatedStorage.Packages.Lyra.HashMapInterfac
 local Locks = require(ReplicatedStorage.Packages.Lyra.Locks)
 local Promise = require(ReplicatedStorage.Packages.Lyra.Promise)
 local Log = require(ReplicatedStorage.Packages.Lyra.Log)
-local MockHashMap = require(ReplicatedStorage.Packages.Lyra.MockHashMap)
+local MockMemoryStoreService = require(ReplicatedStorage.Packages.Lyra.MockMemoryStoreService)
 local Types = require(ReplicatedStorage.Packages.Lyra.Types)
 
 local expect = JestGlobals.expect
@@ -24,7 +24,7 @@ describe("Locks", function()
 	local logger
 
 	beforeEach(function()
-		mockMemoryStoreService = MockHashMap.createMockService()
+		mockMemoryStoreService = MockMemoryStoreService.createMockService()
 		hashMapInterface = HashMapInterface.new(mockMemoryStoreService)
 		Log.level = "info"
 		logger = Log.createLogger(function() end)

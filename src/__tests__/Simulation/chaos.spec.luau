@@ -4,7 +4,7 @@ local RunService = game:GetService("RunService")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataStoreService)
-local MockHashMap = require(ReplicatedStorage.Packages.Lyra.MockHashMap)
+local MockMemoryStoreService = require(ReplicatedStorage.Packages.Lyra.MockMemoryStoreService)
 local Universe = require(script.Parent.Parent.Universe)
 local createPlayerStore = require(script.Parent.Parent.Parent.createPlayerStore)
 local Tables = require(script.Parent.Parent.Parent.Tables)
@@ -328,7 +328,7 @@ describe("PlayerStore chaos test", function()
 		end
 
 		local mockData = MockDataStoreService.createMockService()
-		local mockMemory = MockHashMap.createMockService()
+		local mockMemory = MockMemoryStoreService.createMockService()
 
 		local serverScript = function(env)
 			local Players = env.Players
