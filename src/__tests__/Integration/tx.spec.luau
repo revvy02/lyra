@@ -89,4 +89,224 @@ describe("tx", function()
 
 		return expect(key1Data).resolves.toEqual({ coins = 0 })
 	end)
+
+	it("crash after commit should save changed", function()
+		store:load("key1")
+		store:load("key2")
+
+		jest.advanceTimersByTime(1000)
+
+		local txCommitted = false
+		local removeMock, realRemove = MockDataStoreService.mockStoreMethod(mockData, "RemoveAsync", jest)
+		removeMock.mockImplementation(function(self, key, ...)
+			local ret = table.pack(realRemove(self, key, ...))
+			txCommitted = true
+			return table.unpack(ret)
+		end)
+
+		store:tx({ "key1", "key2" }, function(state)
+			state.key1.coins += 10
+			state.key2.coins += 10
+			return true
+		end)
+
+		local i = 0
+		while txCommitted == false do
+			i += 1
+			if i > 1000 then
+				break
+			end
+			jest.advanceTimersByTime(1)
+		end
+
+		crash()
+		resetStore()
+
+		store:load("key1")
+		store:load("key2")
+		jest.advanceTimersByTime(1000)
+
+		local key1Data = store:get("key1")
+		local key2Data = store:get("key2")
+		jest.advanceTimersByTime(1000)
+
+		return expect(key1Data).resolves.toEqual({ coins = 10 }):andThen(function()
+			return expect(key2Data).resolves.toEqual({ coins = 10 })
+		end)
+	end)
+
+	it("should reject if any key is not loaded", function()
+		store:load("key1")
+		jest.advanceTimersByTime(1000)
+
+		local txPromise = store:tx({ "key1", "key2" }, function(state)
+			state.key1.coins += 10
+			state.key2.coins += 10
+			return true
+		end)
+
+		return expect(txPromise).rejects.toEqual("Key not loaded: key2")
+	end)
+
+	it("should reject if store is closed", function()
+		store:load("key1")
+		store:load("key2")
+		jest.advanceTimersByTime(1000)
+
+		store:close()
+		jest.advanceTimersByTime(1000)
+
+		local txPromise = store:tx({ "key1", "key2" }, function(state)
+			state.key1.coins += 10
+			state.key2.coins += 10
+			return true
+		end)
+
+		return expect(txPromise).rejects.toEqual("Store is closed")
+	end)
+
+	it("should reject if schema validation fails", function()
+		store:load("key1")
+		store:load("key2")
+		jest.advanceTimersByTime(1000)
+
+		local txPromise = store:tx({ "key1", "key2" }, function(state)
+			state.key1.coins = "invalid"
+			state.key2.coins += 10
+			return true
+		end)
+
+		return expect(txPromise).rejects.toMatch("schema validation failed")
+	end)
+
+	it("should reject if keys are modified in transform", function()
+		store:load("key1")
+		store:load("key2")
+		jest.advanceTimersByTime(1000)
+
+		local txPromise = store:tx({ "key1", "key2" }, function(state)
+			state.key3 = { coins = 10 }
+			return true
+		end)
+
+		return expect(txPromise).rejects.toEqual("Keys changed in transaction")
+	end)
+
+	it("should handle single key changes as normal update", function()
+		store:load("key1")
+		store:load("key2")
+		jest.advanceTimersByTime(1000)
+
+		local keySet = false
+		local setMock, realSet = MockDataStoreService.mockStoreMethod(mockData, "SetAsync", jest)
+		setMock.mockImplementation(function(self, key, ...)
+			keySet = true
+			return realSet(self, key, ...)
+		end)
+
+		local txPromise = store:tx({ "key1", "key2" }, function(state)
+			state.key1.coins += 10
+			return true
+		end)
+
+		jest.advanceTimersByTime(1000)
+
+		return txPromise
+			:andThen(function()
+				expect(keySet).toBe(false)
+				return store:get("key1")
+			end)
+			:andThen(function(key1Data)
+				return expect(key1Data).toEqual({ coins = 10 })
+			end)
+	end)
+
+	it.only("should early exit with no changes", function()
+		store:load("key1")
+		store:load("key2")
+		jest.advanceTimersByTime(1000)
+
+		local keySet = false
+		local setMock, realSet = MockDataStoreService.mockStoreMethod(mockData, "SetAsync", jest)
+		setMock.mockImplementation(function(self, key, ...)
+			keySet = true
+			return realSet(self, key, ...)
+		end)
+
+		local txPromise = store:tx({ "key1", "key2" }, function()
+			return true
+		end)
+
+		jest.advanceTimersByTime(1000)
+
+		return expect(txPromise).resolves.toBeUndefined():andThen(function()
+			expect(keySet).toBe(false)
+		end)
+	end)
+
+	it("should prevent concurrent updates during transaction", function()
+		store:load("key1")
+		store:load("key2")
+		jest.advanceTimersByTime(1000)
+
+		local txPromise = store:tx({ "key1", "key2" }, function(state)
+			state.key1.coins += 10
+			state.key2.coins += 10
+			return true
+		end)
+
+		local updateStarted = false
+
+		local txCommitted = false
+		local removeMock, realRemove = MockDataStoreService.mockStoreMethod(mockData, "RemoveAsync", jest)
+		removeMock.mockImplementation(function(self, key, ...)
+			local ret = table.pack(realRemove(self, key, ...))
+			expect(updateStarted).toBe(false)
+			txCommitted = true
+			return table.unpack(ret)
+		end)
+
+		store:update("key1", function(data)
+			updateStarted = true
+			data.coins += 5
+			return true
+		end)
+
+		jest.advanceTimersByTime(1000)
+
+		return expect(txPromise).resolves
+			.toBeUndefined()
+			:andThen(function()
+				expect(txCommitted).toBe(true)
+				return store:get("key1")
+			end)
+			:andThen(function(key1Data)
+				return expect(key1Data).toEqual({ coins = 15 })
+			end)
+	end)
+
+	it("should properly release locks after failure", function()
+		store:load("key1")
+		store:load("key2")
+		jest.advanceTimersByTime(1000)
+
+		local txPromise = store:tx({ "key1", "key2" }, function(state)
+			state.key1.coins = "invalid"
+			return true
+		end)
+
+		store:update("key1", function(data)
+			data.coins += 5
+			return true
+		end)
+
+		return expect(txPromise).rejects
+			.toMatch("schema validation failed")
+			:andThen(function()
+				return store:get("key1")
+			end)
+			:andThen(function(key1Data)
+				return expect(key1Data).toEqual({ coins = 5 })
+			end)
+	end)
 end)
