@@ -17,14 +17,6 @@ local function createMockLogger()
 	}
 end
 
-local function delayWait(n: number)
-	local thread = coroutine.running()
-	task.delay(n, function()
-		coroutine.resume(thread)
-	end)
-	coroutine.yield()
-end
-
 describe("PromiseQueue", function()
 	local logger
 
@@ -48,7 +40,7 @@ describe("PromiseQueue", function()
 			local queue = PromiseQueue.new({ logger = logger })
 			local callOrder = {}
 			local callback1 = jest.fn(function()
-				delayWait(1)
+				task.wait(1)
 				table.insert(callOrder, 1)
 			end)
 			local callback2 = jest.fn(function()
@@ -89,7 +81,7 @@ describe("PromiseQueue", function()
 
 			local callback = jest.fn()
 			queue:add(function()
-				delayWait(1)
+				task.wait(1)
 			end)
 			local promise = queue:add(callback)
 
@@ -104,7 +96,7 @@ describe("PromiseQueue", function()
 		it("times out long-running operations", function()
 			local queue = PromiseQueue.new({ logger = logger })
 			local promise = queue:add(function()
-				delayWait(61)
+				task.wait(61)
 			end)
 
 			jest.runAllTimers(61)
@@ -125,11 +117,11 @@ describe("PromiseQueue", function()
 			end)
 
 			queue1:add(function()
-				delayWait(1)
+				task.wait(1)
 				blocked1 = true
 			end)
 			queue2:add(function()
-				delayWait(2)
+				task.wait(2)
 				blocked2 = true
 			end)
 
