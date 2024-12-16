@@ -638,11 +638,6 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 		return self._sessions[key].queue
 	end)
 
-	-- Represent 'failed' as `false` and 'committed' as `nil`. When committing,
-	-- we can simply remove the status entry rather than updating all keys,
-	-- saving writes for successful transactions.
-	local txStatusPromise = self._ctx.dataStoreInterface:set(self._ctx.txScope, txId, false)
-
 	-- Block Session:update calls during transaction execution by setting a lock
 	-- promise on affected sessions. Promise resolves when transaction
 	-- completes.
@@ -668,10 +663,6 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 	logger:log("trace", `acquiring PromiseQueue lock on keys`)
 	return PromiseQueue.multiQueueAdd(queues, function()
 		logger:log("trace", `acquired PromiseQueue lock on keys`)
-		if txStatusPromise:awaitStatus() ~= (Promise :: any).Status.Resolved then
-			logger:log("error", "failed to pre-set txId")
-			return Promise.reject("Failed to pre-set tx")
-		end
 
 		return withTxLock(function()
 			local currentState = {}
@@ -746,14 +737,24 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 
 			logger:log("trace", "tx changed multiple keys, beginning multi-key update")
 
-			local keyWritePromises = Tables.map(keys, function(key)
-				local txInfo = {
-					txId = txId,
-					txData = nextState[key],
-					committedData = currentState[key],
-				}
+			-- Represent 'failed' as `false` and 'committed' as `nil`. When
+			-- committing, we can simply remove the status entry rather than
+			-- updating all keys, saving writes for successful transactions.
+			local prepareTxPromise = self._ctx.dataStoreInterface:set(self._ctx.txScope, txId, false):catch(function()
+				logger:log("error", "failed to prepare txId")
+				return Promise.reject("Failed to prepare tx")
+			end)
 
-				return self._sessions[key]:writeRecord(txInfo)
+			local keyWritePromises = prepareTxPromise:andThen(function()
+				return Promise.all(Tables.map(keys, function(key)
+					local txInfo = {
+						txId = txId,
+						txData = nextState[key],
+						committedData = currentState[key],
+					}
+
+					return self._sessions[key]:writeRecord(txInfo)
+				end))
 			end)
 
 			local function revert(err)
@@ -775,7 +776,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 					end)
 			end
 
-			local updateAndCommitPromise = Promise.all(keyWritePromises)
+			local updateAndCommitPromise = keyWritePromises
 				:andThen(function()
 					logger:log("trace", "multi-key update successful, committing transaction")
 					return self._ctx.dataStoreInterface:remove(self._ctx.txScope, txId)
