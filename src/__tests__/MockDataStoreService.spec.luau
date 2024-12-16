@@ -32,7 +32,7 @@ describe("MockDataStoreService", function()
 
 	beforeEach(function()
 		jest.useFakeTimers()
-		mockDataStoreService = MockDataStoreService.createMockService()
+		mockDataStoreService = MockDataStoreService.new()
 		dataStore = mockDataStoreService:GetDataStore(dsName, scope)
 	end)
 

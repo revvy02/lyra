@@ -15,7 +15,7 @@ local beforeEach = JestGlobals.beforeEach
 describe.each({
 	{
 		name = "MockDataStoreService",
-		dataStoreService = MockDataStoreService.createMockService(),
+		dataStoreService = MockDataStoreService.new(),
 	},
 	{
 		name = "DataStoreService",

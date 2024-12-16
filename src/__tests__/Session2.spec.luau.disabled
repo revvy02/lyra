@@ -29,7 +29,7 @@ describe("Session", function()
     end)
 
     beforeEach(function()
-        mockDataStoreService = MockDataStoreService.createMockService()
+        mockDataStoreService = MockDataStoreService.new()
         dataStoreInterface = DataStoreInterface.new(mockDataStoreService)
         hashMapInterface = HashMapInterface.new(MemoryStoreService)
         logger = Log.createLogger(function() end)

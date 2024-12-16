@@ -23,7 +23,7 @@ describe("Files", function()
 	end)
 
 	beforeEach(function()
-		mockDataStoreService = MockDataStoreService.createMockService()
+		mockDataStoreService = MockDataStoreService.new()
 		dataStoreInterface = DataStoreInterface.new(mockDataStoreService)
 	end)
 

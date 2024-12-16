@@ -20,7 +20,7 @@ local jest = JestGlobals.jest
 describe.each({
 	{
 		name = "MockDataStoreService",
-		dataStoreService = MockDataStoreService.createMockService(),
+		dataStoreService = MockDataStoreService.new(),
 	},
 	{
 		name = "DataStoreService",
