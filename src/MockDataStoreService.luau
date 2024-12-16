@@ -1,4 +1,5 @@
 --!strict
+local HttpService = game:GetService("HttpService")
 
 local Tables = require(script.Parent.Tables)
 
@@ -512,9 +513,6 @@ return {
 		service.mockStoreMeta[method] = fn
 		return mock, real
 	end,
-	getStoreMeta = function(service: any)
-		return service.mockStoreMeta
-	end,
 
 	setGlobalLatency = function(service: any, seconds: number)
 		service._globalLatency = seconds
@@ -546,17 +544,18 @@ return {
 		}
 	end,
 	snapshot = function(service: any)
-		return {
-			mockData = Tables.copyDeep(service.mockData),
-			mockKeyInfo = Tables.copyDeep(service.mockKeyInfo),
-			mockVersions = Tables.copyDeep(service.mockVersions),
-			mockCache = Tables.copyDeep(service.mockCache),
-		}
+		return HttpService:JSONEncode({
+			mockData = service.mockData,
+			mockKeyInfo = service.mockKeyInfo,
+			mockVersions = service.mockVersions,
+			mockCache = service.mockCache,
+		})
 	end,
-	restore = function(service: any, snapshot: any)
-		service.mockData = Tables.copyDeep(snapshot.mockData)
-		service.mockKeyInfo = Tables.copyDeep(snapshot.mockKeyInfo)
-		service.mockVersions = Tables.copyDeep(snapshot.mockVersions)
-		service.mockCache = Tables.copyDeep(snapshot.mockCache)
+	restore = function(service: any, snapshot: string)
+		local decoded = HttpService:JSONDecode(snapshot)
+		service.mockData = decoded.mockData
+		service.mockKeyInfo = decoded.mockKeyInfo
+		service.mockVersions = decoded.mockVersions
+		service.mockCache = decoded.mockCache
 	end,
 }
