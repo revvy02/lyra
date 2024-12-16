@@ -29,7 +29,7 @@ describe("MockMemoryStoreService", function()
 	end)
 
 	beforeEach(function()
-		mockService = MockMemoryStoreService.createMockService()
+		mockService = MockMemoryStoreService.new()
 		hashMap = mockService:GetHashMap("TestMap")
 	end)
 

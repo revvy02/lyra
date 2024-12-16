@@ -24,7 +24,7 @@ describe("Locks", function()
 	local logger
 
 	beforeEach(function()
-		mockMemoryStoreService = MockMemoryStoreService.createMockService()
+		mockMemoryStoreService = MockMemoryStoreService.new()
 		hashMapInterface = HashMapInterface.new(mockMemoryStoreService)
 		Log.level = "info"
 		logger = Log.createLogger(function() end)

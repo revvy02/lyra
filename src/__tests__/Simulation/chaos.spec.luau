@@ -327,8 +327,8 @@ describe("PlayerStore chaos test", function()
 			})
 		end
 
-		local mockData = MockDataStoreService.createMockService()
-		local mockMemory = MockMemoryStoreService.createMockService()
+		local mockData = MockDataStoreService.new()
+		local mockMemory = MockMemoryStoreService.new()
 
 		local serverScript = function(env)
 			local Players = env.Players

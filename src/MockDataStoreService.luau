@@ -431,7 +431,7 @@ local function createMockStore(service: any, datastoreName: string, scope: strin
 	}, service.mockStoreMeta)
 end
 
-local function createMockService()
+local function new()
 	local mockStoreMeta = table.clone(MockDataStore)
 	mockStoreMeta.__index = mockStoreMeta
 
@@ -504,7 +504,7 @@ local function createMockService()
 end
 
 return {
-	createMockService = createMockService,
+	new = new,
 
 	mockStoreMethod = function(service, method: string, jest: any)
 		local real = service.mockStoreMeta[method]

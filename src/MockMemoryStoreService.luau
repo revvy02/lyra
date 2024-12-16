@@ -221,7 +221,7 @@ local function createMockHashMap(name: string, mockData): any
 	return tbl
 end
 
-local function createMockService(): MemoryStoreService
+local function new(): MemoryStoreService
 	local tbl = {
 		_mockData = {},
 		_hashMaps = {},
@@ -238,5 +238,5 @@ local function createMockService(): MemoryStoreService
 end
 
 return {
-	createMockService = createMockService,
+	new = new,
 }

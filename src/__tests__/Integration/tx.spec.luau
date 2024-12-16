@@ -41,8 +41,8 @@ describe("tx", function()
 	beforeEach(function()
 		jest.useFakeTimers()
 
-		mockData = MockDataStoreService.createMockService()
-		mockMemory = MockMemoryStoreService.createMockService()
+		mockData = MockDataStoreService.new()
+		mockMemory = MockMemoryStoreService.new()
 		resetStore()
 	end)
 

@@ -211,7 +211,7 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		if config.useMock then
 			assert(RunService:IsStudio(), "useMock can only be true in Studio")
 			logger:log("info", `using mock DataStoreService`)
-			service = (MockDataStoreService.createMockService() :: any) :: DataStoreService
+			service = (MockDataStoreService.new() :: any) :: DataStoreService
 		else
 			logger:log("trace", `using real DataStoreService`)
 			service = DataStoreService

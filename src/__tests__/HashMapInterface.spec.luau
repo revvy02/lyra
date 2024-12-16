@@ -18,7 +18,7 @@ describe("HashMapInterface", function()
 
 	beforeEach(function()
 		jest.useFakeTimers()
-		mockService = MockMemoryStoreService.createMockService()
+		mockService = MockMemoryStoreService.new()
 		hashMapInterface = HashMapInterface.new(mockService)
 	end)
 

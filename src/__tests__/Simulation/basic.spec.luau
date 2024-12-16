@@ -32,8 +32,8 @@ describe("PlayerStore basic functionality", function()
 	end)
 
 	it("handles player join and leave correctly", function()
-		local mockData = MockDataStoreService.createMockService()
-		local mockMemory = MockMemoryStoreService.createMockService()
+		local mockData = MockDataStoreService.new()
+		local mockMemory = MockMemoryStoreService.new()
 		local universe
 
 		local serverScript = function(env)
@@ -125,8 +125,8 @@ describe("PlayerStore basic functionality", function()
 	end)
 
 	it("handles server crash and data recovery", function()
-		local mockData = MockDataStoreService.createMockService()
-		local mockMemory = MockMemoryStoreService.createMockService()
+		local mockData = MockDataStoreService.new()
+		local mockMemory = MockMemoryStoreService.new()
 		local universe
 		local savedData
 
