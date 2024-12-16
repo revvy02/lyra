@@ -641,7 +641,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 	-- Represent 'failed' as `false` and 'committed' as `nil`. When committing,
 	-- we can simply remove the status entry rather than updating all keys,
 	-- saving writes for successful transactions.
-	local txStatusPromise = self._ctx.dataStoreInterface:set(Constants.TX_SCOPE, txId, false)
+	local txStatusPromise = self._ctx.dataStoreInterface:set(self._ctx.txScope, txId, false)
 
 	-- Block Session:update calls during transaction execution by setting a lock
 	-- promise on affected sessions. Promise resolves when transaction
@@ -767,7 +767,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 				return Promise.all(cleanupPromises)
 					:andThen(function()
 						logger:log("trace", "multi-key update reverted, cleaning up tx status")
-						return self._ctx.dataStoreInterface:remove(Constants.TX_SCOPE, txId)
+						return self._ctx.dataStoreInterface:remove(self._ctx.txScope, txId)
 					end)
 					:andThen(function()
 						logger:log("trace", "tx status cleaned up")
@@ -778,7 +778,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			local updateAndCommitPromise = Promise.all(keyWritePromises)
 				:andThen(function()
 					logger:log("trace", "multi-key update successful, committing transaction")
-					return self._ctx.dataStoreInterface:remove(Constants.TX_SCOPE, txId)
+					return self._ctx.dataStoreInterface:remove(self._ctx.txScope, txId)
 				end)
 				:catch(revert)
 				:andThen(function()
