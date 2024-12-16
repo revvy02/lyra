@@ -9,35 +9,31 @@ local it = JestGlobals.it
 local expect = JestGlobals.expect
 local describe = JestGlobals.describe
 local beforeEach = JestGlobals.beforeEach
-local beforeAll = JestGlobals.beforeAll
+local afterEach = JestGlobals.afterEach
 
-local function createMockLogger()
-	return {
-		log = jest.fn(),
-	}
+local function makePromiseQueue()
+	return PromiseQueue.new({ logger = { log = function() end } :: any })
 end
 
 describe("PromiseQueue", function()
-	local logger
-
-	beforeAll(function()
-		jest.useFakeTimers()
-	end)
+	local queue
 
 	beforeEach(function()
-		logger = createMockLogger()
+		jest.useFakeTimers()
+		queue = makePromiseQueue()
+	end)
+	afterEach(function()
+		jest.useRealTimers()
 	end)
 
 	describe("new", function()
 		it("correctly initializes an empty queue", function()
-			local queue = PromiseQueue.new({ logger = logger })
 			expect(queue._queue).toEqual({})
 		end)
 	end)
 
 	describe("add", function()
 		it("executes callbacks in order", function()
-			local queue = PromiseQueue.new({ logger = logger })
 			local callOrder = {}
 			local callback1 = jest.fn(function()
 				task.wait(1)
@@ -57,7 +53,6 @@ describe("PromiseQueue", function()
 		end)
 
 		it("handles errors and continues processing", function()
-			local queue = PromiseQueue.new({ logger = logger })
 			local callback1 = jest.fn(function()
 				error("test error")
 			end)
@@ -77,8 +72,6 @@ describe("PromiseQueue", function()
 		end)
 
 		it("supports cancellation to remove unprocessed item", function()
-			local queue = PromiseQueue.new({ logger = logger })
-
 			local callback = jest.fn()
 			queue:add(function()
 				task.wait(1)
@@ -94,7 +87,6 @@ describe("PromiseQueue", function()
 		end)
 
 		it("times out long-running operations", function()
-			local queue = PromiseQueue.new({ logger = logger })
 			local promise = queue:add(function()
 				task.wait(61)
 			end)
@@ -107,8 +99,7 @@ describe("PromiseQueue", function()
 
 	describe("multiQueueAdd", function()
 		it("coordinates execution across multiple queues", function()
-			local queue1 = PromiseQueue.new({ logger = logger })
-			local queue2 = PromiseQueue.new({ logger = logger })
+			local queue2 = makePromiseQueue()
 			local blocked1 = false
 			local blocked2 = false
 			local callback = jest.fn(function()
@@ -116,7 +107,7 @@ describe("PromiseQueue", function()
 				expect(blocked2).toBe(true)
 			end)
 
-			queue1:add(function()
+			queue:add(function()
 				task.wait(1)
 				blocked1 = true
 			end)
@@ -127,21 +118,20 @@ describe("PromiseQueue", function()
 
 			jest.runAllTimers()
 
-			return PromiseQueue.multiQueueAdd({ queue1, queue2 }, callback):andThen(function()
+			return PromiseQueue.multiQueueAdd({ queue, queue2 }, callback):andThen(function()
 				expect(callback).toHaveBeenCalled()
 			end)
 		end)
 
 		it("handles errors in coordinated operations", function()
-			local queue1 = PromiseQueue.new({ logger = logger })
-			local queue2 = PromiseQueue.new({ logger = logger })
+			local queue2 = makePromiseQueue()
 			local callback1 = jest.fn()
 			local callback2 = jest.fn()
 
-			PromiseQueue.multiQueueAdd({ queue1, queue2 }, function()
+			PromiseQueue.multiQueueAdd({ queue, queue2 }, function()
 				error("test error")
 			end):catch(function() end)
-			local p1 = queue1:add(callback1)
+			local p1 = queue:add(callback1)
 			local p2 = queue2:add(callback2)
 
 			jest.runAllTimers()
@@ -149,7 +139,7 @@ describe("PromiseQueue", function()
 			return Promise.allSettled({ p1, p2 }):andThen(function()
 				expect(callback1).toHaveBeenCalled()
 				expect(callback2).toHaveBeenCalled()
-				expect(queue1._queue).toEqual({})
+				expect(queue._queue).toEqual({})
 				expect(queue2._queue).toEqual({})
 			end)
 		end)
@@ -157,7 +147,6 @@ describe("PromiseQueue", function()
 
 	describe("_addResumableBlock", function()
 		it("blocks and resumes queue processing", function()
-			local queue = PromiseQueue.new({ logger = logger })
 			local blocked = false
 			local callback = jest.fn(function()
 				expect(blocked).toBe(true)
