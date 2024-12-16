@@ -23,14 +23,6 @@ local MAX_VALUE_SIZE = 32 * 1024 -- 32KB
 local MAX_UPDATE_RETRIES = 3
 local MAX_EXPIRATION = 3888000 -- 45 days in seconds
 
-local function delayWait(n: number)
-	local thread = coroutine.running()
-	task.delay(n, function()
-		coroutine.resume(thread)
-	end)
-	coroutine.yield()
-end
-
 local function getNow()
 	return DateTime.now().UnixTimestampMillis
 end
@@ -50,7 +42,7 @@ local function doRateLimitAndQueue(requestType)
 	end
 
 	table.insert(queue, true)
-	delayWait(0.01)
+	task.wait(0.1)
 	local fn = table.remove(queue, 1)
 	if typeof(fn) == "function" then
 		fn()
@@ -99,139 +91,139 @@ local function enforceExpirationLimits(expiration: number)
 	end
 end
 
-local function createMockHashMap(name: string, mockData): any
-	local tbl = {
-		name = name,
+local function getScopedData(self: any)
+	local hashMap = self.service.mockData[self.name]
+	if not hashMap then
+		hashMap = {}
+		self.service.mockData[self.name] = hashMap
+	end
+	return hashMap
+end
+
+local function isExpired(entry: any): boolean
+	if not entry or not entry.expiration then
+		return true
+	end
+	return getNow() > entry.expiration
+end
+
+local MockHashMap = {}
+
+function MockHashMap:GetAsync(key: string): any?
+	enforceKeyLimits(key)
+
+	doRateLimitAndQueue("GetAsync")
+
+	local scopedData = getScopedData(self)
+	local entry = scopedData[key]
+
+	if isExpired(entry) then
+		scopedData[key] = nil
+		return nil
+	end
+
+	return entry.value
+end
+
+function MockHashMap:SetAsync(key: string, value: any, expiration: number): boolean
+	enforceKeyLimits(key)
+	enforceValueLimits(value)
+	enforceExpirationLimits(expiration)
+
+	doRateLimitAndQueue("SetAsync")
+
+	local scopedData = getScopedData(self)
+	local serialized = HttpService:JSONEncode(value)
+	if serialized == nil then
+		return false
+	end
+
+	scopedData[key] = {
+		value = value,
+		expiration = getNow() + expiration * 1000,
 	}
 
-	local function getScopedData(self: any)
-		local hashMap = mockData[self.name]
-		if not hashMap then
-			hashMap = {}
-			mockData[self.name] = hashMap
-		end
-		return hashMap
-	end
+	return true
+end
 
-	local function isExpired(entry: any): boolean
-		if not entry or not entry.expiration then
-			return true
-		end
-		return getNow() > entry.expiration
-	end
+function MockHashMap:UpdateAsync(key: string, transformFunction: (any?) -> any?, expiration: number): any?
+	enforceKeyLimits(key)
+	enforceExpirationLimits(expiration)
 
-	tbl.GetAsync = function(self, key: string): any?
-		enforceKeyLimits(key)
+	doRateLimitAndQueue("UpdateAsync")
 
-		doRateLimitAndQueue("GetAsync")
+	local scopedData = getScopedData(self)
+	local retries = 0
 
-		delayWait(0.1)
-
-		local scopedData = getScopedData(self)
+	while retries < MAX_UPDATE_RETRIES do
 		local entry = scopedData[key]
+		local currentValue = nil
 
-		if isExpired(entry) then
-			scopedData[key] = nil
+		if not isExpired(entry) then
+			currentValue = Tables.copyDeep(entry.value)
+		end
+
+		local success, newValue = pcall(transformFunction, currentValue)
+		if not success then
+			error("TransformCallbackFailed", 2)
+		end
+
+		if newValue == nil then
 			return nil
 		end
 
-		return entry.value
-	end
+		enforceValueLimits(newValue)
 
-	tbl.SetAsync = function(self, key: string, value: any, expiration: number): boolean
-		enforceKeyLimits(key)
-		enforceValueLimits(value)
-		enforceExpirationLimits(expiration)
-
-		doRateLimitAndQueue("SetAsync")
-		delayWait(0.1)
-
-		local scopedData = getScopedData(self)
-		local serialized = HttpService:JSONEncode(value)
-		if serialized == nil then
-			return false
+		if entry and not isExpired(entry) and not Tables.equalsDeep(entry.value, currentValue) then
+			retries += 1
+			if retries >= MAX_UPDATE_RETRIES then
+				error("DataUpdateConflict", 2)
+			end
+			continue
 		end
 
 		scopedData[key] = {
-			value = value,
+			value = newValue,
 			expiration = getNow() + expiration * 1000,
 		}
 
-		return true
+		return newValue
 	end
 
-	tbl.UpdateAsync = function(self, key: string, transformFunction: (any?) -> any?, expiration: number): any?
-		enforceKeyLimits(key)
-		enforceExpirationLimits(expiration)
+	error("UpdateConflict: Exceeded max number of retries", 2)
+end
 
-		doRateLimitAndQueue("UpdateAsync")
-		delayWait(0.1)
+function MockHashMap:RemoveAsync(key: string)
+	enforceKeyLimits(key)
 
-		local scopedData = getScopedData(self)
-		local retries = 0
+	doRateLimitAndQueue("RemoveAsync")
 
-		while retries < MAX_UPDATE_RETRIES do
-			local entry = scopedData[key]
-			local currentValue = nil
+	local scopedData = getScopedData(self)
+	scopedData[key] = nil
+end
 
-			if not isExpired(entry) then
-				currentValue = Tables.copyDeep(entry.value)
-			end
-
-			local success, newValue = pcall(transformFunction, currentValue)
-			if not success then
-				error("TransformCallbackFailed", 2)
-			end
-
-			if newValue == nil then
-				return nil
-			end
-
-			enforceValueLimits(newValue)
-
-			if entry and not isExpired(entry) and not Tables.equalsDeep(entry.value, currentValue) then
-				retries += 1
-				if retries >= MAX_UPDATE_RETRIES then
-					error("DataUpdateConflict", 2)
-				end
-				continue
-			end
-
-			scopedData[key] = {
-				value = newValue,
-				expiration = getNow() + expiration * 1000,
-			}
-
-			return newValue
-		end
-
-		error("UpdateConflict: Exceeded max number of retries", 2)
-	end
-
-	tbl.RemoveAsync = function(self, key: string)
-		enforceKeyLimits(key)
-
-		doRateLimitAndQueue("RemoveAsync")
-		delayWait(0.1)
-
-		local scopedData = getScopedData(self)
-		scopedData[key] = nil
-	end
-
-	return tbl
+local function createMockHashMap(service: any, name: string): any
+	return setmetatable({
+		service = service,
+		name = name,
+	}, { __index = service.mockHashMapMeta })
 end
 
 local function new(): MemoryStoreService
+	local mockHashMapMeta = table.clone(MockHashMap)
+	mockHashMapMeta.__index = mockHashMapMeta
+
 	local tbl = {
-		_mockData = {},
-		_hashMaps = {},
+		mockData = {},
+		hashMaps = {},
+		mockHashMapMeta = mockHashMapMeta,
 	}
 
 	tbl.GetHashMap = function(self, name: string): any
-		if not self._hashMaps[name] then
-			self._hashMaps[name] = createMockHashMap(name, tbl._mockData)
+		if not self.hashMaps[name] then
+			self.hashMaps[name] = createMockHashMap(self, name)
 		end
-		return self._hashMaps[name]
+		return self.hashMaps[name]
 	end
 
 	return (tbl :: any) :: MemoryStoreService
@@ -239,4 +231,21 @@ end
 
 return {
 	new = new,
+
+	mockHashMapMethod = function(service, method: string, jest: any)
+		local real = service.mockHashMapMeta[method]
+		local mock, fn = jest.fn(real)
+		service.mockHashMapMeta[method] = fn
+		return mock, real
+	end,
+
+	snapshot = function(service: any)
+		return HttpService:JSONEncode({
+			mockData = service.mockData,
+		})
+	end,
+	restore = function(service: any, snapshot: string)
+		local decoded = HttpService:JSONDecode(snapshot)
+		service.mockData = decoded.mockData
+	end,
 }
