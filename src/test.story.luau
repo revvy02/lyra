@@ -1,6 +1,8 @@
 local LogService = game:GetService("LogService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local runJestTests = require(script.Parent.runJestTests)
+
 -- Maps Chalk/Jest ANSI color codes to Roblox color strings.
 local ANSI_COLOR_MAP = {
 	-- Reset (default foreground)
@@ -193,6 +195,8 @@ return function(target: Frame)
 				frame.CanvasPosition = Vector2.new(0, frame.AbsoluteCanvasSize.Y)
 			end)
 		end)
+
+		runJestTests()
 
 		-- Example: running Jest's CLI in Roblox
 		local runCLI = require(ReplicatedStorage.DevPackages.Jest).runCLI
