@@ -221,7 +221,7 @@ describe("tx", function()
 			end)
 	end)
 
-	it.only("should early exit with no changes", function()
+	it("should early exit with no changes", function()
 		store:load("key1")
 		store:load("key2")
 		jest.advanceTimersByTime(1000)
