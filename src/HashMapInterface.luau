@@ -10,7 +10,6 @@ local RETRY_ERROR_CODES = {
 	"Throttled",
 	"PartitionRequestsOverLimit",
 }
-local ERROR_RATE = 0
 
 local HashMapInterface: Types.HashMapInterfaceImpl = {} :: Types.HashMapInterfaceImpl
 HashMapInterface.__index = HashMapInterface
@@ -44,10 +43,6 @@ function HashMapInterface:_retry(func: () -> any): Types.RetryHandle<Promise.TPr
 
 				if cancel then
 					return reject(`HashMap error: operation cancelled`)
-				end
-
-				if math.random() < ERROR_RATE then
-					return reject(`HashMap error: Simulated MemoryStore error`)
 				end
 
 				local result = table.pack(pcall(func))
