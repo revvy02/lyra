@@ -1,8 +1,6 @@
 local LogService = game:GetService("LogService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local runJestTests = require(script.Parent.runJestTests)
-
 -- Maps Chalk/Jest ANSI color codes to Roblox color strings.
 local ANSI_COLOR_MAP = {
 	-- Reset (default foreground)
@@ -196,32 +194,8 @@ return function(target: Frame)
 			end)
 		end)
 
+		local runJestTests = require(script.Parent.runJestTests)
 		runJestTests()
-
-		-- Example: running Jest's CLI in Roblox
-		local runCLI = require(ReplicatedStorage.DevPackages.Jest).runCLI
-		local processServiceExists, ProcessService = pcall(function()
-			return (game :: any):GetService("ProcessService")
-		end)
-
-		local status, result = runCLI(ReplicatedStorage.Packages.Lyra, {
-			verbose = true,
-			ci = false,
-		}, { ReplicatedStorage.Packages.Lyra }):awaitStatus()
-
-		if status == "Rejected" then
-			warn(result)
-		end
-
-		if status == "Resolved" and result.results.numFailedTestSuites == 0 and result.results.numFailedTests == 0 then
-			if processServiceExists then
-				ProcessService:ExitAsync(0)
-			end
-		end
-
-		if processServiceExists then
-			ProcessService:ExitAsync(1)
-		end
 	end)
 
 	if not ok then
