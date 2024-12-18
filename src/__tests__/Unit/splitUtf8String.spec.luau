@@ -1,6 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local splitUtf8String = require(script.Parent.Parent.splitUtf8String)
+local splitUtf8String = require(ReplicatedStorage.Packages.Lyra.splitUtf8String)
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 
 local describe = JestGlobals.describe
