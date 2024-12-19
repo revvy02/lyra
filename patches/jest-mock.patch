@@ -1,0 +1,11 @@
+--- a/DevPackages/_Index/jsdotlua_jest-mock@3.6.1-rc.2/jest-mock/src/init.lua	2024-12-18 22:00:41.832849900 -0800
++++ b/DevPackages/_Index/jsdotlua_jest-mock@3.6.1-rc.2/jest-mock/src/init.lua	2024-12-18 22:01:02.189548300 -0800
+@@ -246,7 +246,7 @@
+ 				mockResult.type = "throw"
+ 				mockResult.value = result
+ 
+-				error(result)
++				error(result, 0)
+ 			end
+ 
+ 			mockResult.type = "return"
