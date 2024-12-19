@@ -694,7 +694,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 				local schemaOk, err = self._ctx.schema(nextState[key] :: any)
 				if not schemaOk then
 					logger:log("error", `schema validation for key {key} failed: {err}`)
-					Promise.reject(`Store:tx schema validation failed: {err}`)
+					return Promise.reject(`Store:tx schema validation failed: {err}`)
 				end
 			end
 
