@@ -165,7 +165,7 @@ describe("tx", function()
 		return expect(txPromise).rejects.toEqual("Store is closed")
 	end)
 
-	it.only("should reject if schema validation fails", function()
+	it("should reject if schema validation fails", function()
 		store:load("key1")
 		store:load("key2")
 		jest.advanceTimersByTime(1000)
@@ -175,15 +175,12 @@ describe("tx", function()
 			state.key2.coins += 10
 			return true
 		end)
+		jest.advanceTimersByTime(1000)
 
-		txPromise:catch(function(err)
-			print(err)
-		end)
-
-		-- return expect(txPromise).rejects.toMatch("schema validation failed")
+		return expect(txPromise).rejects.toMatch("schema validation failed")
 	end)
 
-	it.skip("should reject if keys are modified in transform", function()
+	it("should reject if keys are modified in transform", function()
 		store:load("key1")
 		store:load("key2")
 		jest.advanceTimersByTime(1000)
@@ -192,11 +189,12 @@ describe("tx", function()
 			state.key3 = { coins = 10 }
 			return true
 		end)
+		jest.advanceTimersByTime(1000)
 
-		return expect(txPromise).rejects.toEqual("Keys changed in transaction")
+		return expect(txPromise).rejects.toMatch("Keys changed in transaction")
 	end)
 
-	it.skip("should handle single key changes as normal update", function()
+	it("should handle single key changes as normal update", function()
 		store:load("key1")
 		store:load("key2")
 		jest.advanceTimersByTime(1000)
@@ -225,7 +223,7 @@ describe("tx", function()
 			end)
 	end)
 
-	it.skip("should early exit with no changes", function()
+	it("should early exit with no changes", function()
 		store:load("key1")
 		store:load("key2")
 		jest.advanceTimersByTime(1000)
@@ -248,7 +246,7 @@ describe("tx", function()
 		end)
 	end)
 
-	it.skip("should prevent concurrent updates during transaction", function()
+	it("should prevent concurrent updates during transaction", function()
 		store:load("key1")
 		store:load("key2")
 		jest.advanceTimersByTime(1000)
@@ -286,33 +284,6 @@ describe("tx", function()
 			end)
 			:andThen(function(key1Data)
 				return expect(key1Data).toEqual({ coins = 15 })
-			end)
-	end)
-
-	it.skip("should properly release locks after failure", function()
-		store:load("key1")
-		store:load("key2")
-		jest.advanceTimersByTime(1000)
-
-		local txPromise = store:tx({ "key1", "key2" }, function(state)
-			-- state.key1.coins = "invalid"
-			return true
-		end)
-
-		store:update("key1", function(data)
-			-- data.coins += 5
-			return true
-		end)
-
-		-- jest.advanceTimersByTime(1000)
-
-		return expect(txPromise).rejects
-			.toMatch("schema validation failed")
-			:andThen(function()
-				return store:get("key1")
-			end)
-			:andThen(function(key1Data)
-				return expect(key1Data).toEqual({ coins = 5 })
 			end)
 	end)
 end)
