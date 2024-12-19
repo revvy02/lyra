@@ -21,11 +21,11 @@ describe("tx", function()
 		store = Store.createStore({
 			name = "tx tests",
 			template = { coins = 0 },
+			dataStoreService = mockData,
 			schema = function(data)
 				return typeof(data.coins) == "number", "Invalid data format"
 			end,
 		})
-		store._ctx.dataStoreInterface._dataStoreService = mockData
 		store._ctx.hashMapInterface._memoryStoreService = mockMemory
 	end
 
@@ -74,7 +74,12 @@ describe("tx", function()
 			return true
 		end)
 
+		local i = 0
 		while key2Set == false do
+			i += 1
+			if i > 1000 then
+				break
+			end
 			jest.advanceTimersByTime(1)
 		end
 
@@ -87,6 +92,7 @@ describe("tx", function()
 		local key1Data = store:get("key1")
 		jest.advanceTimersByTime(1000)
 
+		expect(key2Set).toBe(true)
 		return expect(key1Data).resolves.toEqual({ coins = 0 })
 	end)
 

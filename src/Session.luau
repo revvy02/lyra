@@ -13,6 +13,7 @@ local Tables = require(script.Parent.Tables)
 local t = require(ReplicatedStorage.Packages.t)
 local Types = require(script.Parent.Types)
 local Transactions = require(script.Parent.Transactions)
+local dataStoreRetry = require(script.Parent.dataStoreRetry)
 local noYield = require(script.Parent.noYield)
 
 type Set = { [string]: true }
@@ -100,17 +101,14 @@ local function load(params: LoadParams): any
 	local logger = ctx.logger:extend({ method = "load", key = params.key })
 	logger:log("trace", `loading key`)
 
-	local recordScope = ctx.recordScope
-	local shardScope = ctx.shardScope
-	local txScope = ctx.txScope
-
 	local appliedMigrations: { string } = Migrations.getStepNames(ctx.migrationSteps)
 	local orphanedFiles: { Types.File } = {}
 	local currentFile: Types.File?
 	local keyInfo: DataStoreKeyInfo?
 
-	return ctx.dataStoreInterface
-		:get(recordScope, key)
+	return dataStoreRetry(function()
+			return ctx.recordStore:GetAsync(key)
+		end)
 		:andThen(function(record: Types.DataStoreRecord?, _keyInfo: DataStoreKeyInfo?)
 			logger:log("trace", "got record")
 			if record == nil then
@@ -136,8 +134,7 @@ local function load(params: LoadParams): any
 
 				logger:log("trace", "reading file", { file = HttpService:JSONEncode(file) })
 				local readParams: Files.ReadParams = {
-					dataStoreInterface = ctx.dataStoreInterface,
-					scope = shardScope,
+					store = ctx.shardStore,
 					file = file,
 				}
 				return Files.read(readParams)
@@ -152,11 +149,9 @@ local function load(params: LoadParams): any
 				logger:log("trace", "got txInfo", { txInfo = txInfo })
 
 				local readTxParams = {
-					dataStoreInterface = ctx.dataStoreInterface,
-					scope = txScope,
+					store = ctx.txStore,
 					txInfo = txInfo,
 				}
-
 				return Transactions.readTx(readTxParams)
 			end
 
@@ -359,11 +354,10 @@ function Session:writeRecord(txInfo: Types.TxInfo): Promise.TPromise<any>
 	end
 
 	local writeParams: Files.WriteParams = {
-		dataStoreInterface = self.ctx.dataStoreInterface,
+		store = self.ctx.shardStore,
 		data = txInfo,
 		maxShardSize = Constants.MAX_CHUNK_SIZE,
 		key = self.key,
-		scope = self.ctx.shardScope,
 		userIds = self.userIds,
 	}
 
@@ -396,8 +390,9 @@ function Session:writeRecord(txInfo: Types.TxInfo): Promise.TPromise<any>
 			}
 
 			logger:log("trace", "writing record", { record = record })
-			return self.ctx.dataStoreInterface
-				:set(self.ctx.recordScope, self.key, record, self.userIds)
+			return dataStoreRetry(function()
+					return self.ctx.recordStore:SetAsync(self.key, record, self.userIds)
+				end)
 				:andThen(function()
 					logger:log("trace", "record written")
 

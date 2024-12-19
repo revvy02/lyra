@@ -78,7 +78,7 @@ export type StoreContext<T> = {
 	migrationSteps: { MigrationStep },
 	importLegacyData: ((key: string) -> any?)?,
 
-	dataStoreInterface: DataStoreInterface,
+	dataStoreService: DataStoreService,
 	hashMapInterface: HashMapInterface,
 
 	orphanedFileQueue: OrphanedFileQueue,
@@ -86,9 +86,9 @@ export type StoreContext<T> = {
 	logger: Logger,
 	onLockLost: ((key: string) -> ())?,
 
-	recordScope: string,
-	shardScope: string,
-	txScope: string,
+	recordStore: DataStore,
+	shardStore: DataStore,
+	txStore: DataStore,
 	lockScope: string,
 }
 

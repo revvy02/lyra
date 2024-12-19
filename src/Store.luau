@@ -41,7 +41,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Constants = require(script.Parent.Constants)
-local DataStoreInterface = require(script.Parent.DataStoreInterface)
 local Files = require(script.Parent.Files)
 local HashMapInterface = require(script.Parent.HashMapInterface)
 local Locks = require(script.Parent.Locks)
@@ -55,6 +54,7 @@ local Promise = require(script.Parent.Promise)
 local Tables = require(script.Parent.Tables)
 local t = require(ReplicatedStorage.Packages.t)
 local Types = require(script.Parent.Types)
+local dataStoreRetry = require(script.Parent.dataStoreRetry)
 local noYield = require(script.Parent.noYield)
 
 --[=[
@@ -94,7 +94,7 @@ export type StoreConfig<T> = {
 	schema: (value: any) -> (boolean, string?),
 	migrationSteps: { Types.MigrationStep }?,
 	importLegacyData: ((key: string) -> any?)?,
-	dataStoreInterface: Types.DataStoreInterface?,
+	dataStoreService: DataStoreService?,
 	useMock: boolean?,
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () }?,
 	logCallback: ((logMessage: Types.LogMessage) -> ())?,
@@ -109,7 +109,7 @@ local storeConfigCheck = t.strictInterface({
 		apply = t.callback,
 	}))),
 	importLegacyData = t.optional(t.callback),
-	dataStoreInterface = t.optional(t.table),
+	dataStoreService = t.optional(t.table),
 	useMock = t.optional(t.boolean),
 	changedCallbacks = t.optional(t.array(t.callback)),
 	logCallback = t.optional(t.callback),
@@ -205,21 +205,18 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 	})
 
 	logger:log("debug", `creating store`)
-	local dataStoreInterface = config.dataStoreInterface
-	if dataStoreInterface == nil then
-		local service
+	local dataStoreService = config.dataStoreService
+	if dataStoreService == nil then
 		if config.useMock then
 			assert(RunService:IsStudio(), "useMock can only be true in Studio")
 			logger:log("info", `using mock DataStoreService`)
-			service = (MockDataStoreService.new() :: any) :: DataStoreService
+			dataStoreService = (MockDataStoreService.new() :: any) :: DataStoreService
 		else
 			logger:log("trace", `using real DataStoreService`)
-			service = DataStoreService
+			dataStoreService = DataStoreService
 		end
-
-		dataStoreInterface = DataStoreInterface.new(service)
 	end
-	assert(dataStoreInterface, "luau")
+	assert(dataStoreService, "luau")
 
 	local hashMapInterface = HashMapInterface.new(MemoryStoreService)
 	local orphanedFileQueue = OrphanedFileQueue.new()
@@ -234,7 +231,7 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		migrationSteps = migrationSteps,
 		importLegacyData = config.importLegacyData,
 
-		dataStoreInterface = dataStoreInterface,
+		dataStoreService = dataStoreService,
 		hashMapInterface = hashMapInterface,
 
 		orphanedFileQueue = orphanedFileQueue,
@@ -242,9 +239,9 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		logger = logger,
 		onLockLost = config.onLockLost,
 
-		recordScope = `{Constants.RECORD_SCOPE}/{config.name}`,
-		shardScope = `{Constants.SHARD_SCOPE}/{config.name}`,
-		txScope = `{Constants.TX_SCOPE}/{config.name}`,
+		recordStore = dataStoreService:GetDataStore(`{Constants.RECORD_SCOPE}/{config.name}`),
+		shardStore = dataStoreService:GetDataStore(`{Constants.SHARD_SCOPE}/{config.name}`),
+		txStore = dataStoreService:GetDataStore(`{Constants.TX_SCOPE}/{config.name}`),
 		lockScope = `{Constants.LOCK_SCOPE}/{config.name}`,
 	}
 
@@ -281,7 +278,7 @@ function Store:_processOrphanedFile(item: Types.OrphanedFileQueueItem): boolean
 
 	local minBudget = 100
 	local curBudget =
-		self._ctx.dataStoreInterface:getRequestBudgetForBudgetType(Enum.DataStoreRequestType.SetIncrementAsync)
+		self._ctx.dataStoreService:GetRequestBudgetForRequestType(Enum.DataStoreRequestType.SetIncrementAsync)
 	if curBudget < minBudget then
 		logger:log("debug", "insufficient budget", {
 			curBudget = curBudget,
@@ -296,7 +293,12 @@ function Store:_processOrphanedFile(item: Types.OrphanedFileQueueItem): boolean
 	local promises = {}
 	for i = 1, item.file.count do
 		logger:log("trace", `Removing shard {i} of {item.file.count}`)
-		table.insert(promises, self._ctx.dataStoreInterface:remove(Constants.SHARD_SCOPE, `{item.file.shard}-{i}`))
+		table.insert(
+			promises,
+			dataStoreRetry(function()
+				return self._ctx.shardStore:RemoveAsync(`{item.file.shard}-{i}`)
+			end)
+		)
 	end
 
 	Promise.all(promises)
@@ -740,8 +742,10 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			-- Represent 'failed' as `false` and 'committed' as `nil`. When
 			-- committing, we can simply remove the status entry rather than
 			-- updating all keys, saving writes for successful transactions.
-			local prepareTxPromise = self._ctx.dataStoreInterface:set(self._ctx.txScope, txId, false):catch(function()
-				logger:log("error", "failed to prepare txId")
+			local prepareTxPromise = dataStoreRetry(function()
+				return self._ctx.txStore:SetAsync(txId, false)
+			end):catch(function(err)
+				logger:log("error", "failed to prepare txId", { error = err })
 				return Promise.reject("Failed to prepare tx")
 			end)
 
@@ -768,7 +772,9 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 				return Promise.all(cleanupPromises)
 					:andThen(function()
 						logger:log("trace", "multi-key update reverted, cleaning up tx status")
-						return self._ctx.dataStoreInterface:remove(self._ctx.txScope, txId)
+						return dataStoreRetry(function()
+							return self._ctx.txStore:RemoveAsync(txId)
+						end)
 					end)
 					:andThen(function()
 						logger:log("trace", "tx status cleaned up")
@@ -779,7 +785,9 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			local updateAndCommitPromise = keyWritePromises
 				:andThen(function()
 					logger:log("trace", "multi-key update successful, committing transaction")
-					return self._ctx.dataStoreInterface:remove(self._ctx.txScope, txId)
+					return dataStoreRetry(function()
+						return self._ctx.txStore:RemoveAsync(txId)
+					end)
 				end)
 				:catch(revert)
 				:andThen(function()
@@ -886,14 +894,15 @@ end
 	@within Store
 ]=]
 function Store:listVersions(params: ListVersionParams): Promise.TPromise<DataStoreVersionPages>
-	return self._ctx.dataStoreInterface:listVersions(
-		self._ctx.recordScope,
-		params.key,
-		params.sortDirection,
-		params.minDate,
-		params.maxDate,
-		params.pageSize
-	)
+	return dataStoreRetry(function()
+		return self._ctx.recordStore:ListVersionsAsync(
+			params.key,
+			params.sortDirection,
+			params.minDate,
+			params.maxDate,
+			params.pageSize
+		)
+	end)
 end
 
 --[=[
@@ -903,24 +912,23 @@ end
 	@within Store
 ]=]
 function Store:readVersion<T>(key: string, version: string): Promise.TPromise<(T, DataStoreKeyInfo)>
-	return self._ctx.dataStoreInterface
-		:getVersion(self._ctx.recordScope, key, version)
-		:andThen(function(record, keyInfo)
+	return dataStoreRetry(function()
+			return self._ctx.recordStore:GetVersionAsync(key, version)
+		end)
+		:andThen(function(record: any, keyInfo: any)
 			if not record or not keyInfo then
 				return Promise.reject("Record not found")
 			end
 
 			local readParams: Files.ReadParams = {
-				dataStoreInterface = self._ctx.dataStoreInterface,
-				scope = self._ctx.shardScope,
+				store = self._ctx.recordStore,
 				file = record.file,
 			}
 			return Files.read(readParams)
 		end)
 		:andThen(function(txInfo: Types.TxInfo)
 			local readTxParams = {
-				dataStoreInterface = self._ctx.dataStoreInterface,
-				scope = self._ctx.txScope,
+				store = self._ctx.txStore,
 				txInfo = txInfo,
 			}
 

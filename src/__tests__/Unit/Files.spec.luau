@@ -2,9 +2,9 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
-local DataStoreInterface = require(ReplicatedStorage.Packages.Lyra.DataStoreInterface)
 local Files = require(ReplicatedStorage.Packages.Lyra.Files)
 local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataStoreService)
+local dataStoreRetry = require(ReplicatedStorage.Packages.Lyra.dataStoreRetry)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 
 local expect = JestGlobals.expect
@@ -15,16 +15,16 @@ local beforeAll = JestGlobals.beforeAll
 local jest = JestGlobals.jest
 
 describe("Files", function()
-	local mockDataStoreService
-	local dataStoreInterface
+	local mockData
+	local store
 
 	beforeAll(function()
 		jest.useFakeTimers()
 	end)
 
 	beforeEach(function()
-		mockDataStoreService = MockDataStoreService.new()
-		dataStoreInterface = DataStoreInterface.new(mockDataStoreService)
+		mockData = MockDataStoreService.new()
+		store = mockData:GetDataStore("files test")
 	end)
 
 	describe("isLargeFile", function()
@@ -46,11 +46,10 @@ describe("Files", function()
 
 		it("should correctly write small files without sharding", function()
 			local promise = Files.write({
-				dataStoreInterface = dataStoreInterface,
+				store = store,
 				data = { test = "data" },
 				maxShardSize = maxShardSize,
 				key = "testKey",
-				scope = "testScope",
 			}):andThen(function(file)
 				expect(file.data).toEqual({ test = "data" })
 				expect(file.shard).toBeNil()
@@ -63,11 +62,10 @@ describe("Files", function()
 		it("should correctly handle data size equal to maxShardSize", function()
 			local data = string.rep("a", maxShardSize - 2)
 			local promise = Files.write({
-				dataStoreInterface = dataStoreInterface,
+				store = store,
 				data = data,
 				maxShardSize = maxShardSize,
 				key = "testKey",
-				scope = "testScope",
 			}):andThen(function(file)
 				expect(file.data).toEqual(data)
 				expect(file.shard).toBeNil()
@@ -79,11 +77,10 @@ describe("Files", function()
 
 		it("should correctly handle empty data inputs", function()
 			local promise = Files.write({
-				dataStoreInterface = dataStoreInterface,
+				store = store,
 				data = {},
 				maxShardSize = maxShardSize,
 				key = "testKey",
-				scope = "testScope",
 			}):andThen(function(file)
 				expect(file.data).toEqual({})
 				expect(file.shard).toBeNil()
@@ -101,18 +98,22 @@ describe("Files", function()
 			}
 
 			local promise = Files.write({
-				dataStoreInterface = dataStoreInterface,
+				store = store,
 				data = data,
 				maxShardSize = maxShardSize,
 				key = "testKey",
-				scope = "testScope",
 			}):andThen(function(file)
 				expect(file.shard).never.toBeNil()
 				expect(file.count).toBe(3)
 
 				local promises = {}
 				for i = 1, file.count do
-					table.insert(promises, dataStoreInterface:get("testScope", `{file.shard}-{i}`))
+					table.insert(
+						promises,
+						dataStoreRetry(function()
+							return store:GetAsync(`{file.shard}-{i}`)
+						end)
+					)
 				end
 
 				return Promise.all(promises):andThen(function(shards)
@@ -129,16 +130,13 @@ describe("Files", function()
 			local data = string.rep("a", 10)
 			local errorMessage = "Shard write error"
 
-			dataStoreInterface.set = function()
-				return Promise.reject(errorMessage)
-			end
+			MockDataStoreService.queueError(mockData, "SetAsync", errorMessage)
 
 			local promise = Files.write({
-				dataStoreInterface = dataStoreInterface,
+				store = store,
 				data = data,
 				maxShardSize = 6,
 				key = "testKey",
-				scope = "testScope",
 			})
 			jest.runAllTimers()
 			return expect(promise).rejects.toEqual({
@@ -155,18 +153,18 @@ describe("Files", function()
 			local userIds = { 123, 456 }
 			local setCallCount = 0
 
-			dataStoreInterface.set = function(_, _, _, value, ids)
+			local mockSet = MockDataStoreService.mockStoreMethod(mockData, "SetAsync", jest)
+			mockSet.mockImplementation(function(_self, _key, value, ids)
 				setCallCount += 1
 				expect(ids).toEqual(userIds)
 				return Promise.resolve(value)
-			end
+			end)
 
 			local promise = Files.write({
-				dataStoreInterface = dataStoreInterface,
+				store = store,
 				data = data,
 				maxShardSize = 10,
 				key = "testKey",
-				scope = "testScope",
 				userIds = userIds,
 			}):andThen(function()
 				expect(setCallCount).toBeGreaterThan(1)
@@ -178,11 +176,10 @@ describe("Files", function()
 		it("should handle edge case with maxShardSize of 1", function()
 			local data = "ab"
 			local promise = Files.write({
-				dataStoreInterface = dataStoreInterface,
+				store = store,
 				data = data,
 				maxShardSize = 1,
 				key = "testKey",
-				scope = "testScope",
 			}):andThen(function(file)
 				expect(file.shard).never.toBeNil()
 				expect(file.count).toBe(4)
@@ -198,8 +195,7 @@ describe("Files", function()
 			local file = { data = data }
 
 			local promise = Files.read({
-				dataStoreInterface = dataStoreInterface,
-				scope = "testScope",
+				store = store,
 				file = file :: any,
 			}):andThen(function(readData)
 				expect(readData).toEqual(data)
@@ -212,15 +208,13 @@ describe("Files", function()
 			local data = { data = string.rep("a", 1100) }
 
 			local promise = Files.write({
-				dataStoreInterface = dataStoreInterface,
+				store = store,
 				data = data,
 				maxShardSize = 1000,
 				key = "testKey",
-				scope = "testScope",
 			}):andThen(function(file)
 				return Files.read({
-					dataStoreInterface = dataStoreInterface,
-					scope = "testScope",
+					store = store,
 					file = file,
 				}):andThen(function(readData)
 					expect(readData).toEqual(data)
@@ -235,18 +229,18 @@ describe("Files", function()
 			local errorMessage = "Network error"
 			local getCallCount = 0
 
-			dataStoreInterface.get = function()
+			local mockGet = MockDataStoreService.mockStoreMethod(mockData, "GetAsync", jest)
+			mockGet.mockImplementation(function()
 				getCallCount += 1
 				if getCallCount == 1 then
-					return Promise.resolve('{"part":1}')
+					error(errorMessage, 0)
 				else
-					return Promise.reject(errorMessage)
+					return Promise.resolve('{"part":1}')
 				end
-			end
+			end)
 
 			local promise = Files.read({
-				dataStoreInterface = dataStoreInterface,
-				scope = "testScope",
+				store = store,
 				file = file,
 			})
 			jest.runAllTimers()
@@ -257,18 +251,18 @@ describe("Files", function()
 			local file = { shard = "testShard2", count = 2 }
 			local getCallCount = 0
 
-			dataStoreInterface.get = function()
+			local mockGet = MockDataStoreService.mockStoreMethod(mockData, "GetAsync", jest)
+			mockGet.mockImplementation(function()
 				getCallCount += 1
 				if getCallCount == 1 then
-					return Promise.resolve('{"part')
-				else
 					return Promise.resolve(nil)
+				else
+					return Promise.resolve('{"part":1}')
 				end
-			end
+			end)
 
 			local promise = Files.read({
-				dataStoreInterface = dataStoreInterface,
-				scope = "testScope",
+				store = store,
 				file = file,
 			})
 			jest.runAllTimers()

@@ -2,10 +2,10 @@
 
 local Types = require(script.Parent.Types)
 local Promise = require(script.Parent.Promise)
+local dataStoreRetry = require(script.Parent.dataStoreRetry)
 
 export type ReadTxParams = {
-	dataStoreInterface: Types.DataStoreInterface,
-	scope: string,
+	store: DataStore,
 	txInfo: Types.TxInfo,
 }
 
@@ -17,10 +17,12 @@ local function readTx(params: ReadTxParams): Promise.TPromise<any>
 		return Promise.resolve(txInfo.committedData)
 	end
 
-	return params.dataStoreInterface:get(params.scope, txId):andThen(function(committed)
+	return dataStoreRetry(function()
+		return params.store:GetAsync(txId)
+	end):andThen(function(txStatus)
 		-- To minimize boundless growth, we consider a tx to be committed if its
 		-- value is `nil`. Failed or in-progress txs are stored as `false`.
-		if committed == nil then
+		if txStatus == nil then
 			return txInfo.txData
 		else
 			return txInfo.committedData

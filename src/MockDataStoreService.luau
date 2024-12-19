@@ -103,12 +103,12 @@ local function validateMetadata(metadata: any)
 	end
 
 	if typeof(metadata) ~= "table" then
-		error("DataStoreService: Metadata must be a table", 2)
+		error("DataStoreService: Metadata must be a table", 0)
 	end
 
 	local serialized = game:GetService("HttpService"):JSONEncode(metadata)
 	if #serialized > MAX_METADATA_SIZE then
-		error(`DataStoreService: Metadata size exceeds {MAX_METADATA_SIZE} limit`, 2)
+		error(`DataStoreService: Metadata size exceeds {MAX_METADATA_SIZE} limit`, 0)
 	end
 end
 
@@ -160,15 +160,15 @@ end
 
 local function enforceKeyLimits(key: any)
 	if typeof(key) ~= "string" then
-		error("DataStoreService: Key must be a string", 2)
+		error("DataStoreService: Key must be a string", 0)
 	end
 
 	if #key == 0 then
-		error("DataStoreService: Key name can't be empty", 2)
+		error("DataStoreService: Key name can't be empty", 0)
 	end
 
 	if #key > MAX_KEY_LENGTH then
-		error(`DataStoreService: Key name exceeds the {MAX_KEY_LENGTH} character limit`, 2)
+		error(`DataStoreService: Key name exceeds the {MAX_KEY_LENGTH} character limit`, 0)
 	end
 end
 
@@ -181,18 +181,18 @@ local function enforceDataLimits(value: any)
 		return game:GetService("HttpService"):JSONEncode(value)
 	end)
 	if not success then
-		error(`DataStoreService: Cannot store {typeof(value)} in DataStore`, 2)
+		error(`DataStoreService: Cannot store {typeof(value)} in DataStore`, 0)
 	end
 
 	if #result > MAX_DATA_SIZE then
-		error(`DataStoreService: Serialized value exceeds {MAX_DATA_SIZE} limit`, 2)
+		error(`DataStoreService: Serialized value exceeds {MAX_DATA_SIZE} limit`, 0)
 	end
 end
 
 local function doRateLimitAndQueue(self: any, requestType: string)
 	local shouldError, errorMessage = shouldSimulateError(self._service, requestType)
 	if shouldError then
-		error(errorMessage, 2)
+		error(errorMessage, 0)
 	end
 
 	local queue = self._service.requestQueues[requestType]
@@ -214,14 +214,14 @@ local function doRateLimitAndQueue(self: any, requestType: string)
 	if #queue >= MAX_QUEUE_SIZE then
 		error(
 			`DataStoreService:{requestType}() request dropped. Request was throttled, but throttled request queue was full`,
-			2
+			0
 		)
 	end
 
 	if self._service._forcedThrottles[requestType] then
 		local throttleInfo = self._service._forcedThrottles[requestType]
 		if throttleInfo.endTime > os.time() then
-			error("DataStoreService: Request is currently throttled", 2)
+			error("DataStoreService: Request is currently throttled", 0)
 		else
 			self._service._forcedThrottles[requestType] = nil
 		end
@@ -523,8 +523,10 @@ return {
 	setRandomLatency = function(service: any, minSeconds: number, maxSeconds: number)
 		service._randomLatencyRange = { min = minSeconds, max = maxSeconds }
 	end,
-	queueError = function(service: any, requestType: string, errorMessage: string)
-		table.insert(service.queuedErrors[requestType], errorMessage)
+	queueError = function(service: any, requestType: string, errorMessage: string, count: number?)
+		for _ = 1, count or 1 do
+			table.insert(service.queuedErrors[requestType], errorMessage)
+		end
 	end,
 	setErrorRate = function(service: any, requestType: string, rate: number)
 		service._errorRates[requestType] = rate

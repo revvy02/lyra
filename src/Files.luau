@@ -6,17 +6,17 @@ local Types = require(script.Parent.Types)
 local splitUtf8String = require(script.Parent.splitUtf8String)
 local Promise = require(script.Parent.Promise)
 local Tables = require(script.Parent.Tables)
+local dataStoreRetry = require(script.Parent.dataStoreRetry)
 
 local function isLargeFile(file: Types.File): boolean
 	return file.shard ~= nil
 end
 
 export type WriteParams = {
-	dataStoreInterface: Types.DataStoreInterface,
+	store: DataStore,
 	data: any,
 	maxShardSize: number,
 	key: string,
-	scope: string,
 	userIds: { number }?,
 }
 export type WriteError = {
@@ -35,7 +35,9 @@ local function write(params: WriteParams): Promise.TPromise<Types.File>
 	local file = { shard = shardId, count = #shards }
 
 	local shardPromises = Tables.map(shards, function(shard, index)
-		return params.dataStoreInterface:set(params.scope, `{shardId}-{index}`, shard, params.userIds)
+		return dataStoreRetry(function()
+			return params.store:SetAsync(`{shardId}-{index}`, shard, params.userIds)
+		end)
 	end)
 
 	return Promise.all(shardPromises):andThenReturn(file):catch(function(err)
@@ -47,8 +49,7 @@ local function write(params: WriteParams): Promise.TPromise<Types.File>
 end
 
 export type ReadParams = {
-	dataStoreInterface: Types.DataStoreInterface,
-	scope: string,
+	store: DataStore,
 	file: Types.File,
 }
 
@@ -62,7 +63,12 @@ local function read(params: ReadParams): Promise.TPromise<any>
 	local promises = {}
 
 	for i = 1, params.file.count do
-		table.insert(promises, params.dataStoreInterface:get(params.scope, `{shardId}-{i}`))
+		table.insert(
+			promises,
+			dataStoreRetry(function()
+				return params.store:GetAsync(`{shardId}-{i}`)
+			end)
+		)
 	end
 
 	return Promise.all(promises):andThen(function(shards)
