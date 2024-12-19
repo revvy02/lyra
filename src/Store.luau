@@ -66,7 +66,7 @@ local noYield = require(script.Parent.noYield)
 	.schema (value: any) -> (boolean, string?) -- Validates data format
 	.migrationSteps? { MigrationStep } -- Steps to migrate old data formats
 	.importLegacyData? (key: string) -> any? -- Function to import legacy data
-	.dataStoreInterface? DataStoreInterface -- Custom DataStore implementation
+	.dataStoreService? DataStoreService -- Custom DataStore implementation
 	.useMock? boolean -- Use mock DataStore (Studio only)
 	.changedCallbacks? { (key: string, newData: T, oldData: T?) -> () -> () } -- Run when data changes
 	.logCallback? (logMessage: LogMessage) -> () -- Custom logging function

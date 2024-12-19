@@ -11,7 +11,7 @@ local beforeEach = JestGlobals.beforeEach
 local afterEach = JestGlobals.afterEach
 local jest = JestGlobals.jest
 
-describe("DataStoreInterface", function()
+describe("dataStoreRetry", function()
 	local mockData
 	local store
 

@@ -179,55 +179,6 @@ export type HashMapInterfaceProps = {
 
 export type HashMapInterface = typeof(setmetatable({} :: HashMapInterfaceProps, {} :: HashMapInterfaceImpl))
 
-export type DataStoreInterfaceImpl = {
-	__index: DataStoreInterfaceImpl,
-	_getDataStore: (self: DataStoreInterface, scope: string) -> DataStore,
-	_retry: (self: DataStoreInterface, func: () -> any) -> Promise.TPromise<any>,
-	new: (dataStoreService: DataStoreService) -> DataStoreInterface,
-	getRequestBudgetForBudgetType: (self: DataStoreInterface, budgetType: Enum.DataStoreRequestType) -> number,
-	get: (self: DataStoreInterface, scope: string, key: string) -> Promise.TPromise<(any?, DataStoreKeyInfo?)>,
-	set: (
-		self: DataStoreInterface,
-		scope: string,
-		key: string,
-		value: any,
-		userIds: { number }?,
-		metadata: { [string]: any }?
-	) -> Promise.TPromise<string>,
-	update: (
-		self: DataStoreInterface,
-		scope: string,
-		key: string,
-		transformFunction: (
-			currentValue: any,
-			keyInfo: DataStoreKeyInfo
-		) -> (any, { number }?, { [string]: any }?)
-	) -> Promise.TPromise<(any, DataStoreKeyInfo)>,
-	remove: (self: DataStoreInterface, scope: string, key: string) -> Promise.TPromise<(any?, DataStoreKeyInfo?)>,
-	listVersions: (
-		self: DataStoreInterface,
-		scope: string,
-		key: string,
-		sortDirection: Enum.SortDirection?,
-		minDate: number?,
-		maxDate: number?,
-		pageSize: number?
-	) -> Promise.TPromise<DataStoreVersionPages>,
-	getVersion: (
-		self: DataStoreInterface,
-		scope: string,
-		key: string,
-		version: string
-	) -> Promise.TPromise<(any?, DataStoreKeyInfo?)>,
-}
-
-export type DataStoreInterfaceProps = {
-	_dataStoreService: DataStoreService,
-	_dataStores: { [string]: DataStore },
-}
-
-export type DataStoreInterface = typeof(setmetatable({} :: DataStoreInterfaceProps, {} :: DataStoreInterfaceImpl))
-
 return {
 	txInfoCheck = txInfoCheck,
 	fileCheck = fileCheck,

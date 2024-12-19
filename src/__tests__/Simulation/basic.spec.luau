@@ -43,11 +43,11 @@ describe("PlayerStore basic functionality", function()
 			local store = createPlayerStore({
 				name = "PlayerData",
 				template = Tables.copyDeep(TestConfig.Template),
+				dataStoreService = mockData,
 				schema = function(data)
 					return type(data.coins) == "number" and type(data.inventory) == "table", "Invalid data format"
 				end,
 			})
-			store._store._ctx.dataStoreInterface._dataStoreService = mockData
 			store._store._ctx.hashMapInterface._memoryStoreService = mockMemory
 
 			Players.PlayerAdded:Connect(function(player)
@@ -137,11 +137,11 @@ describe("PlayerStore basic functionality", function()
 			local store = createPlayerStore({
 				name = "PlayerData",
 				template = Tables.copyDeep(TestConfig.Template),
+				dataStoreService = mockData,
 				schema = function(data)
 					return type(data.coins) == "number" and type(data.inventory) == "table", "Invalid data format"
 				end,
 			})
-			store._store._ctx.dataStoreInterface._dataStoreService = mockData
 			store._store._ctx.hashMapInterface._memoryStoreService = mockMemory
 
 			Players.PlayerAdded:Connect(function(player)

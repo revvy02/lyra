@@ -340,6 +340,7 @@ describe("PlayerStore chaos test", function()
 			local store = createPlayerStore({
 				name = "PlayerData",
 				template = Tables.copyDeep(TestConfig.Template),
+				dataStoreService = mockData,
 				schema = function(data)
 					return type(data.coins) == "number" and type(data.inventory) == "table", "Invalid data format"
 				end,
@@ -349,7 +350,6 @@ describe("PlayerStore chaos test", function()
 					end
 				end,
 			})
-			store._store._ctx.dataStoreInterface._dataStoreService = mockData
 			store._store._ctx.hashMapInterface._memoryStoreService = mockMemory
 
 			game.onCrash(function()
