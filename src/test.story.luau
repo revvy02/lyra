@@ -20,6 +20,7 @@ end
 return function(target: Frame)
 	local container
 	local conn
+	local testPromise
 
 	local ok, err = pcall(function()
 		container = Instance.new("Frame")
@@ -133,7 +134,7 @@ return function(target: Frame)
 		end)
 
 		local runJestTests = require(script.Parent.runJestTests)
-		runJestTests()
+		testPromise = runJestTests()
 	end)
 
 	if not ok then
@@ -149,6 +150,9 @@ return function(target: Frame)
 		end
 		if conn then
 			conn:Disconnect()
+		end
+		if testPromise then
+			testPromise:cancel()
 		end
 	end
 end
