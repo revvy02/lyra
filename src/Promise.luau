@@ -76,6 +76,12 @@ type Error = {
 
 type PromiseModule = {
 	Error: Error,
+	Status: {
+		Started: Status,
+		Resolved: Status,
+		Rejected: Status,
+		Cancelled: Status,
+	},
 
 	all: <T>(promises: { TPromise<T> }) -> TPromise<{ T }>,
 	allSettled: <T>(promise: { TPromise<T> }) -> TPromise<{ Status }>,
