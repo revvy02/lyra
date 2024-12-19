@@ -232,7 +232,7 @@ describe("MockDataStoreService", function()
 			end
 		end)
 
-		it.skip("budget should change after calls", function()
+		it("budget should change after calls", function()
 			local budget1 = mockDataStoreService:GetRequestBudgetForRequestType(Enum.DataStoreRequestType.GetAsync)
 
 			task.spawn(dataStore.GetAsync, dataStore, "key1")
@@ -250,7 +250,7 @@ describe("MockDataStoreService", function()
 	end)
 
 	describe("Snapshot / Restore", function()
-		it.skip("should capture and restore service state", function()
+		it("should capture and restore service state", function()
 			call(dataStore, "SetAsync", "key1", { value = 1 })
 			call(dataStore, "SetAsync", "key2", { value = 2 })
 

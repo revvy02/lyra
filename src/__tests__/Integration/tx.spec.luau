@@ -52,7 +52,7 @@ describe("tx", function()
 		jest.useRealTimers()
 	end)
 
-	it.only("crash before commit should result in abort", function()
+	it("crash before commit should result in abort", function()
 		store:load("key1")
 		store:load("key2")
 
