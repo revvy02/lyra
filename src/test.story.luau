@@ -1,22 +1,7 @@
 local LogService = game:GetService("LogService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TextService = game:GetService("TextService")
 
--- Maps Chalk/Jest ANSI color codes to Roblox color strings.
-local ANSI_COLOR_MAP = {
-	-- Reset (default foreground)
-	["[39m"] = "</font>",
-
-	["[30m"] = "rgb(0,0,0)", -- Black
-	["[31m"] = "rgb(254, 91, 86)", -- Red
-	["[32m"] = "rgb(89, 246, 141)", -- Green
-	["[33m"] = "rgb(255, 255, 164)", -- Yellow
-	["[34m"] = "rgb(87, 199, 255)", -- Blue
-	["[35m"] = "rgb(254, 105, 192)", -- Magenta
-	["[36m"] = "rgb(153, 236, 254)", -- Cyan
-	["[37m"] = "rgb(240, 240, 239)", -- White
-}
-
-local DIM_COLOR = "rgb(140, 141, 143)"
+local AnsiHelper = require(script.Parent.AnsiHelper)
 
 local MESSAGE_TYPE_COLORS = {
 	[Enum.MessageType.MessageInfo] = "rgb(0, 139, 219)", -- blue
@@ -32,80 +17,13 @@ local function colorMessageByType(message: string, messageType: Enum.MessageType
 	return message
 end
 
-local function jestToRichText(input: string): string
-	local output = input
-
-	-- Remove null and ESC characters
-	output = output:gsub("%z", ""):gsub("\27", "")
-
-	-- Convert Jest symbols to more readable ones
-	output = output:gsub("✓", "✓")
-	output = output:gsub("○", "○")
-	output = output:gsub("✕", "×")
-
-	-- Handle bold text: [1m ... [22m
-	output = output:gsub("%[1m(.-)%[22m", "<b>%1</b>")
-
-	-- Handle dim text: [2m ... [22m
-	output = output:gsub("%[2m(.-)%[22m", function(text)
-		return string.format('<font color="%s">%s</font>', DIM_COLOR, text)
-	end)
-
-	-- Handle underline: [4m ... [24m
-	-- Chalk might use underline for emphasis in some cases.
-	output = output:gsub("%[4m(.-)%[24m", "<u>%1</u>")
-
-	-- Now replace color codes with <font> tags or close </font>.
-	-- Since ANSI_COLOR_MAP only includes recognized codes, unrecognized codes will be removed later.
-	for code, color in ANSI_COLOR_MAP do
-		if color == "</font>" then
-			-- This is our "reset" code
-			output = output:gsub(code:gsub("%[", "%%["), color)
-		else
-			output = output:gsub(code:gsub("%[", "%%["), string.format('<font color="%s">', color))
-		end
-	end
-
-	-- Remove any other unhandled ANSI codes (e.g., [7m for inverse, etc.)
-	output = output:gsub("%[[%d;]*m", "")
-
-	-- Make sure all <font> and <b> tags get properly closed
-	local openFontTags = 0
-	for _ in output:gmatch("<font") do
-		openFontTags += 1
-	end
-	for _ in output:gmatch("</font>") do
-		openFontTags -= 1
-	end
-
-	local openBoldTags = 0
-	for _ in output:gmatch("<b>") do
-		openBoldTags += 1
-	end
-	for _ in output:gmatch("</b>") do
-		openBoldTags -= 1
-	end
-
-	-- If we ended up with a mismatch, close them out
-	while openFontTags > 0 do
-		output ..= "</font>"
-		openFontTags -= 1
-	end
-	while openBoldTags > 0 do
-		output ..= "</b>"
-		openBoldTags -= 1
-	end
-
-	return output
-end
-
 return function(target: Frame)
 	local container
 	local conn
 
 	local ok, err = pcall(function()
 		container = Instance.new("Frame")
-		container.Size = UDim2.fromScale(0.6, 0.9)
+		container.Size = UDim2.fromScale(0.7, 0.98)
 		container.Position = UDim2.fromScale(0.5, 0.5)
 		container.AnchorPoint = Vector2.new(0.5, 0.5)
 		container.BackgroundColor3 = Color3.fromRGB(40, 42, 54)
@@ -173,25 +91,45 @@ return function(target: Frame)
 		do
 			faux[v] = TextLabel[v]
 		end
-		faux.TextTransparency = 0.5
-		faux.TextColor3 = Color3.fromRGB(0, 0, 0)
+		faux.TextTransparency = 0.75
+		faux.TextColor3 = Color3.fromRGB(127, 127, 127)
 		faux.TextEditable = false
 		faux.ClearTextOnFocus = false
 		faux.Parent = frame
+
+		local output = ""
+		local currentState = AnsiHelper.defaultState()
+
+		local charSize = TextService:GetTextSize("a", TextLabel.TextSize, TextLabel.Font, Vector2.new(10000, 10000))
+
+		local backgroundRunFrames = {}
 
 		TextLabel:GetPropertyChangedSignal("ContentText"):Connect(function()
 			faux.Text = TextLabel.ContentText
 			faux.Size = UDim2.fromOffset(TextLabel.AbsoluteSize.X, TextLabel.AbsoluteSize.Y)
 		end)
 
-		local output = ""
-
 		conn = LogService.MessageOut:Connect(function(message, messageType)
-			pcall(function()
-				output ..= colorMessageByType(message, messageType) .. "\n"
-				TextLabel.Text = jestToRichText(output)
-				frame.CanvasPosition = Vector2.new(0, frame.AbsoluteCanvasSize.Y)
+			local renderOk, renderErr = pcall(function()
+				local wasAtBottom = frame.CanvasPosition.Y >= frame.AbsoluteCanvasSize.Y - frame.AbsoluteSize.Y - 16
+				message = colorMessageByType(message, messageType) .. "\n"
+				local segment, newState = AnsiHelper.ansiToRichTextChunk(message, currentState)
+				currentState = newState
+				local displayText = segment .. AnsiHelper.getTemporaryClosingString(currentState)
+				local full = output .. displayText
+				output ..= segment
+				TextLabel.Text = full
+				faux.Text = TextLabel.ContentText
+				if wasAtBottom then
+					frame.CanvasPosition = Vector2.new(0, frame.AbsoluteCanvasSize.Y)
+				end
+
+				AnsiHelper.updateBackgroundFrames(faux, charSize, backgroundRunFrames, newState.backgroundRuns)
 			end)
+			if not renderOk then
+				conn:Disconnect()
+				warn(renderErr)
+			end
 		end)
 
 		local runJestTests = require(script.Parent.runJestTests)
@@ -199,6 +137,9 @@ return function(target: Frame)
 	end)
 
 	if not ok then
+		if conn then
+			conn:Disconnect()
+		end
 		warn(err)
 	end
 
