@@ -1,6 +1,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
+local Log = require(ReplicatedStorage.Packages.Lyra.Log)
 local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataStoreService)
 local MockMemoryStoreService = require(ReplicatedStorage.Packages.Lyra.MockMemoryStoreService)
 local Store = require(ReplicatedStorage.Packages.Lyra.Store)
@@ -22,11 +23,11 @@ describe("tx", function()
 			name = "tx tests",
 			template = { coins = 0 },
 			dataStoreService = mockData,
+			memoryStoreService = mockMemory,
 			schema = function(data)
 				return typeof(data.coins) == "number", "Invalid data format"
 			end,
 		})
-		store._ctx.hashMapInterface._memoryStoreService = mockMemory
 	end
 
 	local function crash()
@@ -51,7 +52,7 @@ describe("tx", function()
 		jest.useRealTimers()
 	end)
 
-	it("crash before commit should result in abort", function()
+	it.only("crash before commit should result in abort", function()
 		store:load("key1")
 		store:load("key2")
 

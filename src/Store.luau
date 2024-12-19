@@ -42,11 +42,11 @@ local RunService = game:GetService("RunService")
 
 local Constants = require(script.Parent.Constants)
 local Files = require(script.Parent.Files)
-local HashMapInterface = require(script.Parent.HashMapInterface)
 local Locks = require(script.Parent.Locks)
 local Session = require(script.Parent.Session)
 local Log = require(script.Parent.Log)
 local MockDataStoreService = require(script.Parent.MockDataStoreService)
+local MockMemoryStoreService = require(script.Parent.MockMemoryStoreService)
 local OrphanedFileQueue = require(script.Parent.OrphanedFileQueue)
 local PromiseQueue = require(script.Parent.PromiseQueue)
 local Transactions = require(script.Parent.Transactions)
@@ -95,6 +95,7 @@ export type StoreConfig<T> = {
 	migrationSteps: { Types.MigrationStep }?,
 	importLegacyData: ((key: string) -> any?)?,
 	dataStoreService: DataStoreService?,
+	memoryStoreService: MemoryStoreService?,
 	useMock: boolean?,
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () }?,
 	logCallback: ((logMessage: Types.LogMessage) -> ())?,
@@ -109,7 +110,8 @@ local storeConfigCheck = t.strictInterface({
 		apply = t.callback,
 	}))),
 	importLegacyData = t.optional(t.callback),
-	dataStoreService = t.optional(t.table),
+	dataStoreService = t.optional(t.any),
+	memoryStoreService = t.optional(t.any),
 	useMock = t.optional(t.boolean),
 	changedCallbacks = t.optional(t.array(t.callback)),
 	logCallback = t.optional(t.callback),
@@ -218,7 +220,19 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 	end
 	assert(dataStoreService, "luau")
 
-	local hashMapInterface = HashMapInterface.new(MemoryStoreService)
+	local memoryStoreService = config.memoryStoreService
+	if memoryStoreService == nil then
+		if config.useMock then
+			assert(RunService:IsStudio(), "useMock can only be true in Studio")
+			logger:log("info", `using mock MemoryStoreService`)
+			memoryStoreService = (MockMemoryStoreService.new() :: any) :: MemoryStoreService
+		else
+			logger:log("trace", `using real MemoryStoreService`)
+			memoryStoreService = MemoryStoreService
+		end
+	end
+	assert(memoryStoreService, "luau")
+
 	local orphanedFileQueue = OrphanedFileQueue.new()
 
 	local migrationSteps = config.migrationSteps or {}
@@ -232,7 +246,7 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		importLegacyData = config.importLegacyData,
 
 		dataStoreService = dataStoreService,
-		hashMapInterface = hashMapInterface,
+		memoryStoreService = memoryStoreService,
 
 		orphanedFileQueue = orphanedFileQueue,
 		changedCallbacks = config.changedCallbacks or {},
@@ -242,7 +256,7 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		recordStore = dataStoreService:GetDataStore(`{Constants.RECORD_SCOPE}/{config.name}`),
 		shardStore = dataStoreService:GetDataStore(`{Constants.SHARD_SCOPE}/{config.name}`),
 		txStore = dataStoreService:GetDataStore(`{Constants.TX_SCOPE}/{config.name}`),
-		lockScope = `{Constants.LOCK_SCOPE}/{config.name}`,
+		lockHashMap = memoryStoreService:GetHashMap(`{Constants.LOCK_SCOPE}/{config.name}`),
 	}
 
 	local ok, err = storeContext.schema(storeContext.template)

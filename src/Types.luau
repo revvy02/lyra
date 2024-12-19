@@ -79,7 +79,7 @@ export type StoreContext<T> = {
 	importLegacyData: ((key: string) -> any?)?,
 
 	dataStoreService: DataStoreService,
-	hashMapInterface: HashMapInterface,
+	memoryStoreService: MemoryStoreService,
 
 	orphanedFileQueue: OrphanedFileQueue,
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () },
@@ -89,7 +89,7 @@ export type StoreContext<T> = {
 	recordStore: DataStore,
 	shardStore: DataStore,
 	txStore: DataStore,
-	lockScope: string,
+	lockHashMap: MemoryStoreHashMap,
 }
 
 local txInfoCheck = t.some(
@@ -148,36 +148,6 @@ export type RetryHandle<T> = {
 	promise: T,
 	cancel: () -> (),
 }
-
-export type HashMapInterfaceImpl = {
-	__index: HashMapInterfaceImpl,
-	_getHashMap: (self: HashMapInterface, scope: string) -> MemoryStoreHashMap,
-	_retry: (self: HashMapInterface, func: () -> any) -> RetryHandle<Promise.TPromise<any>>,
-	new: (memoryStoreService: MemoryStoreService) -> HashMapInterface,
-	get: (self: HashMapInterface, scope: string, key: string) -> RetryHandle<Promise.TPromise<any?>>,
-	set: (
-		self: HashMapInterface,
-		scope: string,
-		key: string,
-		value: any,
-		expiration: number
-	) -> RetryHandle<Promise.TPromise<boolean>>,
-	update: (
-		self: HashMapInterface,
-		scope: string,
-		key: string,
-		transformFunction: (currentValue: any?) -> any?,
-		expiration: number
-	) -> RetryHandle<Promise.TPromise<any?>>,
-	remove: (self: HashMapInterface, scope: string, key: string) -> RetryHandle<Promise.Promise>,
-}
-
-export type HashMapInterfaceProps = {
-	_memoryStoreService: MemoryStoreService,
-	_hashMaps: { [string]: MemoryStoreHashMap },
-}
-
-export type HashMapInterface = typeof(setmetatable({} :: HashMapInterfaceProps, {} :: HashMapInterfaceImpl))
 
 return {
 	txInfoCheck = txInfoCheck,

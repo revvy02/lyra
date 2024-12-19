@@ -44,11 +44,11 @@ describe("PlayerStore basic functionality", function()
 				name = "PlayerData",
 				template = Tables.copyDeep(TestConfig.Template),
 				dataStoreService = mockData,
+				memoryStoreService = mockMemory,
 				schema = function(data)
 					return type(data.coins) == "number" and type(data.inventory) == "table", "Invalid data format"
 				end,
 			})
-			store._store._ctx.hashMapInterface._memoryStoreService = mockMemory
 
 			Players.PlayerAdded:Connect(function(player)
 				local success = store:load(player):await()
@@ -138,11 +138,11 @@ describe("PlayerStore basic functionality", function()
 				name = "PlayerData",
 				template = Tables.copyDeep(TestConfig.Template),
 				dataStoreService = mockData,
+				memoryStoreService = mockMemory,
 				schema = function(data)
 					return type(data.coins) == "number" and type(data.inventory) == "table", "Invalid data format"
 				end,
 			})
-			store._store._ctx.hashMapInterface._memoryStoreService = mockMemory
 
 			Players.PlayerAdded:Connect(function(player)
 				local success = store:load(player):await()

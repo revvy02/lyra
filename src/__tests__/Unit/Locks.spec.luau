@@ -3,12 +3,12 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
-local HashMapInterface = require(ReplicatedStorage.Packages.Lyra.HashMapInterface)
 local Locks = require(ReplicatedStorage.Packages.Lyra.Locks)
 local Promise = require(ReplicatedStorage.Packages.Lyra.Promise)
 local Log = require(ReplicatedStorage.Packages.Lyra.Log)
 local MockMemoryStoreService = require(ReplicatedStorage.Packages.Lyra.MockMemoryStoreService)
 local Types = require(ReplicatedStorage.Packages.Lyra.Types)
+local hashMapRetry = require(ReplicatedStorage.Packages.Lyra.hashMapRetry)
 
 local expect = JestGlobals.expect
 local describe = JestGlobals.describe
@@ -18,19 +18,17 @@ local afterEach = JestGlobals.afterEach
 local jest = JestGlobals.jest
 
 describe("Locks", function()
-	local hashMapInterface
-	local mockMemoryStoreService
+	local mockMemory
 	local storeContext: Types.StoreContext<any>
 	local logger
 
 	beforeEach(function()
-		mockMemoryStoreService = MockMemoryStoreService.new()
-		hashMapInterface = HashMapInterface.new(mockMemoryStoreService)
-		Log.level = "info"
+		mockMemory = MockMemoryStoreService.new()
+
 		logger = Log.createLogger(function() end)
+
 		storeContext = {
-			hashMapInterface = hashMapInterface,
-			lockScope = "test-locks",
+			lockHashMap = mockMemory:GetHashMap("test-locks"),
 			logger = logger,
 		} :: Types.StoreContext<any>
 		jest.useFakeTimers()
@@ -102,7 +100,9 @@ describe("Locks", function()
 
 			it("should generate unique lock IDs for each acquisition", function()
 				local promise = acquireLock():andThen(function(lock1)
-					local id1Handle = hashMapInterface:get(storeContext.lockScope, "testKey")
+					local id1Handle = hashMapRetry(function()
+						return storeContext.lockHashMap:GetAsync("testKey")
+					end)
 					jest.advanceTimersByTime(500)
 					local id1 = id1Handle.promise:expect()
 
@@ -112,7 +112,9 @@ describe("Locks", function()
 					acquireLock()
 					jest.advanceTimersByTime(1000)
 
-					local id2Handle = hashMapInterface:get(storeContext.lockScope, "testKey")
+					local id2Handle = hashMapRetry(function()
+						return storeContext.lockHashMap:GetAsync("testKey")
+					end)
 					jest.advanceTimersByTime(500)
 					local id2 = id2Handle.promise:expect()
 
@@ -156,12 +158,11 @@ describe("Locks", function()
 			it("should stop refreshing after lock is released", function()
 				local refreshCount = 0
 
-				local hashMap = mockMemoryStoreService:GetHashMap(storeContext.lockScope)
-				local ogUpdate = hashMap.UpdateAsync
-				hashMap.UpdateAsync = function(self, ...)
+				local updateMock, realUpdate = MockMemoryStoreService.mockHashMapMethod(mockMemory, "UpdateAsync", jest)
+				updateMock.mockImplementation(function(...)
 					refreshCount += 1
-					return ogUpdate(self, ...)
-				end
+					return realUpdate(...)
+				end)
 
 				local promise = acquireLock("testKey", { duration = 10, refreshInterval = 2 }):andThen(function(lock)
 					for _ = 1, 3 do
@@ -363,10 +364,7 @@ describe("Locks", function()
 
 		describe("error handling", function()
 			it("should handle hashmap errors gracefully", function()
-				local hashMap = mockMemoryStoreService:GetHashMap(storeContext.lockScope)
-				hashMap.GetAsync = function()
-					error("Simulated error")
-				end
+				MockMemoryStoreService.queueError(mockMemory, "GetAsync", "Simulated error")
 
 				local promise = Locks.probeLockActive({
 					storeContext = storeContext,

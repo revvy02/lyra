@@ -6,6 +6,7 @@ local LOCK_TTL_ERROR_MARGIN_SECS = 0.2
 
 local Types = require(script.Parent.Types)
 local Promise = require(script.Parent.Promise)
+local hashMapRetry = require(script.Parent.hashMapRetry)
 
 type LockStatus = "acquiring" | "held" | "released"
 
@@ -34,7 +35,6 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 
 	local ctx = params.storeContext
 	local key = params.key
-	local scope = ctx.lockScope
 	local logger = ctx.logger:extend({ method = "acquireLock", key = key, lockId = lockId })
 
 	local function transitionTo(newStatus: LockStatus)
@@ -59,7 +59,9 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 			return nil
 		end
 
-		local retryHandle = ctx.hashMapInterface:update(scope, key, transformFunction, ttl)
+		local retryHandle = hashMapRetry(function()
+			return ctx.lockHashMap:UpdateAsync(key, transformFunction, ttl)
+		end)
 
 		retryHandle.promise:tap(function(value)
 			if value ~= nil then
@@ -243,12 +245,13 @@ export type ProbeLockActiveParams = {
 local function probeLockActive(params: ProbeLockActiveParams): Promise.TPromise<boolean>
 	local ctx = params.storeContext
 	local key = params.key
-	local scope = ctx.lockScope
 	local logger = ctx.logger:extend({ method = "probeLockActive", key = key })
 
 	logger:log("trace", "probing if lock is active")
 
-	local retryHandle = ctx.hashMapInterface:get(scope, key)
+	local retryHandle = hashMapRetry(function()
+		return ctx.lockHashMap:GetAsync(key)
+	end)
 
 	return retryHandle.promise:andThen(function(value)
 		return value ~= nil

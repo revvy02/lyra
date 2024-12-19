@@ -341,6 +341,7 @@ describe("PlayerStore chaos test", function()
 				name = "PlayerData",
 				template = Tables.copyDeep(TestConfig.Template),
 				dataStoreService = mockData,
+				memoryStoreService = mockMemory,
 				schema = function(data)
 					return type(data.coins) == "number" and type(data.inventory) == "table", "Invalid data format"
 				end,
@@ -350,7 +351,6 @@ describe("PlayerStore chaos test", function()
 					end
 				end,
 			})
-			store._store._ctx.hashMapInterface._memoryStoreService = mockMemory
 
 			game.onCrash(function()
 				local snap = MockDataStoreService.snapshot(mockData)
