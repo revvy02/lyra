@@ -172,17 +172,20 @@ local function load(params: LoadParams): any
 			end
 
 			logger:log("trace", "no data, importing legacy data")
-			return Promise.try(importLegacyData, key)
-				:tap(function(oldData: any?)
-					if oldData ~= nil then
+			local importOk, importResult = pcall(importLegacyData, key)
+			if not importOk then
+				logger:log("error", "failed to import legacy data", { error = importResult })
+				return Promise.reject(`Failed to import legacy data for key {key}: {importResult}`)
+			end
+
+			local oldData = importResult
+			if oldData == nil then
+				return nil
+			else
 						appliedMigrations = {}
-					end
 					logger:log("trace", "imported legacy data", { oldData = oldData })
-				end)
-				:catch(function(e)
-					logger:log("error", "failed to import legacy data", { error = e })
-					return Promise.reject(`Failed to import legacy data for key {key}: {e}`)
-				end)
+				return oldData
+			end
 		end)
 		:andThen(function(data: any?)
 			if data == nil then
