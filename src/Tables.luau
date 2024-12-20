@@ -42,6 +42,24 @@ local function mergeDeep<T>(...: any): T
 	return result :: any
 end
 
+local function mergeShallow<T>(...: any): T
+	local result = {}
+
+	for tIndex = 1, select("#", ...) do
+		local t = select(tIndex, ...)
+
+		if type(t) ~= "table" then
+			continue
+		end
+
+		for key, value in t do
+			result[key] = value
+		end
+	end
+
+	return result :: any
+end
+
 local function map<T, U>(array: { T }, mapper: (value: T, index: number, array: { T }) -> U?): { U }
 	local mapped = {}
 
@@ -172,6 +190,7 @@ end
 return {
 	copyDeep = copyDeep,
 	mergeDeep = mergeDeep,
+	mergeShallow = mergeShallow,
 	equalsDeep = equalsDeep,
 	freezeDeep = freezeDeep,
 	map = map,
