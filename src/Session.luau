@@ -312,6 +312,13 @@ function Session.load<T>(params: LoadSessionParams<T>): Promise.TPromise<Session
 
 			local session = createSession(createParams)
 
+			lockHandle.onLockLost(function()
+				logger:log("warn", "lock was lost, stopping autosave")
+				session.closed = true
+				session:stopAutosaving()
+				session.unloadPromise = Promise.resolve()
+			end)
+
 			logger:log("trace", "loaded key", { data = loadResult.data })
 			session:mutateKey(loadResult.data)
 
@@ -460,15 +467,9 @@ function Session:startAutosaving(): ()
 		end
 	end)
 
-	local disconnectOnLockLost = self.lockHandle.onLockLost(function()
-		logger:log("warn", "lock was lost, stopping autosave")
-		self:stopAutosaving()
-	end)
-
 	self._cleanupAutosave = function()
 		logger:log("trace", "cleaning up autosave")
 		stop = true
-		disconnectOnLockLost()
 		self._cleanupAutosave = nil
 	end
 end
