@@ -1,7 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
-local Log = require(ReplicatedStorage.Packages.Lyra.Log)
 local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataStoreService)
 local MockMemoryStoreService = require(ReplicatedStorage.Packages.Lyra.MockMemoryStoreService)
 local Store = require(ReplicatedStorage.Packages.Lyra.Store)
