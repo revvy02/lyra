@@ -182,8 +182,8 @@ local function load(params: LoadParams): any
 			if oldData == nil then
 				return nil
 			else
-						appliedMigrations = {}
-					logger:log("trace", "imported legacy data", { oldData = oldData })
+				appliedMigrations = {}
+				logger:log("trace", "imported legacy data", { oldData = oldData })
 				return oldData
 			end
 		end)
@@ -501,6 +501,7 @@ function Session:unload(): Promise.Promise
 			logger:log("trace", "updating record before unloading")
 			return self:updateRecord()
 		end)
+		:andThenReturn(nil)
 		:finally(function()
 			logger:log("trace", "releasing lock")
 			return self.lockHandle.release():catch(function(e)
