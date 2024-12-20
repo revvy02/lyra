@@ -22,7 +22,19 @@ return function(target: Frame)
 	local conn
 	local testPromise
 
-	local ok, err = pcall(function()
+	local function cleanup()
+		if container then
+			container:Destroy()
+		end
+		if conn then
+			conn:Disconnect()
+		end
+		if testPromise then
+			testPromise:cancel()
+		end
+	end
+
+	local renderOutputOk, renderOutputErr = pcall(function()
 		container = Instance.new("Frame")
 		container.Size = UDim2.fromScale(0.7, 0.98)
 		container.Position = UDim2.fromScale(0.5, 0.5)
@@ -132,27 +144,17 @@ return function(target: Frame)
 				warn(renderErr)
 			end
 		end)
-
-		local runJestTests = require(script.Parent.runJestTests)
-		testPromise = runJestTests()
 	end)
 
-	if not ok then
-		if conn then
-			conn:Disconnect()
-		end
-		warn(err)
+	if not renderOutputOk then
+		warn(renderOutputErr)
+		return cleanup
 	end
 
-	return function()
-		if container then
-			container:Destroy()
-		end
-		if conn then
-			conn:Disconnect()
-		end
-		if testPromise then
-			testPromise:cancel()
-		end
-	end
+	task.spawn(function()
+		local runJestTests = require(script.Parent.runJestTests)
+		runJestTests()
+	end)
+
+	return cleanup
 end

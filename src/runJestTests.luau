@@ -1,39 +1,28 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Promise = require(script.Parent.Promise)
-
 return function()
 	local runCLI = require(ReplicatedStorage.DevPackages.Jest).runCLI
 	local processServiceExists, ProcessService = pcall(function()
 		return (game :: any):GetService("ProcessService")
 	end)
+	local p = runCLI(ReplicatedStorage.Packages.Lyra, {
+		verbose = true,
+		ci = false,
+	}, { ReplicatedStorage.Packages.Lyra })
 
-	return Promise.new(function(resolve, onCancel)
-		local p = runCLI(ReplicatedStorage.Packages.Lyra, {
-			verbose = true,
-			ci = false,
-		}, { ReplicatedStorage.Packages.Lyra })
+	local status, result = p:awaitStatus()
 
-		onCancel(function()
-			p:cancel()
-		end)
+	if status == "Rejected" then
+		warn(result)
+	end
 
-		local status, result = p:awaitStatus()
-
-		if status == "Rejected" then
-			warn(result)
-		end
-
-		if status == "Resolved" and result.results.numFailedTestSuites == 0 and result.results.numFailedTests == 0 then
-			if processServiceExists then
-				ProcessService:ExitAsync(0)
-			end
-		end
-
+	if status == "Resolved" and result.results.numFailedTestSuites == 0 and result.results.numFailedTests == 0 then
 		if processServiceExists then
-			ProcessService:ExitAsync(1)
+			ProcessService:ExitAsync(0)
 		end
+	end
 
-		resolve(result)
-	end)
+	if processServiceExists then
+		ProcessService:ExitAsync(1)
+	end
 end
