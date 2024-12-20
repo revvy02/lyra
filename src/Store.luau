@@ -415,9 +415,11 @@ function Store:load(key: string, userIds: { number }?): Promise.Promise
 	end)
 
 	self._loadPromises[key] = loadPromise
-	loadPromise:finally(function()
-		self._loadPromises[key] = nil
-	end)
+	loadPromise
+		:finally(function()
+			self._loadPromises[key] = nil
+		end)
+		:catch(function() end)
 
 	return loadPromise:finally(function(status)
 		if status == (Promise :: any).Status.Cancelled then
