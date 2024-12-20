@@ -15,7 +15,7 @@ local Log = {
 	level = "info",
 }
 
-function Log.setLevel(level: Types.Level)
+function Log.setLevel(level: Types.LogLevel)
 	if table.find(levels, level) == nil then
 		error("Invalid log level")
 	end
@@ -25,7 +25,7 @@ end
 local Logger: Types.LoggerImpl = {} :: Types.LoggerImpl
 Logger.__index = Logger
 
-function Logger:log(level: Types.Level, message: string, context: { [string]: any }?)
+function Logger:log(level: Types.LogLevel, message: string, context: { [string]: any }?)
 	if table.find(levels, level) > table.find(levels, Log.level) then
 		return
 	end

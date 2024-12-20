@@ -8,7 +8,6 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Promise = require(script.Parent.Promise)
 local t = require(ReplicatedStorage.Packages.t)
 
 export type TxInfo = {
@@ -101,7 +100,7 @@ local fileCheck = t.some(t.strictInterface({ data = t.any }), t.strictInterface(
 --[=[
 	An enum value representing a log level.
 
-	@interface Level
+	@interface LogLevel
 	.fatal "fatal"
 	.error "error"
 	.warn "warn"
@@ -112,28 +111,28 @@ local fileCheck = t.some(t.strictInterface({ data = t.any }), t.strictInterface(
 	@tag enum
 	@within Types
 ]=]
-export type Level = "fatal" | "error" | "warn" | "info" | "debug" | "trace"
+export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "trace"
 
 --[=[
 	Represents a log message.
 
 	@interface LogMessage
 	.message string
-	.level Level
+	.level LogLevel
 	.context { [string]: any }?
 
 	@within Types
 ]=]
 export type LogMessage = {
 	message: string,
-	level: Level,
+	level: LogLevel,
 	context: { [string]: any }?,
 }
 
 export type LoggerImpl = {
 	__index: LoggerImpl,
 
-	log: (self: Logger, level: Level, message: string, context: { [string]: any }?) -> (),
+	log: (self: Logger, level: LogLevel, message: string, context: { [string]: any }?) -> (),
 	extend: (self: Logger, context: { [string]: any }) -> Logger,
 }
 
