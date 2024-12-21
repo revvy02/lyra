@@ -1,5 +1,4 @@
 local LogService = game:GetService("LogService")
-local TextService = game:GetService("TextService")
 
 local AnsiHelper = require(script.Parent.AnsiHelper)
 
@@ -17,10 +16,36 @@ local function colorMessageByType(message: string, messageType: Enum.MessageType
 	return message
 end
 
+local function throttle(fn: () -> (), delay: number): () -> ()
+	local lastCall = 0
+	local scheduled = false
+
+	local function throttled(...)
+		local args = table.pack(...)
+
+		if not scheduled then
+			scheduled = true
+
+			task.defer(function()
+				local now = tick()
+				if now - lastCall < delay then
+					task.wait(delay - (now - lastCall))
+				end
+
+				fn(table.unpack(args))
+				lastCall = tick()
+
+				scheduled = false
+			end)
+		end
+	end
+
+	return throttled
+end
+
 return function(target: Frame)
 	local container
 	local conn
-	local testPromise
 
 	local function cleanup()
 		if container then
@@ -28,9 +53,6 @@ return function(target: Frame)
 		end
 		if conn then
 			conn:Disconnect()
-		end
-		if testPromise then
-			testPromise:cancel()
 		end
 	end
 
@@ -113,36 +135,47 @@ return function(target: Frame)
 		local output = ""
 		local currentState = AnsiHelper.defaultState()
 
-		local charSize = TextService:GetTextSize("a", TextLabel.TextSize, TextLabel.Font, Vector2.new(10000, 10000))
-
-		local backgroundRunFrames = {}
-
 		TextLabel:GetPropertyChangedSignal("ContentText"):Connect(function()
 			faux.Text = TextLabel.ContentText
 			faux.Size = UDim2.fromOffset(TextLabel.AbsoluteSize.X, TextLabel.AbsoluteSize.Y)
 		end)
 
-		conn = LogService.MessageOut:Connect(function(message, messageType)
+		local messageQueue = {}
+
+		local function render()
+			local msg = ""
+			for _, item in messageQueue do
+				msg ..= colorMessageByType(item.message, item.messageType) .. "\n"
+			end
+			messageQueue = {}
+
+			local wasAtBottom = frame.CanvasPosition.Y >= frame.AbsoluteCanvasSize.Y - frame.AbsoluteSize.Y - 16
 			local renderOk, renderErr = pcall(function()
-				local wasAtBottom = frame.CanvasPosition.Y >= frame.AbsoluteCanvasSize.Y - frame.AbsoluteSize.Y - 16
-				message = colorMessageByType(message, messageType) .. "\n"
-				local segment, newState = AnsiHelper.ansiToRichTextChunk(message, currentState)
+				local segment, newState = AnsiHelper.ansiToRichTextChunk(msg, currentState)
 				currentState = newState
+
 				local displayText = segment .. AnsiHelper.getTemporaryClosingString(currentState)
-				local full = output .. displayText
-				output ..= segment
-				TextLabel.Text = full
+				TextLabel.Text = output .. displayText
 				faux.Text = TextLabel.ContentText
+
+				output ..= segment
+
 				if wasAtBottom then
 					frame.CanvasPosition = Vector2.new(0, frame.AbsoluteCanvasSize.Y)
 				end
-
-				AnsiHelper.updateBackgroundFrames(faux, charSize, backgroundRunFrames, newState.backgroundRuns)
 			end)
+
 			if not renderOk then
 				conn:Disconnect()
-				warn(renderErr)
+				warn("Error rendering message:", renderErr)
 			end
+		end
+
+		local renderThrottled = throttle(render, 0.01)
+
+		conn = LogService.MessageOut:Connect(function(message, messageType)
+			table.insert(messageQueue, { message = message, messageType = messageType })
+			renderThrottled()
 		end)
 	end)
 

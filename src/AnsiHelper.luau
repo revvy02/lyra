@@ -23,8 +23,6 @@ local BACKGROUND_COLOR_MAP = {
 local function defaultState()
 	return {
 		stack = {}, -- stack of styles (font/color/bold/etc)
-		partial_ansi = "",
-		waiting_for_m = false,
 		visibleCharacterIndex = 0,
 
 		-- Background runs
