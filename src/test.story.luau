@@ -91,62 +91,55 @@ return function(target: Frame)
 		frame.ScrollBarImageColor3 = Color3.fromRGB(255, 255, 255)
 		frame.Parent = container
 
-		local TextLabel = Instance.new("TextLabel")
-		TextLabel.Size = UDim2.fromScale(0.95, 1)
-		TextLabel.AutomaticSize = Enum.AutomaticSize.Y
-		TextLabel.Position = UDim2.fromScale(0.5, 0)
-		TextLabel.AnchorPoint = Vector2.new(0.5, 0)
-		TextLabel.BackgroundTransparency = 1
-		TextLabel.RichText = true
-		TextLabel.TextYAlignment = Enum.TextYAlignment.Bottom
-		TextLabel.TextXAlignment = Enum.TextXAlignment.Left
-		TextLabel.Text = ""
-		TextLabel.TextSize = 16
-		TextLabel.TextWrapped = true
-		TextLabel.ZIndex = 2
-		TextLabel.FontFace = Font.new("rbxasset://fonts/families/RobotoMono.json")
+		local labelFrame = Instance.new("Frame")
+		labelFrame.Size = UDim2.fromScale(1, 1)
+		labelFrame.BackgroundTransparency = 1
+		labelFrame.Parent = frame
 
-		-- Set the default text color explicitly (Chalk defaults to white if no color code is applied)
-		TextLabel.TextColor3 = Color3.fromRGB(240, 240, 239)
-		TextLabel.Parent = frame
+		local list = Instance.new("UIListLayout")
+		list.SortOrder = Enum.SortOrder.LayoutOrder
+		list.Parent = labelFrame
 
-		local faux = Instance.new("TextBox")
-		for _, v in
-			{
-				"Size",
-				"Position",
-				"AnchorPoint",
-				"BackgroundTransparency",
-				"TextXAlignment",
-				"TextYAlignment",
-				"TextSize",
-				"FontFace",
-				"TextWrapped",
-			}
-		do
-			faux[v] = TextLabel[v]
+		local textLabels = {}
+
+		local function makeTextLabel()
+			local label = Instance.new("TextLabel")
+			label.Size = UDim2.fromScale(0.95, 0)
+			label.AutomaticSize = Enum.AutomaticSize.Y
+			label.Position = UDim2.fromScale(0.5, 0)
+			label.AnchorPoint = Vector2.new(0.5, 0)
+			label.BackgroundTransparency = 1
+			label.RichText = true
+			label.TextYAlignment = Enum.TextYAlignment.Bottom
+			label.TextXAlignment = Enum.TextXAlignment.Left
+			label.Text = ""
+			label.TextSize = 16
+			label.TextWrapped = true
+			label.ZIndex = 2
+			label.FontFace = Font.new("rbxasset://fonts/families/RobotoMono.json")
+
+			-- Set the default text color explicitly (Chalk defaults to white if no color code is applied)
+			label.TextColor3 = Color3.fromRGB(240, 240, 239)
+
+			return label
 		end
-		faux.TextTransparency = 0.75
-		faux.TextColor3 = Color3.fromRGB(127, 127, 127)
-		faux.TextEditable = false
-		faux.ClearTextOnFocus = false
-		faux.Parent = frame
 
-		local output = ""
+		local outputs = {}
 		local currentState = AnsiHelper.defaultState()
 
-		TextLabel:GetPropertyChangedSignal("ContentText"):Connect(function()
-			faux.Text = TextLabel.ContentText
-			faux.Size = UDim2.fromOffset(TextLabel.AbsoluteSize.X, TextLabel.AbsoluteSize.Y)
-		end)
+		local _label = makeTextLabel()
+		_label.Parent = labelFrame
+		table.insert(textLabels, _label)
+		table.insert(outputs, "")
 
 		local messageQueue = {}
 
 		local function render()
-			local msg = ""
-			for _, item in messageQueue do
-				msg ..= colorMessageByType(item.message, item.messageType) .. "\n"
+			for i, item in messageQueue do
+				messageQueue[i] = colorMessageByType(item.message, item.messageType)
 			end
+			table.insert(messageQueue, "")
+			local msg = table.concat(messageQueue, "\n")
 			messageQueue = {}
 
 			local wasAtBottom = frame.CanvasPosition.Y >= frame.AbsoluteCanvasSize.Y - frame.AbsoluteSize.Y - 16
@@ -155,10 +148,31 @@ return function(target: Frame)
 				currentState = newState
 
 				local displayText = segment .. AnsiHelper.getTemporaryClosingString(currentState)
-				TextLabel.Text = output .. displayText
-				faux.Text = TextLabel.ContentText
 
+				local label
+
+				local output = outputs[#outputs]
+				local prevLabel = textLabels[#textLabels]
+
+				prevLabel.Text = output .. segment
+
+				if utf8.len(prevLabel.ContentText) > 16384 then
+					output = string.sub(output, 1, -2) -- remove trailing newlines
+					outputs[#outputs] = output
+					prevLabel.Text = output
+					label = makeTextLabel()
+					label.LayoutOrder = #textLabels + 1
+					label.Parent = labelFrame
+					table.insert(textLabels, label)
+					table.insert(outputs, "")
+					output = ""
+				else
+					label = textLabels[#textLabels]
+				end
+
+				label.Text = output .. displayText
 				output ..= segment
+				outputs[#outputs] = output
 
 				if wasAtBottom then
 					frame.CanvasPosition = Vector2.new(0, frame.AbsoluteCanvasSize.Y)
@@ -171,7 +185,7 @@ return function(target: Frame)
 			end
 		end
 
-		local renderThrottled = throttle(render, 0.01)
+		local renderThrottled = throttle(render, 1 / 60)
 
 		conn = LogService.MessageOut:Connect(function(message, messageType)
 			table.insert(messageQueue, { message = message, messageType = messageType })
@@ -180,6 +194,9 @@ return function(target: Frame)
 	end)
 
 	if not renderOutputOk then
+		if conn then
+			conn:Disconnect()
+		end
 		warn(renderOutputErr)
 		return cleanup
 	end
