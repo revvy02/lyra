@@ -384,6 +384,28 @@ describe("Store", function()
 			return expect(data).resolves.toEqual({ coins = 0, inventory = {} })
 		end)
 
+		it("resolves with true if commit is successful", function()
+			store:load("player1")
+			local p = store:update("player1", function(data)
+				data.coins = 999
+				return true
+			end)
+			jest.advanceTimersByTime(1000)
+
+			return expect(p).resolves.toBe(true)
+		end)
+
+		it("resolves with false if commit is skipped", function()
+			store:load("player1")
+			local p = store:update("player1", function(data)
+				data.coins = 999
+				return false
+			end)
+			jest.advanceTimersByTime(1000)
+
+			return expect(p).resolves.toBe(false)
+		end)
+
 		it("rejects if transform throws an error", function()
 			store:load("player1")
 			local p = store:update("player1", function()
@@ -455,8 +477,8 @@ describe("Store", function()
 			end)
 			jest.advanceTimersByTime(1000)
 
-			return expect(p1).resolves.toBeNil():andThen(function()
-				return expect(p2).resolves.toBeNil()
+			return expect(p1).resolves.toBe(true):andThen(function()
+				return expect(p2).resolves.toBe(true)
 			end)
 		end)
 

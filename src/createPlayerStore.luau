@@ -46,7 +46,11 @@ type PlayerStoreImpl<T> = {
 	get: (self: PlayerStore<T>, player: Player) -> Promise.TPromise<T>,
 	load: (self: PlayerStore<T>, player: Player) -> Promise.Promise,
 	unload: (self: PlayerStore<T>, player: Player) -> Promise.Promise,
-	update: (self: PlayerStore<T>, player: Player, transformFunction: (data: T) -> boolean) -> Promise.Promise,
+	update: (
+		self: PlayerStore<T>,
+		player: Player,
+		transformFunction: (data: T) -> boolean
+	) -> Promise.TPromise<boolean>,
 	tx: (
 		self: PlayerStore<T>,
 		players: { Player },
@@ -216,7 +220,7 @@ end
 	```
 
 	@error "Store is closed" -- The store has been closed
-	@return Promise -- Resolves when data is unloaded
+	@return Promise<boolean> -- Resolves when the update is complete, with a boolean indicating success
 	@within PlayerStore
 ]=]
 function PlayerStore:unload(player: Player)

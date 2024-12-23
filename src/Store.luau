@@ -136,7 +136,7 @@ type StoreImpl<T> = {
 	load: (self: Store<T>, key: string, userIds: { number }?) -> Promise.Promise,
 	unload: (self: Store<T>, key: string) -> Promise.Promise,
 	get: (self: Store<T>, key: string) -> Promise.TPromise<T>,
-	update: (self: Store<T>, key: string, transformFunction: (data: T) -> boolean) -> Promise.Promise,
+	update: (self: Store<T>, key: string, transformFunction: (data: T) -> boolean) -> Promise.TPromise<boolean>,
 	tx: (
 		self: Store<T>,
 		keys: { string },
@@ -582,10 +582,10 @@ end
 	@error "Key not loaded" -- The key hasn't been loaded with store:load()
 	@error "Store is closed" -- The store has been closed
 	@error "Schema validation failed" -- The transformed data failed schema validation
-	@return Promise -- Resolves when the update is complete
+	@return Promise<boolean> -- Resolves when the update is complete, with a boolean indicating success
 	@within Store
 ]=]
-function Store:update<T>(key: string, transformFunction: (data: T) -> boolean): Promise.Promise
+function Store:update<T>(key: string, transformFunction: (data: T) -> boolean): Promise.TPromise<boolean>
 	assert(t.string(key))
 	assert(t.callback(transformFunction))
 

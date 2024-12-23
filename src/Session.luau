@@ -36,7 +36,7 @@ type SessionImpl<T> = {
 
 	unload: (self: Session<T>) -> Promise.Promise,
 	get: (self: Session<T>) -> Promise.TPromise<T>,
-	update: (self: Session<T>, transformFunction: (data: T) -> boolean) -> Promise.Promise,
+	update: (self: Session<T>, transformFunction: (data: T) -> boolean) -> Promise.TPromise<boolean>,
 	save: (self: Session<T>) -> Promise.Promise,
 }
 
@@ -516,7 +516,7 @@ function Session:get<T>(): Promise.TPromise<T>
 	return Promise.resolve(self.frozenData) :: any
 end
 
-function Session:update<T>(transformFunction: (data: T) -> boolean): Promise.Promise
+function Session:update<T>(transformFunction: (data: T) -> boolean): Promise.TPromise<boolean>
 	assert(t.callback(transformFunction))
 
 	local logger = self.logger:extend({ method = "update" })
@@ -549,7 +549,7 @@ function Session:update<T>(transformFunction: (data: T) -> boolean): Promise.Pro
 
 		if result == false then
 			logger:log("trace", "transformFunction returned false, skipping update")
-			return resolve()
+			return resolve(false)
 		end
 
 		-- We deep copy here to prevent references to internal state from being
@@ -564,14 +564,14 @@ function Session:update<T>(transformFunction: (data: T) -> boolean): Promise.Pro
 		end
 
 		if Tables.equalsDeep(nextData :: any, currentData :: any) then
-			return resolve()
+			return resolve(true)
 		end
 
 		self:mutateKey(nextData)
 
 		logger:log("trace", "update succeeded")
 
-		return resolve()
+		return resolve(true)
 	end)
 end
 
