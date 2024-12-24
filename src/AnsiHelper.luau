@@ -232,6 +232,8 @@ end
 
 local function ansiToRichTextChunk(text, currentState)
 	text = text:gsub("✕", "×")
+	text = text:gsub("<", "&lt;")
+	text = text:gsub(">", "&gt;")
 
 	if not currentState then
 		currentState = defaultState()
