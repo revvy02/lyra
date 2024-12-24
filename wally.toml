@@ -10,6 +10,6 @@ Sift = "csqrl/sift@0.0.8"
 t = "osyrisrblx/t@3.1.1"
 
 [dev-dependencies]
-Jest = "jsdotlua/jest@3.6.1-rc.2"
-JestGlobals = "jsdotlua/jest-globals@3.6.1-rc.2"
+Jest = "jsdotlua/jest@3.10.0"
+JestGlobals = "jsdotlua/jest-globals@3.10.0"
 t = "osyrisrblx/t@3.1.1"
