@@ -29,6 +29,12 @@ describe("Session", function()
 		})
 	end
 
+	local function getSession(...)
+		local sessionPromise = loadSession(...)
+		jest.advanceTimersByTime(1000)
+		return sessionPromise:expect()
+	end
+
 	beforeEach(function()
 		mockData = MockDataStoreService.new()
 		mockMemory = MockMemoryStoreService.new()
@@ -63,171 +69,147 @@ describe("Session", function()
 
 	describe("basic session behavior", function()
 		it("should load a session with template data", function()
-			local promise = loadSession():andThen(function(session)
-				return session:get()
-			end)
+			local promise = getSession():get()
 			jest.advanceTimersByTime(1000)
 			return expect(promise).resolves.toEqual(ctx.template)
 		end)
 
 		it("should track changes correctly", function()
-			local promise = loadSession():andThen(function(session)
-				-- TODO: sessions are broadly considered unsaved on load
-				expect(session:isSaved()).toBe(false)
+			local session = getSession()
+			-- TODO: sessions are broadly considered unsaved on load
+			expect(session:isSaved()).toBe(false)
 
-				session:setData({ coins = 10, inventory = {} })
-				expect(session:isSaved()).toBe(false)
+			session:setData({ coins = 10, inventory = {} })
+			expect(session:isSaved()).toBe(false)
 
-				return session:save():andThen(function()
-					expect(session:isSaved()).toBe(true)
-				end)
-			end)
+			session:save()
 			jest.advanceTimersByTime(1000)
-			return promise
+
+			expect(session:isSaved()).toBe(true)
 		end)
 
 		it("should prevent modifications after session is closed", function()
-			local promise = loadSession():andThen(function(session)
-				return session:unload():andThen(function()
-					return session:update(function(data)
-						data.coins += 10
-						return true
-					end)
-				end)
-			end)
+			local session = getSession()
+			session:unload()
 			jest.advanceTimersByTime(1000)
-			return expect(promise).rejects.toEqual("Session is closed")
+
+			local p = session:update(function(data)
+				data.coins += 10
+				return true
+			end)
+
+			jest.advanceTimersByTime(1000)
+			return expect(p).rejects.toEqual("Session is closed")
 		end)
 	end)
 
 	describe("data validation", function()
 		it("should reject invalid data in update", function()
-			local promise = loadSession():andThen(function(session)
-				return session:update(function(data: any)
-					data.coins = "invalid"
-					return true
-				end)
+			local promise = getSession():update(function(data: any)
+				data.coins = "invalid"
+				return true
 			end)
 			jest.advanceTimersByTime(1000)
+
 			return expect(promise).rejects.toMatch("schema validation failed")
 		end)
 
 		it("should maintain data immutability", function()
-			local promise = loadSession():andThen(function(session)
-				return session:get():andThen(function(data)
-					expect(function()
-						data.coins = 100
-					end).toThrow()
-				end)
-			end)
+			local session = getSession()
+			local dataPromise = session:get()
 			jest.advanceTimersByTime(1000)
-			return promise
+
+			local data = dataPromise:expect()
+
+			return expect(function()
+				data.coins = 100
+			end).toThrow()
 		end)
 	end)
 
 	describe("autosave behavior", function()
 		it("should automatically save changes", function()
-			local promise = loadSession():andThen(function(session)
-				session:startAutosaving()
-				session:setData({ coins = 10, inventory = {} })
+			local session = getSession()
+			session:startAutosaving()
+			session:setData({ coins = 10, inventory = {} })
 
-				jest.advanceTimersByTime(6 * 60 * 1000) -- Autosave interval + buffer
+			jest.advanceTimersByTime(6 * 60 * 1000) -- Autosave interval + buffer
 
-				expect(session:isSaved()).toBe(true)
-			end)
-			jest.advanceTimersByTime(1000)
-			return promise
+			expect(session:isSaved()).toBe(true)
 		end)
 
 		it("should stop autosaving when requested", function()
-			local promise = loadSession():andThen(function(session)
-				session:startAutosaving()
-				session:setData({ coins = 10, inventory = {} })
-				session:stopAutosaving()
+			local session = getSession()
+			session:startAutosaving()
+			session:setData({ coins = 10, inventory = {} })
+			session:stopAutosaving()
 
-				jest.advanceTimersByTime(6 * 60 * 1000)
+			jest.advanceTimersByTime(6 * 60 * 1000)
 
-				expect(session:isSaved()).toBe(false)
-			end)
-			jest.advanceTimersByTime(1000)
-			return promise
+			expect(session:isSaved()).toBe(false)
 		end)
 	end)
 
 	describe("lock handling", function()
 		it("should release lock on unload", function()
-			local promise = loadSession():andThen(function(session)
-				session:unload()
-				jest.advanceTimersByTime(1000)
-
-				local p = loadSession()
-				jest.advanceTimersByTime(2 * 60 * 1000)
-
-				return p
-			end)
+			local session = getSession()
+			session:unload()
 			jest.advanceTimersByTime(1000)
-			return expect(promise).resolves.toBeDefined()
+
+			expect(session.lockHandle.isLocked()).toBe(false)
+
+			local p = loadSession()
+			jest.advanceTimersByTime(2 * 60 * 1000)
+
+			return expect(p).resolves.toBeDefined()
 		end)
 
 		it("should handle lock loss", function()
-			local promise = loadSession():andThen(function(session)
-				local updateMock = MockMemoryStoreService.mockHashMapMethod(mockMemory, "UpdateAsync", jest)
-				updateMock.mockImplementation(function()
-					task.wait(1000)
-				end)
-
-				-- Simulate lock loss
-				jest.advanceTimersByTime(3 * 60 * 1000)
-				expect(session.lockHandle.isLocked()).toBe(false)
-
-				return session:update(function(data)
-					data.coins += 10
-					return true
-				end)
+			local session = getSession()
+			local updateMock = MockMemoryStoreService.mockHashMapMethod(mockMemory, "UpdateAsync", jest)
+			updateMock.mockImplementation(function()
+				task.wait(1000)
 			end)
-			jest.advanceTimersByTime(1000)
-			return expect(promise).rejects.toEqual("Session is closed")
+
+			-- Simulate lock loss
+			jest.advanceTimersByTime(3 * 60 * 1000)
+			expect(session.lockHandle.isLocked()).toBe(false)
+
+			local p = session:update(function(data)
+				data.coins += 10
+				return true
+			end)
+			return expect(p).rejects.toEqual("Session is closed")
 		end)
 	end)
 
 	describe("error handling", function()
 		it("should handle DataStore errors during save", function()
-			local promise = loadSession():andThen(function(session)
-				MockDataStoreService.queueError(mockData, "SetAsync", "503: Service Unavailable", 5)
+			local session = getSession()
 
-				session:setData({ coins = 10, inventory = {} })
+			MockDataStoreService.queueError(mockData, "SetAsync", "503: Service Unavailable", 5)
 
-				local p = session:save()
-				jest.advanceTimersByTime(50000)
+			session:setData({ coins = 10, inventory = {} })
 
-				return p
-			end)
-			jest.advanceTimersByTime(1000)
-			return expect(promise).rejects.toMatch("503: Service Unavailable")
+			local p = session:save()
+			jest.advanceTimersByTime(50000)
+
+			return expect(p).rejects.toMatch("503: Service Unavailable")
 		end)
 
 		it("should retry on retryable errors", function()
-			local attempts = 0
-			local promise = loadSession():andThen(function(session)
-				local setMock, realSet = MockDataStoreService.mockStoreMethod(mockData, "SetAsync", jest)
-				setMock.mockImplementation(function(self, ...)
-					attempts += 1
-					if attempts <= 2 then
-						error("503: Service Unavailable", 0)
-					end
-					return realSet(self, ...)
-				end)
+			local session = getSession()
 
-				session:setData({ coins = 10, inventory = {} })
+			MockDataStoreService.queueError(mockData, "SetAsync", "503: Service Unavailable", 2)
+			local setSpy = jest.spyOn(mockData.mockStoreMeta, "SetAsync")
 
-				session:save()
-				jest.advanceTimersByTime(30000)
+			session:setData({ coins = 100, inventory = {} })
 
-				expect(attempts).toBe(3)
-				expect(session:isSaved()).toBe(true)
-			end)
-			jest.advanceTimersByTime(1000)
-			return promise
+			session:save()
+			jest.advanceTimersByTime(30000)
+
+			expect(setSpy).toHaveBeenCalledTimes(3)
+			expect(session:isSaved()).toBe(true)
 		end)
 	end)
 end)
