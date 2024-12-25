@@ -82,6 +82,7 @@ describe("Transactions", function()
 			MockDataStoreService.queueError(mockData, "GetAsync", errorMessage)
 
 			local promise = Transactions.readTx(params)
+			jest.runAllTimers()
 			return expect(promise).rejects.toBe(errorMessage)
 		end)
 

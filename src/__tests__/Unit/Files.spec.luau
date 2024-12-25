@@ -138,14 +138,15 @@ describe("Files", function()
 				maxShardSize = 6,
 				key = "testKey",
 			})
-			jest.runAllTimers()
-			return expect(promise).rejects.toEqual({
+			local e = expect(promise).rejects.toEqual({
 				error = `Failed to write file: {errorMessage}`,
 				file = {
 					shard = expect.any("string"),
 					count = 2,
 				},
 			})
+			jest.runAllTimers()
+			return e
 		end)
 
 		it("should correctly pass userIds to datastore", function()

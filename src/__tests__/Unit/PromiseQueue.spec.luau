@@ -22,7 +22,9 @@ describe("PromiseQueue", function()
 		jest.useFakeTimers()
 		queue = makePromiseQueue()
 	end)
+
 	afterEach(function()
+		jest.clearAllTimers()
 		jest.useRealTimers()
 	end)
 
@@ -88,11 +90,10 @@ describe("PromiseQueue", function()
 
 		it("times out long-running operations", function()
 			local promise = queue:add(function()
-				task.wait(61)
+				task.wait(5 * 60)
 			end)
 
-			jest.runAllTimers(61)
-
+			jest.advanceTimersByTime(100_000)
 			return expect(promise).rejects.toMatch("Timed out")
 		end)
 	end)
