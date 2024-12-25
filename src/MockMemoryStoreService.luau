@@ -63,11 +63,6 @@ local function doLatency(service: any, requestType: string)
 end
 
 local function doRateLimitAndQueue(service: any, requestType: string)
-	local shouldError, errorMessage = shouldSimulateError(service, requestType)
-	if shouldError then
-		error(errorMessage, 0)
-	end
-
 	local queue = service.requestQueues[requestType]
 	local limitData = RATE_LIMITS[requestType]
 	local budget = service._customBudgets[requestType]
@@ -96,6 +91,12 @@ local function doRateLimitAndQueue(service: any, requestType: string)
 	table.insert(queue, true)
 	doLatency(service, requestType)
 	local fn = table.remove(queue, 1)
+
+	local shouldError, errorMessage = shouldSimulateError(service, requestType)
+	if shouldError then
+		error(errorMessage, 0)
+	end
+
 	if typeof(fn) == "function" then
 		fn()
 	end

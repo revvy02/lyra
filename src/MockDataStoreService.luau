@@ -190,11 +190,6 @@ local function enforceDataLimits(value: any)
 end
 
 local function doRateLimitAndQueue(self: any, requestType: string)
-	local shouldError, errorMessage = shouldSimulateError(self._service, requestType)
-	if shouldError then
-		error(errorMessage, 0)
-	end
-
 	local queue = self._service.requestQueues[requestType]
 	local limitData = RATE_LIMITS[requestType]
 	if not limitData then
@@ -230,6 +225,12 @@ local function doRateLimitAndQueue(self: any, requestType: string)
 	table.insert(queue, true)
 	doLatency(self._service, requestType)
 	local fn = table.remove(queue, 1)
+
+	local shouldError, errorMessage = shouldSimulateError(self._service, requestType)
+	if shouldError then
+		error(errorMessage, 0)
+	end
+
 	if typeof(fn) == "function" then
 		fn()
 	end
