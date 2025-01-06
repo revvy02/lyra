@@ -16,8 +16,6 @@ local Transactions = require(script.Parent.Transactions)
 local dataStoreRetry = require(script.Parent.dataStoreRetry)
 local noYield = require(script.Parent.noYield)
 
-type Set = { [string]: true }
-
 type SessionImpl<T> = {
 	__index: SessionImpl<T>,
 
@@ -53,7 +51,7 @@ type SessionProps<T> = {
 	frozenData: T?,
 	appliedMigrations: { string },
 
-	changeSet: Set,
+	changeSet: { [string]: true },
 
 	orphanedFiles: { Types.File },
 	currentFile: Types.File?,
