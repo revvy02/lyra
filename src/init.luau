@@ -5,7 +5,10 @@ local Migrations = require(script.Migrations)
 local createPlayerStore = require(script.createPlayerStore)
 
 return {
-	Migration = Migrations.Migration,
+	MigrationStep = {
+		addFields = Migrations.makeAddFieldsStep,
+		transform = Migrations.makeTransformStep,
+	},
 	createPlayerStore = createPlayerStore,
 	setLogLevel = Log.setLevel,
 }
