@@ -1,4 +1,6 @@
+local Workspace = game:GetService("Workspace")
+
 return {
 	testMatch = { "**/*.spec" },
-	testPathIgnorePatterns = if workspace:GetAttribute("SimulationTests") ~= true then { "Simulation" } else {},
+	testPathIgnorePatterns = if Workspace:GetAttribute("SimulationTests") ~= true then { "Simulation" } else {},
 }
