@@ -148,6 +148,18 @@ type StoreImpl<T> = {
 	probeLockActive: (self: Store<T>, key: string) -> Promise.TPromise<boolean>,
 	listVersions: (self: Store<T>, params: ListVersionParams) -> Promise.TPromise<DataStoreVersionPages>,
 	readVersion: (self: Store<T>, key: string, version: string) -> Promise.TPromise<T, DataStoreKeyInfo>,
+
+	loadAsync: (self: Store<T>, key: string, userIds: { number }?) -> (),
+	unloadAsync: (self: Store<T>, key: string) -> (),
+	getAsync: (self: Store<T>, key: string) -> T,
+	updateAsync: (self: Store<T>, key: string, transformFunction: (data: T) -> boolean) -> boolean,
+	txAsync: (self: Store<T>, keys: { string }, transformFunction: (state: { [string]: T }) -> boolean) -> (),
+	saveAsync: (self: Store<T>, key: string) -> (),
+	closeAsync: (self: Store<T>) -> (),
+
+	probeLockActiveAsync: (self: Store<T>, key: string) -> boolean,
+	listVersionsAsync: (self: Store<T>, params: ListVersionParams) -> DataStoreVersionPages,
+	readVersionAsync: (self: Store<T>, key: string, version: string) -> (T, DataStoreKeyInfo),
 }
 
 type StoreProps<T> = {
@@ -430,6 +442,15 @@ function Store:load(key: string, userIds: { number }?): Promise.Promise
 end
 
 --[=[
+	Syntactic sugar for `store:load(key):expect()`.
+	
+	See [Store:load]
+]=]
+function Store:loadAsync(key: string, userIds: { number }?): ()
+	self:load(key, userIds):expect()
+end
+
+--[=[
 	Unloads data for the given key from memory and ends the session.
 
 	```lua
@@ -477,6 +498,15 @@ function Store:unload(key: string): Promise.Promise
 	end)
 
 	return self._unloadPromises[key] or Promise.resolve()
+end
+
+--[=[
+	Syntactic sugar for `store:unload(key):expect()`.
+	
+	See [Store:unload]
+]=]
+function Store:unloadAsync(key: string): ()
+	self:unload(key):expect()
 end
 
 --[=[
@@ -561,6 +591,15 @@ function Store:get<T>(key: string): Promise.TPromise<T>
 end
 
 --[=[
+	Syntactic sugar for `store:get(key):expect()`.
+
+	See [Store:get]
+]=]
+function Store:getAsync<T>(key: string): T
+	return self:get(key):expect()
+end
+
+--[=[
 	Updates data for the given key using a transform function.
 	The transform function receives the current data and can modify it.
 	Must return true to commit changes, or false to abort.
@@ -592,6 +631,15 @@ function Store:update<T>(key: string, transformFunction: (data: T) -> boolean): 
 	return self:_withSession(key, function(session)
 		return session:update(transformFunction)
 	end)
+end
+
+--[=[
+	Syntactic sugar for `store:update(key, transformFunction):expect()`.
+
+	See [Store:update]
+]=]
+function Store:updateAsync<T>(key: string, transformFunction: (data: T) -> boolean): boolean
+	return self:update(key, transformFunction):expect()
 end
 
 --[=[
@@ -827,6 +875,15 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 end
 
 --[=[
+	Syntactic sugar for `store:tx(keys, transformFunction):expect()`.
+
+	See [Store:tx]
+]=]
+function Store:txAsync<T>(keys: { string }, transformFunction: (state: { [string]: T }) -> boolean): ()
+	self:tx(keys, transformFunction):expect()
+end
+
+--[=[
 	Forces an immediate save of the given key's data.
 	
 	:::info
@@ -844,6 +901,15 @@ function Store:save(key: string): Promise.Promise
 	return self:_withSession(key, function(session)
 		return session:save()
 	end)
+end
+
+--[=[
+	Syntactic sugar for `store:save(key):expect()`.
+
+	See [Store:save]
+]=]
+function Store:saveAsync(key: string): ()
+	self:save(key):expect()
 end
 
 --[=[
@@ -891,6 +957,15 @@ function Store:close(): Promise.Promise
 end
 
 --[=[
+	Syntactic sugar for `store:close():expect()`.
+
+	See [Store:close]
+]=]
+function Store:closeAsync(): ()
+	self:close():expect()
+end
+
+--[=[
 	Checks if a lock is currently active for the given key.
 
 	@return Promise<boolean>
@@ -901,6 +976,15 @@ function Store:probeLockActive(key: string): Promise.TPromise<boolean>
 		storeContext = self._ctx,
 		key = key,
 	})
+end
+
+--[=[
+	Syntactic sugar for `store:probeLockActive(key):expect()`.
+
+	See [Store:probeLockActive]
+]=]
+function Store:probeLockActiveAsync(key: string): boolean
+	return self:probeLockActive(key):expect()
 end
 
 --[=[
@@ -919,6 +1003,15 @@ function Store:listVersions(params: ListVersionParams): Promise.TPromise<DataSto
 			params.pageSize
 		)
 	end)
+end
+
+--[=[
+	Syntactic sugar for `store:listVersions(params):expect()`.
+
+	See [Store:listVersions]
+]=]
+function Store:listVersionsAsync(params: ListVersionParams): DataStoreVersionPages
+	return self:listVersions(params):expect()
 end
 
 --[=[
@@ -950,6 +1043,15 @@ function Store:readVersion<T>(key: string, version: string): Promise.TPromise<(T
 
 			return Transactions.readTx(readTxParams)
 		end)
+end
+
+--[=[
+	Syntactic sugar for `store:readVersion(key, version):expect()`.
+
+	See [Store:readVersion]
+]=]
+function Store:readVersionAsync<T>(key: string, version: string): (T, DataStoreKeyInfo)
+	return self:readVersion(key, version):expect()
 end
 
 return {

@@ -58,6 +58,18 @@ type PlayerStoreImpl<T> = {
 	) -> Promise.Promise,
 	save: (self: PlayerStore<T>, player: Player) -> Promise.Promise,
 	close: (self: PlayerStore<T>) -> Promise.Promise,
+
+	getAsync: (self: PlayerStore<T>, player: Player) -> T,
+	loadAsync: (self: PlayerStore<T>, player: Player) -> (),
+	unloadAsync: (self: PlayerStore<T>, player: Player) -> (),
+	updateAsync: (self: PlayerStore<T>, player: Player, transformFunction: (data: T) -> boolean) -> boolean,
+	txAsync: (
+		self: PlayerStore<T>,
+		players: { Player },
+		transformFunction: (state: { [Player]: T }) -> boolean
+	) -> (),
+	saveAsync: (self: PlayerStore<T>, player: Player) -> (),
+	closeAsync: (self: PlayerStore<T>) -> (),
 }
 
 type PlayerStoreProps<T> = {
@@ -185,6 +197,15 @@ function PlayerStore:get(player: Player)
 end
 
 --[=[
+	Syntactic sugar for `playerStore:get(player):expect()`.
+
+	See [PlayerStore:get]
+]=]
+function PlayerStore:getAsync(player: Player)
+	return self:get(player):expect()
+end
+
+--[=[
 	Loads data for the given player. Must be called before using other methods.
 
 	```lua
@@ -211,6 +232,15 @@ function PlayerStore:load(player: Player)
 end
 
 --[=[
+	Syntactic sugar for `playerStore:load(player):expect()`.
+
+	See [PlayerStore:load]
+]=]
+function PlayerStore:loadAsync(player: Player)
+	return self:load(player):expect()
+end
+
+--[=[
 	Unloads data for the given player.
 
 	```lua
@@ -226,6 +256,15 @@ end
 function PlayerStore:unload(player: Player)
 	local userIdKey = getUserIdKey(player)
 	return self._store:unload(userIdKey)
+end
+
+--[=[
+	Syntactic sugar for `playerStore:unload(player):expect()`.
+
+	See [PlayerStore:unload]
+]=]
+function PlayerStore:unloadAsync(player: Player)
+	return self:unload(player):expect()
 end
 
 --[=[
@@ -251,6 +290,15 @@ end
 function PlayerStore:update<T>(player: Player, transformFunction: (data: T) -> boolean)
 	local userIdKey = getUserIdKey(player)
 	return self._store:update(userIdKey, transformFunction)
+end
+
+--[=[
+	Syntactic sugar for `playerStore:update(player, transformFunction):expect()`.
+
+	See [PlayerStore:update]
+]=]
+function PlayerStore:updateAsync<T>(player: Player, transformFunction: (data: T) -> boolean)
+	return self:update(player, transformFunction):expect()
 end
 
 --[=[
@@ -312,6 +360,15 @@ function PlayerStore:tx<T>(players: { Player }, transformFunction: (state: { [Pl
 end
 
 --[=[
+	Syntactic sugar for `playerStore:tx(players, transformFunction):expect()`.
+
+	See [PlayerStore:tx]
+]=]
+function PlayerStore:txAsync<T>(players: { Player }, transformFunction: (state: { [Player]: T }) -> boolean)
+	return self:tx(players, transformFunction):expect()
+end
+
+--[=[
 	Forces an immediate save of the given player's data.
 
 	:::info
@@ -329,6 +386,15 @@ function PlayerStore:save(player: Player)
 end
 
 --[=[
+	Syntactic sugar for `playerStore:save(player):expect()`.
+
+	See [PlayerStore:save]
+]=]
+function PlayerStore:saveAsync(player: Player)
+	return self:save(player):expect()
+end
+
+--[=[
 	Closes the store and unloads all active sessions.
 	The store cannot be used after closing.
 
@@ -339,4 +405,15 @@ function PlayerStore:close()
 	return self._store:close()
 end
 
-return createPlayerStore
+--[=[
+	Syntactic sugar for `playerStore:close():expect()`.
+
+	See [PlayerStore:close]
+]=]
+function PlayerStore:closeAsync()
+	return self:close():expect()
+end
+
+return {
+	createPlayerStore = createPlayerStore,
+}

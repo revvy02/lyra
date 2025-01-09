@@ -6,7 +6,7 @@ local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataStoreService)
 local MockMemoryStoreService = require(ReplicatedStorage.Packages.Lyra.MockMemoryStoreService)
 local Universe = require(script.Parent.Parent.Universe)
-local createPlayerStore = require(script.Parent.Parent.Parent.createPlayerStore)
+local PlayerStore = require(script.Parent.Parent.Parent.PlayerStore)
 local Tables = require(script.Parent.Parent.Parent.Tables)
 
 local expect = JestGlobals.expect
@@ -337,7 +337,7 @@ describe("PlayerStore chaos test", function()
 			serverRandCount += 1
 			local serverRand = Random.new(params.seed + serverRandCount)
 
-			local store = createPlayerStore({
+			local store = PlayerStore.createPlayerStore({
 				name = "PlayerData",
 				template = Tables.copyDeep(TestConfig.Template),
 				dataStoreService = mockData,
