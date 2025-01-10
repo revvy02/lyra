@@ -10,10 +10,33 @@
 --                          JSON Pointer Utilities
 --------------------------------------------------------------------------------
 
+local function isArray(tbl: any): boolean
+	if type(tbl) ~= "table" then
+		return false
+	end
+	-- Must have integer keys 1..n with no gaps, for # to match
+	local n = #tbl
+	local count = 0
+	for k in tbl do
+		if type(k) ~= "number" then
+			return false
+		end
+		count += 1
+	end
+	return (count == n)
+end
+
 local function unescapeSegment(segment: string): string
 	-- ~1 -> '/', ~0 -> '~'
 	local res = string.gsub(segment, "~1", "/")
 	res = string.gsub(res, "~0", "~")
+	return res
+end
+
+local function escapeSegment(segment: string): string
+	-- / -> ~1, ~ -> ~0
+	local res = string.gsub(segment, "~", "~0")
+	res = string.gsub(res, "/", "~1")
 	return res
 end
 
@@ -90,9 +113,10 @@ local function getArrayIndexOrError(key: string, length: number, context: string
 	if idx == nil then
 		error(("'%s' path must be a valid numeric index; got '%s'"):format(context, key))
 	end
-	if idx < 0 or idx >= length then
+	idx += 1 -- 0-based to 1-based
+	if idx < 1 or idx > length then
 		-- match the test's error message style
-		error(("Array %s index %d out of bounds for length %d"):format(context, idx, length))
+		error(("Array %s index %d out of bounds for length %d"):format(context, idx - 1, length))
 	end
 	return idx
 end
@@ -109,9 +133,7 @@ local function applyOperation(doc: any, opObj: PatchOperation): any
 	-- 1) Validate op
 	----------------------------------------------------------------------
 	local op = opObj.op
-	-- The tests expect "Invalid patch operation: 'op' must be a string"
-	-- if op is missing or not a string.
-	if typeof(op) ~= "string" then
+	if type(op) ~= "string" then
 		error("Invalid patch operation: 'op' must be a string")
 	end
 
@@ -119,100 +141,105 @@ local function applyOperation(doc: any, opObj: PatchOperation): any
 	-- 2) Validate path
 	----------------------------------------------------------------------
 	local path = opObj.path
-	if typeof(path) ~= "string" then
+	if type(path) ~= "string" then
 		error("Patch operation missing valid 'path' string")
 	end
 	local segments = parsePointer(path)
 
 	----------------------------------------------------------------------
-	-- 3) Switch
+	-- 3) Switch on op
 	----------------------------------------------------------------------
 	if op == "add" then
-		-- The tests expect an error message: "'add' operation requires 'path' and 'value'"
-		-- if 'value' is nil.
 		local value = opObj.value
 		if value == nil then
 			error("'add' operation requires 'path' and 'value'")
 		end
 
+		-- If path is empty, replace entire doc
 		if #segments == 0 then
-			-- replace entire doc
 			return deepCopy(value)
 		end
 
-		-- find parent and key
+		------------------------------------------------------------------
+		-- find the parent object/array
+		------------------------------------------------------------------
 		local parent = doc
 		for i = 1, (#segments - 1) do
 			local seg = segments[i]
-			if type(parent) ~= "table" then
-				error("Cannot 'add' into non-table parent")
+			if isArray(parent) then
+				-- interpret as array index
+				seg = getArrayIndexOrError(seg, #parent, op)
 			end
 			if parent[seg] == nil then
-				-- For 'add', parent must exist, but the final key can be new.
 				error(("Parent path segment '%s' does not exist for 'add'"):format(seg))
+			end
+			if type(parent[seg]) ~= "table" then
+				error("Cannot 'add' into non-table parent")
 			end
 			parent = parent[seg]
 		end
+
+		------------------------------------------------------------------
+		-- now apply the add to the parent
+		------------------------------------------------------------------
 		local key = segments[#segments]
 
-		if type(parent) ~= "table" then
-			error("Cannot 'add' into non-table parent")
-		end
-
-		-- handle array vs object
-		-- if key == "-" => append
-		local maybeIndex = tonumber(key)
-		if key == "-" and #parent >= 0 and type(parent) == "table" then
-			-- append
-			table.insert(parent, deepCopy(value))
-		elseif maybeIndex ~= nil and type(parent) == "table" then
-			local length = #parent
-			if maybeIndex < 0 or maybeIndex > length then
-				error(("Array add index %d out of bounds for length %d"):format(maybeIndex, length))
+		local isAddingIntoEmptyArray = #parent == 0 and key == "-"
+		local isAddingIntoPopulatedArray = isArray(parent) and #parent > 0 and (tonumber(key) ~= nil or key == "-")
+		if isAddingIntoEmptyArray or isAddingIntoPopulatedArray then
+			-- array logic
+			if key == "-" then
+				-- append
+				table.insert(parent, deepCopy(value))
+			else
+				local index = getArrayIndexOrError(key, #parent, op)
+				table.insert(parent, index, deepCopy(value))
 			end
-			table.insert(parent, maybeIndex + 1, deepCopy(value))
 		else
-			-- treat as object key
+			-- object logic
 			parent[key] = deepCopy(value)
 		end
+
 		return doc
 	elseif op == "remove" then
+		-- If path is empty, remove entire doc => doc becomes nil
 		if #segments == 0 then
-			-- removing entire doc
 			return nil
 		end
 
-		-- find parent
+		------------------------------------------------------------------
+		-- find the parent object/array
+		------------------------------------------------------------------
 		local parent = doc
 		for i = 1, (#segments - 1) do
 			local seg = segments[i]
-			if type(parent) ~= "table" then
-				error("Cannot 'remove' from non-table parent")
+			if isArray(parent) then
+				seg = getArrayIndexOrError(seg, #parent, op)
 			end
+
 			if parent[seg] == nil then
 				error(("Cannot remove from non-existent parent path segment '%s'"):format(seg))
 			end
+			if type(parent[seg]) ~= "table" then
+				error("Cannot 'remove' from non-table parent")
+			end
 			parent = parent[seg]
 		end
+
+		------------------------------------------------------------------
+		-- now remove from the parent
+		------------------------------------------------------------------
 		local key = segments[#segments]
-
-		if type(parent) ~= "table" then
-			error("Cannot 'remove' from non-table parent")
-		end
-
-		local maybeIndex = tonumber(key)
-		if maybeIndex ~= nil and #parent >= 0 then
-			local length = #parent
-			if maybeIndex < 0 or maybeIndex >= length then
-				error(("Array remove index %d out of bounds for length %d"):format(maybeIndex, length))
-			end
-			table.remove(parent, maybeIndex + 1)
+		if isArray(parent) and tonumber(key) ~= nil then
+			local index = getArrayIndexOrError(key, #parent, op)
+			table.remove(parent, index)
 		else
 			if parent[key] == nil then
 				error(("Cannot remove non-existent key '%s'"):format(key))
 			end
 			parent[key] = nil
 		end
+
 		return doc
 	elseif op == "replace" then
 		local value = opObj.value
@@ -220,160 +247,49 @@ local function applyOperation(doc: any, opObj: PatchOperation): any
 			error("'replace' operation requires 'value'")
 		end
 
+		-- If path is empty, replace entire doc
 		if #segments == 0 then
-			-- replace entire doc
 			return deepCopy(value)
 		end
 
-		-- find parent
+		------------------------------------------------------------------
+		-- find the parent object/array
+		------------------------------------------------------------------
 		local parent = doc
 		for i = 1, (#segments - 1) do
 			local seg = segments[i]
-			if type(parent) ~= "table" then
-				error("Cannot 'replace' on non-table parent")
+			if isArray(parent) then
+				seg = getArrayIndexOrError(seg, #parent, op)
 			end
+
 			if parent[seg] == nil then
 				error(("Cannot replace within non-existent path segment '%s'"):format(seg))
 			end
+			if type(parent[seg]) ~= "table" then
+				error("Cannot 'replace' on non-table parent")
+			end
 			parent = parent[seg]
 		end
+
+		------------------------------------------------------------------
+		-- replace the correct element or property
+		------------------------------------------------------------------
 		local key = segments[#segments]
-
-		if type(parent) ~= "table" then
-			error("Cannot 'replace' on non-table parent")
-		end
-
-		local maybeIndex = tonumber(key)
-		if maybeIndex ~= nil and #parent >= 0 then
-			-- array
-			local length = #parent
-			if maybeIndex < 0 or maybeIndex >= length then
-				error(("Cannot replace non-existent path '%s'"):format(key))
-			end
-			parent[maybeIndex + 1] = deepCopy(value)
+		if isArray(parent) and tonumber(key) ~= nil then
+			local index = getArrayIndexOrError(key, #parent, op)
+			parent[index] = deepCopy(value)
 		else
 			if parent[key] == nil then
 				error(("Cannot replace non-existent path '%s'"):format(key))
 			end
 			parent[key] = deepCopy(value)
 		end
-		return doc
-	elseif op == "move" then
-		local from = opObj.from
-		if type(from) ~= "string" then
-			error("'move' operation requires a 'from' field")
-		end
 
-		-- if from == path, do nothing
-		if from == path then
-			return doc
-		end
-
-		-- 1) read from
-		local fromSegments = parsePointer(from)
-		if #fromSegments == 0 then
-			-- moving entire doc => doc becomes nil, then we add it at path
-			local oldDoc = doc
-			doc = nil
-			doc = applyOperation(doc, { op = "add", path = path, value = oldDoc })
-			return doc
-		end
-
-		-- find fromParent
-		local fromParent = doc
-		for i = 1, (#fromSegments - 1) do
-			local seg = fromSegments[i]
-			if type(fromParent) ~= "table" then
-				error("Cannot 'move' from non-table parent")
-			end
-			if fromParent[seg] == nil then
-				error(("Cannot move from non-existent path segment '%s'"):format(seg))
-			end
-			fromParent = fromParent[seg]
-		end
-		local fromKey = fromSegments[#fromSegments]
-		if type(fromParent) ~= "table" then
-			error("Cannot 'move' from non-table parent")
-		end
-
-		local val
-		local fromIdx = tonumber(fromKey)
-		if fromIdx ~= nil and #fromParent >= 0 then
-			-- array case
-			local length = #fromParent
-			if fromIdx < 0 or fromIdx >= length then
-				error(("Array move index %d out of bounds for length %d"):format(fromIdx, length))
-			end
-			val = fromParent[fromIdx + 1]
-		else
-			if fromParent[fromKey] == nil then
-				error(("Cannot move from non-existent path '%s'"):format(fromKey))
-			end
-			val = fromParent[fromKey]
-		end
-
-		-- 2) remove it from old location
-		doc = applyOperation(doc, { op = "remove", path = from })
-
-		-- 3) add it to new location
-		doc = applyOperation(doc, { op = "add", path = path, value = val })
-		return doc
-	elseif op == "copy" then
-		local from = opObj.from
-		if type(from) ~= "string" then
-			error("'copy' operation requires a 'from' field")
-		end
-
-		-- if from == path, do nothing
-		if from == path then
-			return doc
-		end
-
-		local fromSegments = parsePointer(from)
-		if #fromSegments == 0 then
-			-- copy entire doc
-			local cloned = deepCopy(doc)
-			doc = applyOperation(doc, { op = "add", path = path, value = cloned })
-			return doc
-		end
-
-		-- find fromParent
-		local fromParent = doc
-		for i = 1, (#fromSegments - 1) do
-			local seg = fromSegments[i]
-			if type(fromParent) ~= "table" then
-				error("Cannot 'copy' from non-table parent")
-			end
-			if fromParent[seg] == nil then
-				error(("Cannot copy from non-existent path segment '%s'"):format(seg))
-			end
-			fromParent = fromParent[seg]
-		end
-		local fromKey = fromSegments[#fromSegments]
-		if type(fromParent) ~= "table" then
-			error("Cannot 'copy' from non-table parent")
-		end
-
-		local val
-		local fromIdx = tonumber(fromKey)
-		if fromIdx ~= nil and #fromParent >= 0 then
-			local length = #fromParent
-			if fromIdx < 0 or fromIdx >= length then
-				error(("Array copy index %d out of bounds for length %d"):format(fromIdx, length))
-			end
-			val = fromParent[fromIdx + 1]
-		else
-			if fromParent[fromKey] == nil then
-				error(("Cannot copy from non-existent path '%s'"):format(fromKey))
-			end
-			val = fromParent[fromKey]
-		end
-
-		local cloned = deepCopy(val)
-		doc = applyOperation(doc, { op = "add", path = path, value = cloned })
 		return doc
 	else
-		-- The tests expect: "Unknown or unimplemented operation: morph"
+		------------------------------------------------------------------
+		-- unrecognized operation
+		------------------------------------------------------------------
 		error(("Unknown or unimplemented operation: %s"):format(op))
 	end
 end
@@ -395,22 +311,6 @@ end
 
 -- We'll do a minimal diff with LCS for arrays, and a standard object-diff
 -- for dictionaries. We'll define local functions first, then unify them in _diffAny.
-
-local function isJsonArray(tbl: any): boolean
-	if type(tbl) ~= "table" then
-		return false
-	end
-	-- Must have integer keys 1..n with no gaps, for # to match
-	local n = #tbl
-	local count = 0
-	for k in tbl do
-		if type(k) ~= "number" then
-			return false
-		end
-		count += 1
-	end
-	return (count == n)
-end
 
 local function diffObject(
 	a: any,
@@ -463,148 +363,169 @@ local function arrayDiff(
 	outOps: { PatchOperation },
 	recurse: (any, any, string, { PatchOperation }) -> ()
 )
-	local memo = {}
+	-- We’ll do a standard DP approach: dp[i][j] = best way (min cost)
+	-- to transform a[1..i] into b[1..j].  We'll store:
+	--   dp[i][j].cost   => minimal number of array edits
+	--   dp[i][j].parent => one of "none", "eq", "rem", "add", "rep"
+	--   dp[i][j].op     => an op descriptor { kind="remove"/"add"/"replace", i=?, j=? }
+	--
+	-- We use 1-based indexing for convenience in dp.
+	-- a[i] in code is the i-th element (i from 1..#a).
+	-- b[j] in code is the j-th element (j from 1..#b).
 
-	local function dist(i: number, j: number)
-		local key = tostring(i) .. "," .. tostring(j)
-		if memo[key] then
-			return memo[key]
-		end
-		if i == 0 and j == 0 then
-			memo[key] = { ops = {}, cost = 0 }
-			return memo[key]
-		end
-		if i == 0 then
-			-- must add b[j]
-			local prev = dist(i, j - 1)
-			local c = {
-				ops = { table.unpack(prev.ops) },
-				cost = prev.cost + 1,
-			}
-			table.insert(c.ops, ("ADD:%d"):format(j - 1))
-			memo[key] = c
-			return c
-		elseif j == 0 then
-			-- must remove a[i]
-			local prev = dist(i - 1, j)
-			local c = {
-				ops = { table.unpack(prev.ops) },
-				cost = prev.cost + 1,
-			}
-			table.insert(c.ops, ("REM:%d"):format(i - 1))
-			memo[key] = c
-			return c
-		else
-			-- check equality
-			if deepEqual(a[i], b[j]) then
-				local diag = dist(i - 1, j - 1)
-				memo[key] = { ops = { table.unpack(diag.ops) }, cost = diag.cost }
-				return memo[key]
-			end
-			-- remove => i-1, j
-			local removeBase = dist(i - 1, j)
-			local removeCandidate = {
-				ops = { table.unpack(removeBase.ops) },
-				cost = removeBase.cost + 1,
-				action = ("REM:%d"):format(i - 1),
-			}
+	local lenA = #a
+	local lenB = #b
 
-			-- add => i, j-1
-			local addBase = dist(i, j - 1)
-			local addCandidate = {
-				ops = { table.unpack(addBase.ops) },
-				cost = addBase.cost + 1,
-				action = ("ADD:%d"):format(j - 1),
+	-- dp[i][j] is a small record with .cost, .parent, .op, etc.
+	local dp: { { { cost: number, op: any, parent: string } } } = {}
+	for i = 0, lenA do
+		dp[i] = {}
+		for j = 0, lenB do
+			dp[i][j] = {
+				cost = 0,
+				parent = "none", -- or "eq", "rem", "add", "rep"
+				op = nil,
 			}
-
-			-- replace => i-1, j-1
-			local repBase = dist(i - 1, j - 1)
-			local repCandidate = {
-				ops = { table.unpack(repBase.ops) },
-				cost = repBase.cost + 1,
-				action = ("REP:%d,%d"):format(i - 1, j - 1),
-			}
-
-			local best
-			if repCandidate.cost < removeCandidate.cost and repCandidate.cost < addCandidate.cost then
-				best = repCandidate
-			elseif removeCandidate.cost < addCandidate.cost then
-				best = removeCandidate
-			else
-				best = addCandidate
-			end
-			table.insert(best.ops, best.action)
-			memo[key] = { ops = best.ops, cost = best.cost }
-			return memo[key]
 		end
 	end
 
-	local final = dist(#a, #b)
-	-- interpret final.ops
-	local offset = 0
-	for _, code in ipairs(final.ops) do
-		local prefix = string.sub(code, 1, 3) -- "ADD","REM","REP"
-		if prefix == "ADD" then
-			local idx = tonumber(string.match(code, "^ADD:(%d+)"))
-			if idx == nil then
-				continue
+	-- Initialize base cases:
+	-- dp[i][0] => remove i items
+	for i = 1, lenA do
+		dp[i][0].cost = i
+		dp[i][0].parent = "rem"
+		dp[i][0].op = { kind = "remove", i = i - 1 }
+		-- we also need to know how to "step back":
+		-- removing that last item leads us from (i-1,0)
+	end
+	-- dp[0][j] => add j items
+	for j = 1, lenB do
+		dp[0][j].cost = j
+		dp[0][j].parent = "add"
+		dp[0][j].op = { kind = "add", j = j - 1 }
+		-- stepping back from (0,j) means (0, j-1)
+	end
+
+	-- Fill the DP table
+	for i = 1, lenA do
+		for j = 1, lenB do
+			if deepEqual(a[i], b[j]) then
+				-- No cost if they're the same
+				dp[i][j].cost = dp[i - 1][j - 1].cost
+				dp[i][j].parent = "eq"
+				dp[i][j].op = nil -- no op needed
+			else
+				-- Otherwise, 3 possibilities:
+				local removeCost = dp[i - 1][j].cost + 1
+				local addCost = dp[i][j - 1].cost + 1
+				local repCost = dp[i - 1][j - 1].cost + 1
+
+				local best = repCost
+				local bestParent = "rep"
+				local bestOp: { i: number?, j: number?, kind: string } = { kind = "replace", i = i - 1, j = j - 1 }
+
+				if removeCost < best then
+					best = repCost
+					bestParent = "rem"
+					bestOp = { kind = "remove", i = i - 1 }
+				end
+				if addCost < best then
+					best = addCost
+					bestParent = "add"
+					bestOp = { kind = "add", j = j - 1 }
+				end
+
+				dp[i][j].cost = best
+				dp[i][j].parent = bestParent
+				dp[i][j].op = bestOp
 			end
-			local insertIndex = offset + idx + 1
-			local finalIndexStr = if insertIndex >= (#a + offset) then "-" else tostring(insertIndex)
+		end
+	end
+
+	-- Backtrack from (lenA, lenB) to build the raw list of ops (in reverse).
+	local revOps = {}
+	do
+		local i = lenA
+		local j = lenB
+		while i > 0 or j > 0 do
+			local cell = dp[i][j]
+			local p = cell.parent
+			if p == "none" then
+				-- we've reached dp[0][0]
+				break
+			elseif p == "eq" then
+				-- no op => just move diagonal
+				i -= 1
+				j -= 1
+			elseif p == "rem" then
+				-- this cell says "remove" => store op & step (i-1,j)
+				table.insert(revOps, cell.op)
+				i -= 1
+			elseif p == "add" then
+				table.insert(revOps, cell.op)
+				j -= 1
+			elseif p == "rep" then
+				table.insert(revOps, cell.op)
+				i -= 1
+				j -= 1
+			end
+		end
+	end
+
+	-- Reverse to get forward ops
+	local forwardOps = {}
+	for i = #revOps, 1, -1 do
+		table.insert(forwardOps, revOps[i])
+	end
+
+	-- Now interpret each op in forward order.
+	-- We do the same offset-based approach to build actual JSON patch ops.
+	local offset = 0
+	for _, opInfo in ipairs(forwardOps) do
+		if opInfo.kind == "add" then
+			local insertIndex = opInfo.j
+
+			-- If we're adding beyond the end, use '-'
+			local finalIndexStr = if opInfo.j >= #a + offset then "-" else tostring(insertIndex)
+
 			table.insert(outOps, {
 				op = "add",
-				path = if path == "" then "/" .. finalIndexStr else path .. "/" .. finalIndexStr,
-				value = deepCopy(b[idx + 1]),
+				path = path .. "/" .. escapeSegment(finalIndexStr),
+				value = deepCopy(b[opInfo.j + 1]),
 			})
 			offset += 1
-		elseif prefix == "REM" then
-			local idx = tonumber(string.match(code, "^REM:(%d+)"))
-			if idx == nil then
-				continue
-			end
-			local removeIndex = idx + offset
+		elseif opInfo.kind == "remove" then
+			-- Remove a[i] at index = offset + opInfo.i
+			local removeIndex = offset + opInfo.i
 			table.insert(outOps, {
 				op = "remove",
-				path = if path == "" then "/" .. tostring(removeIndex) else path .. "/" .. tostring(removeIndex),
+				path = path .. "/" .. escapeSegment(tostring(removeIndex)),
 			})
 			offset -= 1
-		else
-			-- "REP"
-			local iStr, jStr = string.match(code, "^REP:(%d+),(%d+)")
-			if iStr and jStr then
-				local iNum = tonumber(iStr)
-				local jNum = tonumber(jStr)
-				if iNum ~= nil and jNum ~= nil then
-					local replaceIndex = iNum + offset
-					-- Instead of a raw "replace" ignoring sub-structure, let's do a recursion:
-					-- Because maybe they're both tables => we can produce smaller diffs inside.
-					local subOld = a[iNum + 1]
-					local subNew = b[jNum + 1]
-					if
-						type(subOld) == "table"
-						and type(subNew) == "table"
-						and not isJsonArray(subOld)
-						and not isJsonArray(subNew)
-					then
-						-- We recurse
-						local subPath = if path == "" then "/" .. replaceIndex else path .. "/" .. replaceIndex
-						-- do a local list for subOps
-						local subOps = {}
-						recurse(subOld, subNew, subPath, subOps)
-						for _, o in ipairs(subOps) do
-							table.insert(outOps, o)
-						end
-					else
-						-- direct replace
-						table.insert(outOps, {
-							op = "replace",
-							path = if path == ""
-								then "/" .. tostring(replaceIndex)
-								else path .. "/" .. tostring(replaceIndex),
-							value = deepCopy(subNew),
-						})
-					end
+		elseif opInfo.kind == "replace" then
+			-- Replace a[i] with b[j]
+			-- We'll see if sub-tables => might do a recursive diff, else direct replace.
+			local replaceIndex = offset + opInfo.i
+			local subOld = a[opInfo.i + 1]
+			local subNew = b[opInfo.j + 1]
+
+			-- same recursion logic as the old code
+			if type(subOld) == "table" and type(subNew) == "table" and not isArray(subOld) and not isArray(subNew) then
+				-- Recurse into sub-objects
+				local subPath = path .. "/" .. escapeSegment(replaceIndex)
+
+				local subOps = {}
+				recurse(subOld, subNew, subPath, subOps)
+				for _, childOp in ipairs(subOps) do
+					table.insert(outOps, childOp)
 				end
+			else
+				-- Direct top-level "replace"
+				table.insert(outOps, {
+					op = "replace",
+					path = path .. "/" .. escapeSegment(tostring(replaceIndex)),
+					value = deepCopy(subNew),
+				})
 			end
 		end
 	end
@@ -616,15 +537,15 @@ local function diffAny(a: any, b: any, path: string, outOps: { PatchOperation })
 		return
 	end
 
-	if isJsonArray(a) and isJsonArray(b) then
+	if isArray(a) and isArray(b) then
 		arrayDiff(a, b, path, outOps, diffAny)
-	elseif type(a) == "table" and type(b) == "table" and not isJsonArray(a) and not isJsonArray(b) then
+	elseif type(a) == "table" and type(b) == "table" and not isArray(a) and not isArray(b) then
 		diffObject(a, b, path, outOps, diffAny)
 	else
 		-- just replace
 		table.insert(outOps, {
 			op = "replace",
-			path = if path == "" then "" else path,
+			path = path,
 			value = deepCopy(b),
 		})
 	end

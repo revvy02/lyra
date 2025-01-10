@@ -1,4 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local JsonPatch = require(ReplicatedStorage.Packages.Lyra.JsonPatch)
@@ -113,63 +114,137 @@ local function deepClone(value)
 	return copy
 end
 
-describe("Fuzz Tests for JSON Patch", function()
-	-- Generate fuzz test cases
-	local r = Random.new(12345) -- Seed for reproducibility
-	local fuzzTestCount = 15 -- Tweak as desired
-	local fuzzTests = {}
+describe("JsonPatch", function()
+	describe("Fuzz Tests for JSON Patch", function()
+		-- Generate fuzz test cases
+		local r = Random.new(12345) -- Seed for reproducibility
+		local fuzzTestCount = 200 -- Tweak as desired
+		local fuzzTests = {}
 
-	for i = 1, fuzzTestCount do
-		-- Randomly generate input & output tables
-		local input = randomValue(r, 0, 3) -- up to 3 levels deep
-		local output = randomValue(r, 0, 3) -- up to 3 levels deep
+		for i = 1, fuzzTestCount do
+			-- Randomly generate input & output tables
+			local input = randomValue(r, 0, 3) -- up to 3 levels deep
+			local output = randomValue(r, 0, 3) -- up to 3 levels deep
 
-		if i == 3 then
+			-- if i == 307 then
 			table.insert(fuzzTests, {
+				idx = i,
 				name = string.format("Fuzz test #%d", i),
 				input = input,
 				output = output,
 			})
-			print(input, output)
+			-- print(input, output)
+			-- end
 		end
-	end
 
-	it.each(fuzzTests)("$name", function(testCase)
-		-- Create the patch
-		local patch = JsonPatch.createPatch(testCase.input, testCase.output)
-		print(patch)
+		it.each(fuzzTests)("$name", function(testCase)
+			-- Create the patch
+			local patch = JsonPatch.createPatch(testCase.input, testCase.output)
+			-- print(patch)
 
-		-- Apply it to a fresh clone of the input
-		local result = deepClone(testCase.input)
-		result = JsonPatch.applyPatch(result, patch)
+			-- Apply it to a fresh clone of the input
+			local result = deepClone(testCase.input)
+			result = JsonPatch.applyPatch(result, patch)
 
-		-- Expect result to match output
-		expect(result).toEqual(testCase.output)
+			-- Expect result to match output
+			expect(result).toEqual(testCase.output)
+		end)
 	end)
-end)
 
-describe.only("bugs", function()
-	it("1", function()
-		local input = {
-			[1] = "a",
-		}
+	describe("Regression", function()
+		it("Array reordering 1", function()
+			local input = {
+				[1] = "a",
+			}
 
-		local output = {
-			[1] = "b",
-			[2] = "c",
-		}
+			local output = {
+				[1] = "b",
+				[2] = "c",
+			}
 
-		local patch = JsonPatch.createPatch(input, output)
-		print(patch)
+			local patch = JsonPatch.createPatch(input, output)
 
-		local result = deepClone(input)
-		result = JsonPatch.applyPatch(result, patch)
+			local result = deepClone(input)
+			result = JsonPatch.applyPatch(result, patch)
 
-		expect(result).toEqual(output)
+			expect(result).toEqual(output)
+		end)
+
+		it("Array reordering 2", function()
+			local input = {
+				[1] = {
+					["foo"] = "a",
+				},
+			}
+
+			local output = {
+				[1] = {
+					["bar"] = "b",
+				},
+			}
+
+			local patch = JsonPatch.createPatch(input, output)
+			-- print(patch)
+
+			local result = deepClone(input)
+			result = JsonPatch.applyPatch(result, patch)
+
+			expect(result).toEqual(output)
+		end)
+
+		it("Array reordering 3", function()
+			local input = {
+				[1] = {
+					["ROQB"] = {
+						[1] = "z5GCHio",
+						[2] = "4XlAshaOf",
+						[3] = "S",
+						[4] = "4kWjPxrRT",
+					},
+				},
+			}
+
+			local output = {
+				[1] = {
+					["2"] = "jJks7tw",
+					["D"] = {
+						[1] = true,
+						[2] = false,
+						[3] = true,
+						[4] = -922,
+					},
+				},
+			}
+
+			local patch = JsonPatch.createPatch(input, output)
+
+			local result = deepClone(input)
+			result = JsonPatch.applyPatch(result, patch)
+
+			expect(result).toEqual(output)
+		end)
+
+		it("Array reordering 4", function()
+			local input = {
+				[1] = 1,
+			}
+			local output = {
+				[1] = 1,
+				[2] = 2,
+				[3] = 3,
+				[4] = 4,
+			}
+
+			local patch = JsonPatch.createPatch(input, output)
+			-- print(patch)
+
+			local result = deepClone(input)
+			result = JsonPatch.applyPatch(result, patch)
+
+			expect(result).toEqual(output)
+		end)
 	end)
-end)
 
-describe("JsonPatch", function()
 	describe("Basic RFC Examples", function()
 		local rfcExamples = {
 			{
@@ -203,41 +278,13 @@ describe("JsonPatch", function()
 				expected = { baz = "boo", foo = "bar" },
 			},
 			{
-				name = "A.6. Moving a Value",
-				input = {
-					foo = {
-						bar = "baz",
-						waldo = "fred",
-					},
-					qux = {
-						corge = "grault",
-					},
-				},
-				patch = { { op = "move", from = "/foo/waldo", path = "/qux/thud" } },
-				expected = {
-					foo = {
-						bar = "baz",
-					},
-					qux = {
-						corge = "grault",
-						thud = "fred",
-					},
-				},
-			},
-			{
-				name = "A.7. Moving an Array Element",
-				input = { foo = { "all", "grass", "cows", "eat" } },
-				patch = { { op = "move", from = "/foo/1", path = "/foo/3" } },
-				expected = { foo = { "all", "cows", "eat", "grass" } },
-			},
-			{
-				name = "A.10. Adding a Nested Member Object",
+				name = "A.6. Adding a Nested Member Object",
 				input = { foo = "bar" },
 				patch = { { op = "add", path = "/child", value = { grandchild = {} } } },
 				expected = { foo = "bar", child = { grandchild = {} } },
 			},
 			{
-				name = "A.16. Adding an Array Value",
+				name = "A.7. Adding an Array Value",
 				input = { foo = { "bar" } },
 				patch = { { op = "add", path = "/foo/-", value = { "abc", "def" } } },
 				expected = { foo = { "bar", { "abc", "def" } } },
@@ -358,53 +405,6 @@ describe("JsonPatch", function()
 				end).toThrow("Cannot replace non-existent path 'baz'")
 			end)
 		end)
-
-		describe("'move' operation", function()
-			it("errors when source is ancestor of target", function()
-				expect(function()
-					JsonPatch.applyPatch({ foo = { bar = "baz" } }, {
-						{ op = "move", from = "/foo", path = "/foo/bar" },
-					})
-				end).toThrow()
-			end)
-
-			it("is equivalent to remove then add", function()
-				local doc1 = { foo = "bar", baz = "qux" }
-				local doc2 = table.clone(doc1)
-
-				-- Using move
-				JsonPatch.applyPatch(doc1, {
-					{ op = "move", from = "/foo", path = "/bar" },
-				})
-
-				-- Using remove + add
-				JsonPatch.applyPatch(doc2, {
-					{ op = "remove", path = "/foo" },
-					{ op = "add", path = "/bar", value = "bar" },
-				})
-
-				expect(doc1).toEqual(doc2)
-			end)
-		end)
-
-		describe("'copy' operation", function()
-			it("is equivalent to add with from value", function()
-				local doc1 = { foo = "bar" }
-				local doc2 = table.clone(doc1)
-
-				-- Using copy
-				JsonPatch.applyPatch(doc1, {
-					{ op = "copy", from = "/foo", path = "/baz" },
-				})
-
-				-- Using add with value from source
-				JsonPatch.applyPatch(doc2, {
-					{ op = "add", path = "/baz", value = doc2.foo },
-				})
-
-				expect(doc1).toEqual(doc2)
-			end)
-		end)
 	end)
 
 	describe("Array Operations", function()
@@ -505,16 +505,6 @@ describe("JsonPatch", function()
 					name = "missing value field in replace",
 					patch = { { op = "replace", path = "/foo" } },
 					error = "'replace' operation requires 'value'",
-				},
-				{
-					name = "missing from field in move",
-					patch = { { op = "move", path = "/foo" } },
-					error = "'move' operation requires a 'from' field",
-				},
-				{
-					name = "missing from field in copy",
-					patch = { { op = "copy", path = "/foo" } },
-					error = "'copy' operation requires a 'from' field",
 				},
 			}
 
