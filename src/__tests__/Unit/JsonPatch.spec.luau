@@ -1,5 +1,4 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 
 local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local JsonPatch = require(ReplicatedStorage.Packages.Lyra.JsonPatch)
