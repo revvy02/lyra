@@ -46,12 +46,14 @@ describe("Transactions", function()
 			local txInfo1 = {
 				txId = "tx123",
 				committedData = { foo = "bar" },
-				txData = { foo = "baz" },
+				txPatch = { { op = "replace", path = "/foo", value = "baz" } },
 			}
+			local tx1Data = { foo = "baz" }
+
 			local txInfo2 = {
 				txId = "tx456",
 				committedData = { hello = "world" },
-				txData = { hello = "friend" },
+				txPatch = { { op = "replace", path = "/hello", value = "friend" } },
 			}
 
 			task.spawn(function()
@@ -63,7 +65,7 @@ describe("Transactions", function()
 			local p2 = Transactions.readTx({ store = store, txInfo = txInfo2 })
 			jest.runAllTimers()
 
-			return expect(p1).resolves.toEqual(txInfo1.txData):andThen(function()
+			return expect(p1).resolves.toEqual(tx1Data):andThen(function()
 				return expect(p2).resolves.toEqual(txInfo2.committedData)
 			end)
 		end)
@@ -75,7 +77,7 @@ describe("Transactions", function()
 				txInfo = {
 					txId = "tx789",
 					committedData = { foo = "bar" },
-					txData = { foo = "baz" },
+					txPatch = { { op = "replace", path = "/foo", value = "baz" } },
 				},
 			}
 
@@ -92,7 +94,7 @@ describe("Transactions", function()
 				txInfo = {
 					txId = "tx789",
 					committedData = { foo = "bar" },
-					txData = { foo = "baz" },
+					txPatch = { { op = "replace", path = "/foo", value = "baz" } },
 				},
 			}
 

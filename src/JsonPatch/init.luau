@@ -1,6 +1,7 @@
 --!strict
 
 local Tables = require(script.Parent.Tables)
+local Types = require(script.Parent.Types)
 
 --[[
   RFC 6902 implementation in Luau (Roblox) with two public functions:
@@ -128,14 +129,7 @@ local function isStringifiedNumberOk(key: string): boolean
 	return str == key
 end
 
-type PatchOperation = {
-	op: string?,
-	path: string?,
-	from: string?,
-	value: any?,
-}
-
-local function applyOperation(doc: any, opObj: PatchOperation): any
+local function applyOperation(doc: any, opObj: Types.PatchOperation): any
 	local op = opObj.op
 	if type(op) ~= "string" then
 		error("'op' must be a string")
@@ -169,7 +163,7 @@ local function applyOperation(doc: any, opObj: PatchOperation): any
 		parent = parent[seg]
 	end
 
-	if op == "add" then
+	if opObj.op == "add" then
 		local value = opObj.value
 		if value == nil then
 			error("missing 'value' parameter")
@@ -218,7 +212,7 @@ local function applyOperation(doc: any, opObj: PatchOperation): any
 		end
 
 		return doc
-	elseif op == "remove" then
+	elseif opObj.op == "remove" then
 		-- If path is empty, remove entire doc => doc becomes nil
 		if #segments == 0 then
 			return nil
@@ -241,7 +235,7 @@ local function applyOperation(doc: any, opObj: PatchOperation): any
 		end
 
 		return doc
-	elseif op == "replace" then
+	elseif opObj.op == "replace" then
 		local value = opObj.value
 		if value == nil then
 			error("missing 'value' parameter")
@@ -294,7 +288,7 @@ local function getZeroBasedKey(key: any, parentIsArray: boolean): string
 	return tostring(numericKey - 1)
 end
 
-local function generate(obj1: any, obj2: any, patches: { PatchOperation }, path: string): ()
+local function generate(obj1: any, obj2: any, patches: { Types.PatchOperation }, path: string): ()
 	if obj1 == obj2 then
 		return
 	end
@@ -380,14 +374,14 @@ end
 
 local JSONPatch = {}
 
-function JSONPatch.applyPatch(doc: any, patch: { PatchOperation }): any
+function JSONPatch.applyPatch(doc: any, patch: { Types.PatchOperation }): any
 	for _, operation in patch do
 		doc = applyOperation(doc, operation)
 	end
 	return doc
 end
 
-function JSONPatch.createPatch(original: any, modified: any): { PatchOperation }
+function JSONPatch.createPatch(original: any, modified: any): { Types.PatchOperation }
 	local patches = {}
 	generate(original, modified, patches, "")
 	return patches

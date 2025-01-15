@@ -128,9 +128,12 @@ describe("tx", function()
 		crash()
 		resetStore()
 
-		store:load("key1")
-		store:load("key2")
+		local load1 = store:load("key1")
+		local load2 = store:load("key2")
 		jest.advanceTimersByTime(1000)
+
+		load1:expect()
+		load2:expect()
 
 		local key1Data = store:get("key1")
 		local key2Data = store:get("key2")

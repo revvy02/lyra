@@ -42,6 +42,7 @@ local RunService = game:GetService("RunService")
 
 local Constants = require(script.Parent.Constants)
 local Files = require(script.Parent.Files)
+local JsonPatch = require(script.Parent.JsonPatch)
 local Locks = require(script.Parent.Locks)
 local Session = require(script.Parent.Session)
 local Log = require(script.Parent.Log)
@@ -802,6 +803,11 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			end
 
 			logger:log("trace", "tx changed multiple keys, beginning multi-key update")
+			local patches = {}
+
+			for key, newData in nextState do
+				patches[key] = JsonPatch.createPatch(currentState[key], newData)
+			end
 
 			-- Represent 'failed' as `false` and 'committed' as `nil`. When
 			-- committing, we can simply remove the status entry rather than
@@ -817,7 +823,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 				return Promise.all(Tables.map(keys, function(key)
 					local txInfo = {
 						txId = txId,
-						txData = nextState[key],
+						txPatch = patches[key],
 						committedData = currentState[key],
 					}
 
