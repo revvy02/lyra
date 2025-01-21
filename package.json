@@ -18,7 +18,8 @@
   "homepage": "https://github.com/paradoxum-games/lyra#readme",
   "files": [
     "src/**/*",
-    "!src/__tests__/**/*",
+    "!src/**/__tests__/**/*",
+    "!src/**/*.spec.luau",
     "!src/jest.config.luau",
     "default.project.json"
   ],
