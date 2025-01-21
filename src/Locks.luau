@@ -81,7 +81,7 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 	end
 
 	local function release(): Promise.Promise
-		logger:log("info", "releasing lock")
+		logger:log("trace", "releasing lock")
 
 		if status ~= "held" then
 			logger:log("trace", "release already called")
