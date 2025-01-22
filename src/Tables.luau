@@ -110,83 +110,6 @@ local function freezeDeep<T>(t: T): T
 	return result :: any
 end
 
-type RemovalNode = {
-	keys: { any }?,
-	children: { [any]: RemovalNode }?,
-}
-
-type DiffResult = {
-	changes: { [any]: any },
-	removals: RemovalNode?,
-}
-
-local function diffRecursive(old: { [any]: any }, new: { [any]: any }): (any, RemovalNode?)
-	local changes = {}
-	local removals: RemovalNode
-
-	for key, newValue in new do
-		local oldValue = old[key]
-
-		if oldValue == nil then
-			changes[key] = copyDeep(newValue)
-		elseif typeof(newValue) == "table" and typeof(oldValue) == "table" then
-			local nestedChanges, nestedRemovals = diffRecursive(oldValue, newValue)
-
-			if next(nestedChanges) then
-				changes[key] = nestedChanges
-			end
-
-			if nestedRemovals then
-				removals = removals or { children = {} }
-				removals.children = removals.children or {};
-				(removals :: any).children[key] = nestedRemovals
-			end
-		elseif oldValue ~= newValue then
-			changes[key] = newValue
-		end
-	end
-
-	for key in old do
-		if new[key] == nil then
-			removals = removals or { keys = {} }
-			removals.keys = removals.keys or {}
-			table.insert((removals :: any).keys, key)
-		end
-	end
-
-	return changes, removals
-end
-
-local function getDiff(oldTable: { [any]: any }, newTable: { [any]: any }): DiffResult
-	local changes, removals = diffRecursive(oldTable, newTable)
-	return { changes = changes, removals = removals }
-end
-
-local function applyRemovals(tbl: { [any]: any }, removals: RemovalNode)
-	if removals.keys then
-		for _, key in removals.keys do
-			tbl[key] = nil
-		end
-	end
-
-	if removals.children then
-		for key, nestedRemovals in removals.children do
-			if tbl[key] then
-				applyRemovals(tbl[key], nestedRemovals)
-			end
-		end
-	end
-end
-local function applyDiff(baseTable: { [any]: any }, diff: DiffResult): { [any]: any }
-	local result = copyDeep(baseTable)
-
-	if diff.removals then
-		applyRemovals(result, diff.removals)
-	end
-
-	return mergeDeep(result, diff.changes)
-end
-
 return {
 	copyDeep = copyDeep,
 	mergeDeep = mergeDeep,
@@ -194,6 +117,4 @@ return {
 	equalsDeep = equalsDeep,
 	freezeDeep = freezeDeep,
 	map = map,
-	getDiff = getDiff,
-	applyDiff = applyDiff,
 }
