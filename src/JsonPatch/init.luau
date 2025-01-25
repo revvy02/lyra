@@ -36,7 +36,7 @@ local Types = require(script.Parent.Types)
 	SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ]]
 
----- JSON Pointer Utilities
+-- JSON Pointer Utilities
 
 local function isArray(value: any): boolean
 	if typeof(value) ~= "table" then
@@ -101,7 +101,7 @@ local function parsePointer(pointer: string): { string }
 	return segments
 end
 
----- Patch Application
+-- Patch Application
 
 local function getArrayIndexOrError(key: string, length: number, op: string): number
 	local idx = tonumber(key)
@@ -267,7 +267,7 @@ local function applyOperation(doc: any, opObj: Types.PatchOperation): any
 	end
 end
 
----- Patch Generation
+-- Patch Generation
 
 local function keys(obj: { [any]: any }): { any }
 	local result = {}
