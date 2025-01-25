@@ -84,10 +84,10 @@ function PromiseQueue:_processQueue()
 	while #self._queue > 0 do
 		local item = self._queue[1]
 
-		local deadlockWarn = task.delay(5, function()
+		local deadlockWarn = task.delay(60, function()
 			local ctx = self:_getLogContext(item)
 			ctx.trace = item.trace
-			self._logger:log("warn", "queue item taking a while", ctx)
+			self._logger:log("warn", "queue item taking > 60s", ctx)
 		end)
 
 		self._logger:log("trace", "processing queue item", self:_getLogContext(item))
