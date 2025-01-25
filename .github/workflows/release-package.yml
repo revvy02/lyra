@@ -39,5 +39,7 @@ jobs:
 
     docs:
         needs: release
+        permissions:
+            contents: write
         uses: ./.github/workflows/publish-docs.yml
         secrets: inherit
