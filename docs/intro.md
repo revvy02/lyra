@@ -2,6 +2,8 @@
 sidebar_position: 1
 ---
 
+# Introduction
+
 :::danger Early Development
 While Lyra has been tested and is used in production, it's still in early development. Transactions, while tested in controlled environments, have not yet been battle-tested in production at scale.
 
@@ -9,8 +11,6 @@ While Lyra has been tested and is used in production, it's still in early develo
 
 Additionally, Lyra may occasionally output benign errors. These are being worked on and are not indicative of data loss or corruption.
 :::
-
-# Introduction
 
 Lyra makes it easy to safely and robustly manage your game's player data. It's designed to handle large amounts of data, prevent common game-breaking bugs, and make it easy to update your data format without breaking existing saves.
 
