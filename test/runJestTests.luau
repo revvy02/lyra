@@ -5,10 +5,10 @@ return function()
 	local processServiceExists, ProcessService = pcall(function()
 		return (game :: any):GetService("ProcessService")
 	end)
-	local p = runCLI(ReplicatedStorage.Packages.Lyra, {
+	local p = runCLI(script.Parent, {
 		verbose = true,
 		ci = false,
-	}, { ReplicatedStorage.Packages.Lyra })
+	}, { script.Parent })
 
 	local status, result = p:awaitStatus()
 
