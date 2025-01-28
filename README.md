@@ -9,7 +9,6 @@
 
 <div align="center">
 
-![GitHub License](https://img.shields.io/github/license/paradoxum-games/lyra?style=for-the-badge)
 [![Wally](https://img.shields.io/badge/Wally-Package-orange?style=for-the-badge)](https://wally.run/package/paradoxum-games/lyra)
 
 </div>
