@@ -2,25 +2,26 @@
 sidebar_position: 1
 ---
 
+:::danger Early Development
+While Lyra has been tested and is used in production, it's still in early development. Transactions, while tested in controlled environments, have not yet been battle-tested in production at scale.
+
+**Avoid using Lyra in production games where data loss would be catastrophic until it has been tested more thoroughly.**
+
+Additionally, Lyra may occasionally output benign errors. These are being worked on and are not indicative of data loss or corruption.
+:::
+
 # Introduction
 
-Lyra makes it easy to save player data in your Roblox game. It handles all the tricky parts - data loss prevention, trading items safely, validating data formats, and smoothly updating your data structure as your game evolves.
+Lyra makes it easy to safely and robustly manage your game's player data. It's designed to handle large amounts of data, prevent common game-breaking bugs, and make it easy to update your data format without breaking existing saves.
 
 ## Features
 
-**Data Safety**
-- 🔒 **Session Locking** - Prevents multiple servers from corrupting each other's data
-- ⚔️ **Transactions** - Safe trading between players - no more item duplication bugs
-- 👁️ **Validation** - Catches bad data before it gets saved
-
-**Performance**
-- 💎 **Auto-Sharding** - Handles large data by automatically splitting across multiple keys
-- ⚡ **Efficient** - Minimizes DataStore calls and bandwidth usage
-- 🎯 **Auto-Retry** - Handles DataStore errors and throttling automatically
-
-**Development**
-- 🦋 **Migrations** - Update your data format without breaking existing saves
-- 🔄 **Drop-in** - Import your existing data and switch over seamlessly
+- **Transactions** - A powerful tool to implement features like trading, while making bugs like item duplication impossible
+- **Session Locking** - Prevents common bugs that lead to corruption and data loss
+- **Validation** - Ensures your data is always in a consistent state
+- **Auto-Sharding** - Handles large data by automatically splitting across multiple DataStore keys
+- **Migrations** - Update your data format without breaking existing saves
+- **Drop-in** - Import your existing data and switch over seamlessly
 
 ## Quick Example
 
@@ -41,34 +42,34 @@ local store = Lyra.createPlayerStore({
 
 -- Load data when players join
 Players.PlayerAdded:Connect(function(player)
-    store:load(player):expect()
+    store:loadAsync(player)
 end)
 
 -- Safe updates with validation
-store:update(player, function(data)
+store:updateAsync(player, function(data)
     if data.coins < itemPrice then
         return false -- Abort if can't afford
     end
     data.coins -= itemPrice
     table.insert(data.inventory, itemId)
     return true
-end):expect()
+end)
 
 -- Atomic trades between players
-store:tx({player1, player2}, function(state)
+store:txAsync({player1, player2}, function(state)
     -- Either both changes happen or neither does
     state[player1].coins -= 100
     state[player2].coins += 100
     return true
-end):expect()
+end)
 ```
 
 :::warning Avoid Stale Data
 Always modify data through update functions. Never use data from a previous `:get()` call:
 ```lua
 -- 🚫 Don't do this:
-local oldData = store:get(player):expect()
-store:update(player, function(newData)
+local oldData = store:getAsync(player)
+store:updateAsync(player, function(newData)
     if not oldData.claimedDailyReward then -- This data might be stale!
         return false
     end
@@ -78,7 +79,7 @@ store:update(player, function(newData)
 end)
 
 -- ✅ Do this instead:
-store:update(player, function(data)
+store:updateAsync(player, function(data)
     if not data.claimedDailyReward then -- This data is always current
         return false
     end
@@ -122,8 +123,7 @@ local store = Lyra.createPlayerStore({
 
 Add to your `wally.toml`:
 ```toml
-[dependencies]
-Lyra = "paradoxum-games/lyra@0.1.0"
+Lyra = "paradoxum-games/lyra@1.0.0"
 ```
 
 ## Next Steps

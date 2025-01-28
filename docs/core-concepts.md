@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Core Concepts
 
-To effectively use Lyra, it's important to understand how it thinks about data. Let's explore the core concepts that make up the foundation of the library.
+To effectively use Lyra, it's important to understand how it handles data. Let's explore the core concepts that make up the foundation of the library.
 
 ## Understanding Sessions
 
@@ -17,12 +17,12 @@ Here's how you work with sessions:
 ```lua
 Players.PlayerAdded:Connect(function(player)
     -- Establish exclusive access to the player's data
-    store:load(player):expect()
+    store:loadAsync(player)
 end)
 
 Players.PlayerRemoving:Connect(function(player)
     -- Release the lock and save any pending changes
-    store:unload(player)
+    store:unloadAsync(player)
 end)
 ```
 
@@ -35,7 +35,7 @@ Once you have a session, you can start working with the player's data. Lyra prov
 An update is a function that receives the current data and can modify it mutably. The function must return true to commit the changes, providing an atomic way to perform conditional updates:
 
 ```lua
-store:update(player, function(data)
+store:updateAsync(player, function(data)
     if data.coins < itemPrice then
         return false -- Abort the update
     end
@@ -56,15 +56,13 @@ Lyra enforces that updates are synchronous and non-blocking - if you yield insid
 
 Lyra takes care of saving your data automatically. Every 5 minutes, it performs an autosave operation for all active sessions, ensuring your players' progress is regularly persisted to DataStore without any manual intervention required.
 
-To ensure all data is properly saved when the game shuts down, you must call `store:close()` inside BindToClose. Lyra doesn't do this for you in case you need to do anything before calling it (usually not):
+To ensure all data is properly saved when the game shuts down, you must call `store:closeAsync()` inside BindToClose. Lyra doesn't do this for you in case you need to do anything before calling it (usually not):
 
 ```lua
 game:BindToClose(function()
-    store:close():expect()
+    store:closeAsync()
 end)
 ```
-
-Note the `:expect()` - this ensures we're waiting for the store to finish closing before allowing the server to shut down.
 
 ## Handling Multiple Players
 
@@ -77,7 +75,7 @@ This is where transactions come in.
 A transaction lets you modify multiple players' data atomically. Either all the changes succeed, or none of them do. This is crucial for maintaining data consistency:
 
 ```lua
-store:tx({player1, player2}, function(state)
+store:txAsync({player1, player2}, function(state)
     local item = table.remove(state[player1].inventory, 1)
     if not item then
         return false -- Abort the transaction

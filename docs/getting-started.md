@@ -11,8 +11,7 @@ Let's get Lyra set up in your game and cover the basics of saving player data.
 Add Lyra to your `wally.toml`:
 
 ```toml
-[dependencies]
-Lyra = "paradoxum-games/lyra@0.1.0"
+Lyra = "paradoxum-games/lyra@1.0.0"
 ```
 
 :::tip
@@ -48,17 +47,17 @@ local store = Lyra.createPlayerStore({
 
 -- Load data when players join
 Players.PlayerAdded:Connect(function(player)
-    store:load(player):expect()
+    store:loadAsync(player)
 end)
 
 -- Save and clean up when they leave
 Players.PlayerRemoving:Connect(function(player)
-    store:unload(player):expect()
+    store:unloadAsync(player)
 end)
 
 -- Ensure data is saved when the game closes
 game:BindToClose(function()
-    store:close():expect()
+    store:closeAsync()
 end)
 ```
 
@@ -69,11 +68,10 @@ end)
 You can read player data, but remember that it might change between reads:
 
 ```lua
-store:get(player):andThen(function(data)
-    -- ⚠️ Only use this data for reading
-    -- Don't save it for later use
-    print(`{player.Name} has {data.coins} coins`)
-end)
+-- ⚠️ Only use this data for reading
+-- Don't save it for later use
+local data = store:getAsync(player)
+print(`{player.Name} has {data.coins} coins`)
 ```
 
 ### Modifying Data
@@ -82,13 +80,13 @@ Always modify data through update functions:
 
 ```lua
 -- Simple update
-store:update(player, function(data)
+store:updateAsync(player, function(data)
     data.coins += 100
     return true
 end)
 
 -- Conditional update
-store:update(player, function(data)
+store:updateAsync(player, function(data)
     if data.coins < itemPrice then
         return false -- Abort the update
     end
@@ -104,7 +102,7 @@ end)
 Use transactions for operations involving multiple players:
 
 ```lua
-store:tx({player1, player2}, function(state)
+store:txAsync({player1, player2}, function(state)
     -- Transfer coins
     if state[player1].coins < amount then
         return false -- Abort if not enough coins
@@ -116,19 +114,11 @@ store:tx({player1, player2}, function(state)
 end)
 ```
 
-## Error Handling
+## Promise-based API
 
-Lyra operations return promises that you can handle in different ways:
+Lyra also offers a Promise-based API:
 
 ```lua
--- Using :expect(), which will throw an error if the operation fails
-store:update(player, function(data)
-    data.coins -= itemPrice
-    data.inventory.weapon = "starter_sword"
-    return true
-end):expect()
-
--- Using :andThen() and :catch()
 store:update(player, function(data)
     data.coins -= itemPrice
     data.inventory.weapon = "starter_sword"
@@ -142,7 +132,7 @@ end)
 
 ## Importing Existing Data
 
-If you're migrating from another system, you can import your existing data:
+If you're migrating from another DataStore library, you can import your existing data:
 
 ```lua
 local store = Lyra.createPlayerStore({

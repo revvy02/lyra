@@ -25,6 +25,10 @@ When a player's data is loaded, Lyra:
 
 This means each migration runs exactly once per player, even if they join multiple times or on different servers.
 
+:::info Migration Order
+Migrations always run in the order they're defined. Once published, this order is permanent and should never be changed. In the snippet below, `addLevel` will always run after `addSettings`.
+:::
+
 ## Basic Migrations
 
 The simplest migration is adding new fields:
@@ -34,19 +38,22 @@ local store = Lyra.createPlayerStore({
     name = "PlayerData",
     template = template,
     schema = schema,
-    migrationSteps = Lyra.Migration.new()
-        :fields("add_player_settings", {
+    migrationSteps = {
+        Lyra.MigrationStep.addFields("addSettings", {
             settings = {
                 music = true,
                 sfx = true,
             }
-        })
-        :finalize(),
+        }),
+        Lyra.MigrationStep.addFields("addLevel", {
+            level = 1,
+        }),
+    },
 })
 ```
 
 :::danger Migration Names Are Permanent
-Migration names (like "add_player_settings") are permanent and help Lyra track which migrations have run. Choose descriptive names that indicate what the migration does, as you can't change them later.
+Migration names (like "addSettings") are permanent and help Lyra track which migrations have run. Choose descriptive names that indicate what the migration does, as you can't change them later.
 :::
 
 ## Transform Steps
@@ -54,11 +61,11 @@ Migration names (like "add_player_settings") are permanent and help Lyra track w
 For more complex changes, use `transform` steps:
 
 ```lua
-migrationSteps = Lyra.Migration.new()
-    :transform("inventory_to_items", function(data)
+migrationSteps = {
+    Lyra.MigrationStep.transform("inventoryToItems", function(data)
         -- Convert simple inventory list to detailed items
         data.items = {}
-        for item in data.inventory do
+        for _, item in data.inventory do
             table.insert(data.items, {
                 id = item,
                 acquired = os.time(),
@@ -66,29 +73,29 @@ migrationSteps = Lyra.Migration.new()
         end
         data.inventory = nil
         return data
-    end)
-    :finalize()
+    end),
+}
 ```
 
 ## Multiple Steps
 
-You can chain multiple migration steps:
+You can chain multiple migration steps. They'll run in the order they're defined, from top to bottom:
 
 ```lua
-migrationSteps = Lyra.Migration.new()
+migrationSteps = {
     -- Add new currency
-    :fields("add_gems", {
+    Lyra.MigrationStep.addFields("addGems", {
         gems = 0,
-    })
+    }),
     -- Restructure inventory
-    :transform("inventory_v2", function(data)
+    Lyra.MigrationStep.transform("inventoryV2", function(data)
         data.inventory = {
             items = data.inventory,
             maxSlots = 20,
         }
         return data
-    end)
-    :finalize()
+    end),
+}
 ```
 
 :::danger Migration Order Is Critical
