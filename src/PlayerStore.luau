@@ -98,6 +98,7 @@ type PlayerStoreConfig<T> = {
 	importLegacyData: ((key: string) -> any?)?,
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () }?,
 	logCallback: ((logMessage: Types.LogMessage) -> ())?,
+	disableReferenceProtection: boolean?,
 }
 
 type PlayerStore<T> = typeof(setmetatable({} :: PlayerStoreProps<T>, {} :: PlayerStoreImpl<T>))
@@ -153,6 +154,7 @@ local function createPlayerStore<T>(config: PlayerStoreConfig<T>): PlayerStore<T
 		onLockLost = function(key: string)
 			self:_kickPlayer(key, "DataStore lock lost, please rejoin the game.")
 		end,
+		disableReferenceProtection = config.disableReferenceProtection,
 	}
 
 	local store = Store.createStore(storeConfig)

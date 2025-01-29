@@ -95,6 +95,8 @@ export type StoreContext<T> = {
 	shardStore: DataStore,
 	txStore: DataStore,
 	lockHashMap: MemoryStoreHashMap,
+
+	disableReferenceProtection: boolean,
 }
 
 local txInfoCheck = t.some(

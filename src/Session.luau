@@ -344,7 +344,7 @@ function Session:updateRecord(): Promise.TPromise<any>
 		return Promise.resolve()
 	end
 
-	local txInfo = { committedData = Tables.copyDeep(self.data) }
+	local txInfo = { committedData = self.data }
 
 	logger:log("trace", "writing record", { txInfo = txInfo })
 	return self:writeRecord(txInfo)
@@ -431,7 +431,7 @@ function Session:setData(data: any): ()
 end
 
 function Session:mutateKey(newData: any): ()
-	local oldData = if self.data then Tables.freezeDeep(self.data :: any) else nil
+	local oldData = self.frozenData
 
 	self:setData(newData)
 
@@ -550,10 +550,12 @@ function Session:update<T>(transformFunction: (data: T) -> boolean): Promise.TPr
 			return resolve(false)
 		end
 
-		-- We deep copy here to prevent references to internal state from being
-		-- leaked. If we didn't, the transform function could modify the state
-		-- after it runs, which shouldn't be allowed.
-		nextData = Tables.copyDeep(nextData)
+		if self.ctx.disableReferenceProtection == false then
+			-- We deep copy here to prevent references to internal state from being
+			-- leaked. If we didn't, the transform function could modify the state
+			-- after it runs, which shouldn't be allowed.
+			nextData = Tables.copyDeep(nextData)
+		end
 
 		local schemaOk, err = self.ctx.schema(nextData :: any)
 		if not schemaOk then

@@ -97,10 +97,11 @@ export type StoreConfig<T> = {
 	importLegacyData: ((key: string) -> any?)?,
 	dataStoreService: DataStoreService?,
 	memoryStoreService: MemoryStoreService?,
-	useMock: boolean?,
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () }?,
 	logCallback: ((logMessage: Types.LogMessage) -> ())?,
 	onLockLost: ((key: string) -> ())?,
+	useMock: boolean?,
+	disableReferenceProtection: boolean?,
 }
 local storeConfigCheck = t.strictInterface({
 	name = t.string,
@@ -113,10 +114,11 @@ local storeConfigCheck = t.strictInterface({
 	importLegacyData = t.optional(t.callback),
 	dataStoreService = t.optional(t.any),
 	memoryStoreService = t.optional(t.any),
-	useMock = t.optional(t.boolean),
 	changedCallbacks = t.optional(t.array(t.callback)),
 	logCallback = t.optional(t.callback),
 	onLockLost = t.optional(t.callback),
+	useMock = t.optional(t.boolean),
+	disableReferenceProtection = t.optional(t.boolean),
 })
 
 type ListVersionParams = {
@@ -270,6 +272,8 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		shardStore = dataStoreService:GetDataStore(`{Constants.SHARD_SCOPE}/{config.name}`),
 		txStore = dataStoreService:GetDataStore(`{Constants.TX_SCOPE}/{config.name}`),
 		lockHashMap = memoryStoreService:GetHashMap(`{Constants.LOCK_SCOPE}/{config.name}`),
+
+		disableReferenceProtection = config.disableReferenceProtection or false,
 	}
 
 	local ok, err = storeContext.schema(storeContext.template)
@@ -752,10 +756,12 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 				return Promise.reject("Transaction transform function returned false")
 			end
 
-			-- We deep copy here to prevent references to internal state from
-			-- being leaked. If we didn't, the transform function could modify
-			-- the state after it runs, which shouldn't be allowed.
-			nextState = Tables.copyDeep(nextState)
+			if self._ctx.disableReferenceProtection == false then
+				-- We deep copy here to prevent references to internal state from
+				-- being leaked. If we didn't, the transform function could modify
+				-- the state after it runs, which shouldn't be allowed.
+				nextState = Tables.copyDeep(nextState)
+			end
 
 			for _, key in keys do
 				local schemaOk, err = self._ctx.schema(nextState[key] :: any)
