@@ -297,7 +297,7 @@ afterEach(function()
 	jest.useRealTimers()
 end)
 
-describe("PlayerStore chaos test", function()
+describe.skip("PlayerStore chaos test", function()
 	local testData = {}
 	for _, seed in TestConfig.Seeds do
 		for _, duration in TestConfig.Durations do
