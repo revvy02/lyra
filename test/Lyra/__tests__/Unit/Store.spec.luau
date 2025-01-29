@@ -710,6 +710,25 @@ describe("Store", function()
 		end)
 	end)
 
+	describe("peek(key)", function()
+		it("returns data for a key", function()
+			store:load("player1")
+			store:update("player1", function(data)
+				data.coins = 123
+				return true
+			end)
+			jest.advanceTimersByTime(1000)
+
+			store:unload("player1")
+			jest.advanceTimersByTime(1000)
+
+			local data = store:peek("player1")
+			jest.advanceTimersByTime(1000)
+
+			return expect(data).resolves.toEqual({ coins = 123, inventory = {} })
+		end)
+	end)
+
 	describe("listVersions(params)", function()
 		it.todo("lists versions of a key with default parameters")
 		it.todo("lists versions of a key with specified sortDirection, minDate, maxDate, pageSize")
