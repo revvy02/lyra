@@ -4,8 +4,8 @@ local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataStoreService)
 local MockMemoryStoreService = require(ReplicatedStorage.Packages.Lyra.MockMemoryStoreService)
 local Universe = require(script.Parent.Parent.Universe)
-local PlayerStore = require(script.Parent.Parent.Parent.PlayerStore)
-local Tables = require(script.Parent.Parent.Parent.Tables)
+local PlayerStore = require(ReplicatedStorage.Packages.Lyra.PlayerStore)
+local Tables = require(ReplicatedStorage.Packages.Lyra.Tables)
 
 local expect = JestGlobals.expect
 local describe = JestGlobals.describe
