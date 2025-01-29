@@ -529,7 +529,7 @@ function Session:update<T>(transformFunction: (data: T) -> boolean): Promise.TPr
 		while self.txLockPromise ~= nil do
 			self.txLockPromise:await()
 		end
-		logger:log("trace", `UPDATING KEY`)
+		logger:log("trace", `updating key`)
 
 		local currentData = self.data
 		local nextData = Tables.copyDeep(currentData)
