@@ -41,15 +41,15 @@ local function shouldSimulateError(service: any, requestType: string): (boolean,
 	end
 
 	if service._errorRates[requestType] and math.random() < service._errorRates[requestType] then
-		return true, "MemoryStore request failed due to random error simulation"
+		return true, "InternalError: random error simulation"
 	end
 
 	if service._simulateThrottling then
-		return true, "MemoryStore request was throttled, try again later"
+		return true, "Throttled: MemoryStore request was throttled, try again later"
 	end
 
 	if service._simulateTimeout then
-		return true, "MemoryStore request timed out"
+		return true, "Timeout: MemoryStore request timed out"
 	end
 
 	return false, nil

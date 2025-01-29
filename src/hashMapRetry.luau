@@ -9,6 +9,7 @@ local RETRY_ERROR_CODES = {
 	"InternalError",
 	"Throttled",
 	"PartitionRequestsOverLimit",
+	"Timeout",
 }
 
 local function hashMapRetry(func: () -> any): Types.RetryHandle<Promise.TPromise<any>>
