@@ -89,6 +89,8 @@ type PlayerStoreProps<T> = {
 	.importLegacyData ((key: string) -> any?)? -- Optional function to import legacy data
 	.changedCallbacks { (key: string, newData: T, oldData: T?) -> () -> () }? -- Optional callbacks for data changes
 	.logCallback ((logMessage: LogMessage) -> ())? -- Optional callback for log messages
+	.memoryStoreService MemoryStoreService? -- Optional MemoryStoreService instance for mocking
+	.dataStoreService DataStoreService? -- Optional DataStoreService instance for mocking
 
 	@within PlayerStore
 ]=]
@@ -101,6 +103,8 @@ type PlayerStoreConfig<T> = {
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () }?,
 	logCallback: ((logMessage: Types.LogMessage) -> ())?,
 	disableReferenceProtection: boolean?,
+	memoryStoreService: MemoryStoreService?,
+	dataStoreService: DataStoreService?,
 }
 
 type PlayerStore<T> = typeof(setmetatable({} :: PlayerStoreProps<T>, {} :: PlayerStoreImpl<T>))
@@ -156,6 +160,8 @@ local function createPlayerStore<T>(config: PlayerStoreConfig<T>): PlayerStore<T
 		onLockLost = function(key: string)
 			self:_kickPlayer(key, "DataStore lock lost, please rejoin the game.")
 		end,
+		memoryStoreService = config.memoryStoreService,
+		dataStoreService = config.dataStoreService,
 		disableReferenceProtection = config.disableReferenceProtection,
 	}
 
