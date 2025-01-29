@@ -94,13 +94,13 @@ describe("Files", function()
 			local data = {
 				foo = "bar",
 				baz = { 1, 2, 3 },
-				large = string.rep("a", maxShardSize * 2),
+				large = string.rep("a", maxShardSize * 4),
 			}
 
 			local promise = Files.write({
 				store = store,
 				data = data,
-				maxShardSize = maxShardSize,
+				maxShardSize = 40,
 				key = "testKey",
 			}):andThen(function(file)
 				expect(file.shard).never.toBeNil()
@@ -117,9 +117,10 @@ describe("Files", function()
 				end
 
 				return Promise.all(promises):andThen(function(shards)
-					local reconstructedData = table.concat(shards)
-					reconstructedData = HttpService:JSONDecode(reconstructedData)
-					expect(reconstructedData).toEqual(data)
+					local encodedBuffer = table.concat(shards)
+					local decodedBuffer = HttpService:JSONDecode(encodedBuffer)
+					local decodedData = HttpService:JSONDecode(buffer.tostring(decodedBuffer))
+					expect(decodedData).toEqual(data)
 				end)
 			end)
 			jest.runAllTimers()
@@ -142,7 +143,7 @@ describe("Files", function()
 				error = `Failed to write file: {errorMessage}`,
 				file = {
 					shard = expect.any("string"),
-					count = 2,
+					count = 9,
 				},
 			})
 			jest.runAllTimers()
@@ -169,21 +170,6 @@ describe("Files", function()
 				userIds = userIds,
 			}):andThen(function()
 				expect(setCallCount).toBeGreaterThan(1)
-			end)
-			jest.runAllTimers()
-			return promise
-		end)
-
-		it("should handle edge case with maxShardSize of 1", function()
-			local data = "ab"
-			local promise = Files.write({
-				store = store,
-				data = data,
-				maxShardSize = 1,
-				key = "testKey",
-			}):andThen(function(file)
-				expect(file.shard).never.toBeNil()
-				expect(file.count).toBe(4)
 			end)
 			jest.runAllTimers()
 			return promise

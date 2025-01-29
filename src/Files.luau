@@ -25,13 +25,15 @@ export type WriteError = {
 }
 
 local function write(params: WriteParams): Promise.TPromise<Types.File>
-	local str = HttpService:JSONEncode(params.data)
-	if #str <= params.maxShardSize then
+	local dataEncoded = HttpService:JSONEncode(params.data)
+	if #dataEncoded <= params.maxShardSize then
 		return Promise.resolve({ data = params.data } :: Types.File)
 	end
 
+	local dataCompressed = HttpService:JSONEncode(buffer.fromstring(dataEncoded))
+	local shards = splitUtf8String(dataCompressed, params.maxShardSize)
+
 	local shardId = HttpService:GenerateGUID(false)
-	local shards = splitUtf8String(str, params.maxShardSize)
 	local file = { shard = shardId, count = #shards }
 
 	local shardPromises = Tables.map(shards, function(shard, index)
@@ -71,18 +73,23 @@ local function read(params: ReadParams): Promise.TPromise<any>
 		)
 	end
 
-	return Promise.all(promises):andThen(function(shards)
-		for i = 1, params.file.count do
-			if shards[i] == nil then
-				return Promise.reject(`Missing shard {i} for file {shardId}`)
+	return Promise.all(promises)
+		:andThen(function(shards)
+			for i = 1, params.file.count do
+				if shards[i] == nil then
+					return Promise.reject(`Missing shard {i} for file {shardId}`)
+				end
 			end
-		end
 
-		local ok, result = pcall(function()
-			return HttpService:JSONDecode(table.concat(shards))
+			local ok, result = pcall(function()
+				return HttpService:JSONDecode(table.concat(shards))
+			end)
+			return if ok then result else Promise.reject(`Error decoding file: {result}`)
 		end)
-		return if ok then result else Promise.reject(`Error decoding file: {result}`)
-	end)
+		:andThen(function(dataCompressed)
+			local dataDecoded = HttpService:JSONDecode(buffer.tostring(dataCompressed))
+			return dataDecoded
+		end)
 end
 
 return {
