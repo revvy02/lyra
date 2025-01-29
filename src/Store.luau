@@ -148,6 +148,7 @@ type StoreImpl<T> = {
 	save: (self: Store<T>, key: string) -> Promise.Promise,
 	close: (self: Store<T>) -> Promise.Promise,
 
+	peek: (self: Store<T>, key: string) -> Promise.TPromise<T>,
 	probeLockActive: (self: Store<T>, key: string) -> Promise.TPromise<boolean>,
 	listVersions: (self: Store<T>, params: ListVersionParams) -> Promise.TPromise<DataStoreVersionPages>,
 	readVersion: (self: Store<T>, key: string, version: string) -> Promise.TPromise<T, DataStoreKeyInfo>,
@@ -160,6 +161,7 @@ type StoreImpl<T> = {
 	saveAsync: (self: Store<T>, key: string) -> (),
 	closeAsync: (self: Store<T>) -> (),
 
+	peekAsync: (self: Store<T>, key: string) -> T,
 	probeLockActiveAsync: (self: Store<T>, key: string) -> boolean,
 	listVersionsAsync: (self: Store<T>, params: ListVersionParams) -> DataStoreVersionPages,
 	readVersionAsync: (self: Store<T>, key: string, version: string) -> (T, DataStoreKeyInfo),
@@ -975,6 +977,64 @@ end
 ]=]
 function Store:closeAsync(): ()
 	self:close():expect()
+end
+
+--[=[
+	Returns the current data for the given key without loading it into the store.
+
+	```lua
+	store:peek("456123"):andThen(function(data)
+		print("Current coins:", data.coins)
+	end):catch(function(err)
+		warn("Failed to peek data:", err)
+	end)
+	```
+
+	@return Promise<T> -- Resolves with the current data
+	@within Store
+]=]
+function Store:peek<T>(key: string): Promise.TPromise<T>
+	return dataStoreRetry(function()
+			return self._ctx.recordStore:GetAsync(key)
+		end)
+		:andThen(function(record: Types.DataStoreRecord?)
+			if record == nil then
+				return nil
+			end
+			assert(record, "luau")
+
+			local file = record.file
+			if file then
+				local readParams: Files.ReadParams = {
+					store = self._ctx.shardStore,
+					file = file,
+				}
+				return Files.read(readParams)
+			end
+
+			return nil
+		end)
+		:andThen(function(txInfo: Types.TxInfo?)
+			if txInfo == nil then
+				return nil
+			end
+			assert(txInfo, "luau")
+
+			local readTxParams = {
+				store = self._ctx.txStore,
+				txInfo = txInfo,
+			}
+			return Transactions.readTx(readTxParams)
+		end)
+end
+
+--[=[
+	Syntactic sugar for `store:peek(key):expect()`.
+
+	See [Store:peek]
+]=]
+function Store:peekAsync<T>(key: string): T
+	return self:peek(key):expect()
 end
 
 --[=[

@@ -58,6 +58,7 @@ type PlayerStoreImpl<T> = {
 	) -> Promise.Promise,
 	save: (self: PlayerStore<T>, player: Player) -> Promise.Promise,
 	close: (self: PlayerStore<T>) -> Promise.Promise,
+	peek: (self: PlayerStore<T>, userId: number) -> T,
 
 	getAsync: (self: PlayerStore<T>, player: Player) -> T,
 	loadAsync: (self: PlayerStore<T>, player: Player) -> (),
@@ -70,6 +71,7 @@ type PlayerStoreImpl<T> = {
 	) -> (),
 	saveAsync: (self: PlayerStore<T>, player: Player) -> (),
 	closeAsync: (self: PlayerStore<T>) -> (),
+	peekAsync: (self: PlayerStore<T>, userId: number) -> T,
 }
 
 type PlayerStoreProps<T> = {
@@ -414,6 +416,32 @@ end
 ]=]
 function PlayerStore:closeAsync()
 	return self:close():expect()
+end
+
+--[=[
+	Returns the current data for the given key without loading it into the store.
+
+	```lua
+	playerStore:peek(userId):andThen(function(data)
+		print("Current coins:", data.coins)
+	end)
+	```
+
+	@return Promise<T> -- Resolves with the current data
+	@within PlayerStore
+]=]
+function PlayerStore:peek(userId: number)
+	local userIdKey = tostring(userId)
+	return self._store:peek(userIdKey)
+end
+
+--[=[
+	Syntactic sugar for `playerStore:peek(userId):expect()`.
+
+	See [PlayerStore:peek]
+]=]
+function PlayerStore:peekAsync(userId: number)
+	return self:peek(userId):expect()
 end
 
 return {
