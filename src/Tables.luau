@@ -1,7 +1,7 @@
 --!strict
 
 local function copyDeep<T>(t: T): T
-	if typeof(t) ~= "table" then
+	if type(t) ~= "table" then
 		return t
 	end
 
@@ -10,6 +10,9 @@ local function copyDeep<T>(t: T): T
 	for key, value in t :: any do
 		if type(value) == "table" then
 			new[key] = copyDeep(value)
+		elseif type(value) == "buffer" then
+			local copy = buffer.create(buffer.len(value))
+			new[key] = buffer.copy(value, 0, copy)
 		end
 	end
 
@@ -33,6 +36,9 @@ local function mergeDeep<T>(...: any): T
 				else
 					result[key] = mergeDeep(result[key], value)
 				end
+			elseif type(value) == "buffer" then
+				local copy = buffer.create(buffer.len(value))
+				result[key] = buffer.copy(value, 0, copy)
 			else
 				result[key] = value
 			end
