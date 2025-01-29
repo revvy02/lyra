@@ -58,6 +58,8 @@ describe("Session", function()
 			shardStore = mockData:GetDataStore("shards"),
 			txStore = mockData:GetDataStore("tx"),
 			lockHashMap = mockMemory:GetHashMap("locks"),
+
+			disableReferenceProtection = false,
 		}
 		jest.useFakeTimers()
 	end)
