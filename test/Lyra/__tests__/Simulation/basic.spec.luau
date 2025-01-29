@@ -46,7 +46,7 @@ describe("PlayerStore basic functionality", function()
 				dataStoreService = mockData,
 				memoryStoreService = mockMemory,
 				schema = function(data)
-					return type(data.coins) == "number" and type(data.inventory) == "table", "Invalid data format"
+					return typeof(data.coins) == "number" and typeof(data.inventory) == "table", "Invalid data format"
 				end,
 			})
 
@@ -140,7 +140,7 @@ describe("PlayerStore basic functionality", function()
 				dataStoreService = mockData,
 				memoryStoreService = mockMemory,
 				schema = function(data)
-					return type(data.coins) == "number" and type(data.inventory) == "table", "Invalid data format"
+					return typeof(data.coins) == "number" and typeof(data.inventory) == "table", "Invalid data format"
 				end,
 			})
 

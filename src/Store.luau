@@ -11,7 +11,7 @@
 			items = {},
 		},
 		schema = function(data)
-			return type(data.coins) == "number" and type(data.items) == "table", 
+			return typeof(data.coins) == "number" and typeof(data.items) == "table", 
 			"Invalid data format"
 		end,
 	})
@@ -82,7 +82,7 @@ local noYield = require(script.Parent.noYield)
 			items = {},
 		},
 		schema = function(value)
-			return type(value.coins) == "number", "coins must be a number"
+			return typeof(value.coins) == "number", "coins must be a number"
 		end,
 	}
 	```
@@ -187,7 +187,7 @@ Store.__index = Store
 		name = "PlayerData",
 		template = { coins = 0 },
 		schema = function(data)
-			return type(data.coins) == "number", "coins must be a number"
+			return typeof(data.coins) == "number", "coins must be a number"
 		end,
 		
 		-- Optional: Runs whenever data changes

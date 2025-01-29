@@ -1,16 +1,16 @@
 --!strict
 
 local function copyDeep<T>(t: T): T
-	if type(t) ~= "table" then
+	if typeof(t) ~= "table" then
 		return t
 	end
 
 	local new = table.clone(t :: any)
 
 	for key, value in t :: any do
-		if type(value) == "table" then
+		if typeof(value) == "table" then
 			new[key] = copyDeep(value)
-		elseif type(value) == "buffer" then
+		elseif typeof(value) == "buffer" then
 			local copy = buffer.create(buffer.len(value))
 			new[key] = buffer.copy(value, 0, copy)
 		end
@@ -25,18 +25,18 @@ local function mergeDeep<T>(...: any): T
 	for tIndex = 1, select("#", ...) do
 		local t = select(tIndex, ...)
 
-		if type(t) ~= "table" then
+		if typeof(t) ~= "table" then
 			continue
 		end
 
 		for key, value in t do
-			if type(value) == "table" then
-				if result[key] == nil or type(result[key]) ~= "table" then
+			if typeof(value) == "table" then
+				if result[key] == nil or typeof(result[key]) ~= "table" then
 					result[key] = copyDeep(value)
 				else
 					result[key] = mergeDeep(result[key], value)
 				end
-			elseif type(value) == "buffer" then
+			elseif typeof(value) == "buffer" then
 				local copy = buffer.create(buffer.len(value))
 				result[key] = buffer.copy(value, 0, copy)
 			else
@@ -54,7 +54,7 @@ local function mergeShallow<T>(...: any): T
 	for tIndex = 1, select("#", ...) do
 		local t = select(tIndex, ...)
 
-		if type(t) ~= "table" then
+		if typeof(t) ~= "table" then
 			continue
 		end
 
@@ -81,7 +81,7 @@ local function map<T, U>(array: { T }, mapper: (value: T, index: number, array: 
 end
 
 local function equalsDeep(a: { [any]: any }, b: { [any]: any }): boolean
-	if type(a) ~= "table" or type(b) ~= "table" then
+	if typeof(a) ~= "table" or typeof(b) ~= "table" then
 		return a == b
 	end
 
@@ -104,7 +104,7 @@ local function freezeDeep<T>(t: T): T
 	local result = {}
 
 	for key, value in t :: any do
-		if type(value) == "table" then
+		if typeof(value) == "table" then
 			result[key] = freezeDeep(value)
 		else
 			result[key] = value

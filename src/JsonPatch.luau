@@ -131,12 +131,12 @@ end
 
 local function applyOperation(doc: any, opObj: Types.PatchOperation): any
 	local op = opObj.op
-	if type(op) ~= "string" then
+	if typeof(op) ~= "string" then
 		error("'op' must be a string")
 	end
 
 	local path = opObj.path
-	if type(path) ~= "string" then
+	if typeof(path) ~= "string" then
 		error("missing valid 'path' string")
 	end
 	local segments = parsePointer(path)
@@ -156,7 +156,7 @@ local function applyOperation(doc: any, opObj: Types.PatchOperation): any
 			error("add to a non-existent target")
 		end
 
-		if type(parent[seg]) ~= "table" then
+		if typeof(parent[seg]) ~= "table" then
 			error("cannot 'add' into non-table parent")
 		end
 

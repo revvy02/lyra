@@ -18,7 +18,7 @@ local Types = require(script.Parent.Types)
 			items = {},
 		},
 		schema = function(data)
-			return type(data.coins) == "number" and type(data.items) == "table",
+			return typeof(data.coins) == "number" and typeof(data.items) == "table",
 				"Invalid data format"
 		end,
 	})
@@ -119,7 +119,7 @@ PlayerStore.__index = PlayerStore
 		name = "PlayerData",
 		template = { coins = 0 },
 		schema = function(data)
-			return type(data.coins) == "number", "coins must be a number"
+			return typeof(data.coins) == "number", "coins must be a number"
 		end,
 
 		-- Optional: Runs whenever data changes
