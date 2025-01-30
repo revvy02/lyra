@@ -97,6 +97,23 @@ store:updateAsync(player, function(data)
 end)
 ```
 
+### Trading Between Players
+
+Use transactions for operations involving multiple players:
+
+```lua
+store:txAsync({player1, player2}, function(state)
+    -- Transfer coins
+    if state[player1].coins < amount then
+        return false -- Abort if not enough coins
+    end
+    
+    state[player1].coins -= amount
+    state[player2].coins += amount
+    return true
+end)
+```
+
 ## Importing Existing Data
 
 If you're migrating from another DataStore library, you can import your existing data:
@@ -169,23 +186,6 @@ local function processReceipt(receiptInfo)
 
     return Enum.ProductPurchaseDecision.PurchaseGranted
 end
-```
-
-### Trading Between Players
-
-Use transactions for operations involving multiple players:
-
-```lua
-store:txAsync({player1, player2}, function(state)
-    -- Transfer coins
-    if state[player1].coins < amount then
-        return false -- Abort if not enough coins
-    end
-    
-    state[player1].coins -= amount
-    state[player2].coins += amount
-    return true
-end)
 ```
 
 ## Promise-based API
