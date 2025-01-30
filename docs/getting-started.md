@@ -97,6 +97,80 @@ store:updateAsync(player, function(data)
 end)
 ```
 
+## Importing Existing Data
+
+If you're migrating from another DataStore library, you can import your existing data:
+
+```lua
+local store = Lyra.createPlayerStore({
+    name = "PlayerData",
+    template = template,
+    schema = schema,
+    importLegacyData = function(key)
+        local success, data = pcall(function()
+            return YourCurrentSystem.getData(key)
+        end)
+        
+        if not success then
+            error("Failed to reach data system") -- Player will be kicked and can retry
+        end
+
+        if data ~= nil then
+            return data -- Return existing data to import
+        end
+        
+        return nil -- Return nil for new players to use template
+    end,
+})
+```
+
+## ProcessReceipt Example
+
+Here's an example of how you would use Lyra in ProcessReceipt:
+
+```lua
+local ProductCallbacks = {
+    [12345] = function(player, receiptInfo, data)
+        data.coins += 100
+        return true
+    end,
+}
+
+local function processReceipt(receiptInfo)
+    local player = Players:GetPlayerByUserId(receiptInfo.PlayerId)
+    if not player then
+        return Enum.ProductPurchaseDecision.NotProcessedYet
+    end
+
+    local productCallback = ProductCallbacks[receiptInfo.ProductId]
+    if not productCallback then
+        return Enum.ProductPurchaseDecision.NotProcessedYet
+    end
+
+    local ok, result = pcall(function()
+        store:updateAsync(player, function(data)
+            -- Assuming you have 'purchaseHistory' in your template and schema:
+            if table.find(data.purchaseHistory, receiptInfo.PurchaseId) then
+               return false -- Prevent duplicate purchases
+            end
+            table.insert(data.purchaseHistory, receiptInfo.PurchaseId, 1)
+            for i = 1000, #data.purchaseHistory do
+                data.purchaseHistory[i] = nil -- Remove old purchases
+            end
+
+            return productCallback(player, receiptInfo, data)
+        end)
+        store:saveAsync(player)
+    end)
+    if not ok then
+        warn(`ProcessReceipt failed: {result}`)
+        return Enum.ProductPurchaseDecision.NotProcessedYet
+    end
+
+    return Enum.ProductPurchaseDecision.PurchaseGranted
+end
+```
+
 ### Trading Between Players
 
 Use transactions for operations involving multiple players:
@@ -128,33 +202,6 @@ end):andThen(function()
 end):catch(function(err)
     print(`Purchase failed: {err}`)
 end)
-```
-
-## Importing Existing Data
-
-If you're migrating from another DataStore library, you can import your existing data:
-
-```lua
-local store = Lyra.createPlayerStore({
-    name = "PlayerData",
-    template = template,
-    schema = schema,
-    importLegacyData = function(key)
-        local success, data = pcall(function()
-            return YourCurrentSystem.getData(key)
-        end)
-        
-        if not success then
-            error("Failed to reach data system") -- Player will be kicked and can retry
-        end
-
-        if data ~= nil then
-            return data -- Return existing data to import
-        end
-        
-        return nil -- Return nil for new players to use template
-    end,
-})
 ```
 
 ## Next Steps
