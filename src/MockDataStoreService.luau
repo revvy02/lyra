@@ -481,18 +481,6 @@ local function new()
 	tbl.GetRequestBudgetForRequestType = function(self, requestType: Enum.DataStoreRequestType)
 		local requestTypeStr = requestType.Name
 
-		if self._customBudgets[requestTypeStr] then
-			return self._customBudgets[requestTypeStr]
-		end
-
-		local limitData = RATE_LIMITS[requestTypeStr]
-		if not limitData then
-			limitData = RATE_LIMITS.GetAsync
-		end
-
-		local currentPlayers = 15
-		local totalBudget = limitData.Base + (currentPlayers * limitData.PlayerMultiplier)
-
 		local queueKey = requestTypeStr
 		if requestTypeStr == "GetVersionAsync" then
 			queueKey = "GetVersion"
@@ -503,6 +491,18 @@ local function new()
 		if requestTypeStr == "SetIncrementAsync" then
 			queueKey = "SetAsync"
 		end
+
+		if self._customBudgets[queueKey] then
+			return self._customBudgets[queueKey]
+		end
+
+		local limitData = RATE_LIMITS[queueKey]
+		if not limitData then
+			limitData = RATE_LIMITS.GetAsync
+		end
+
+		local currentPlayers = 15
+		local totalBudget = limitData.Base + (currentPlayers * limitData.PlayerMultiplier)
 
 		local currentQueueSize = #self.requestQueues[queueKey]
 		return math.max(0, totalBudget - currentQueueSize)
