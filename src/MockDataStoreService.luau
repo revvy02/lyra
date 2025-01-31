@@ -479,7 +479,7 @@ local function new()
 	end
 
 	tbl.GetRequestBudgetForRequestType = function(self, requestType: Enum.DataStoreRequestType)
-		local requestTypeStr = tostring(requestType):gsub("Enum.DataStoreRequestType.", "")
+		local requestTypeStr = requestType.Name
 
 		if self._customBudgets[requestTypeStr] then
 			return self._customBudgets[requestTypeStr]
@@ -496,6 +496,12 @@ local function new()
 		local queueKey = requestTypeStr
 		if requestTypeStr == "GetVersionAsync" then
 			queueKey = "GetVersion"
+		end
+		if requestTypeStr == "GetIncrementAsync" then
+			queueKey = "GetAsync"
+		end
+		if requestTypeStr == "SetIncrementAsync" then
+			queueKey = "SetAsync"
 		end
 
 		local currentQueueSize = #self.requestQueues[queueKey]
