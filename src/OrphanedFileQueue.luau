@@ -9,6 +9,7 @@ OrphanedFileQueue.__index = OrphanedFileQueue
 function OrphanedFileQueue.new(): Types.OrphanedFileQueue
 	return setmetatable({
 		queue = {},
+		processing = false,
 	}, OrphanedFileQueue) :: Types.OrphanedFileQueue
 end
 
@@ -21,7 +22,7 @@ function OrphanedFileQueue:markFile(key: string, file: Types.File)
 
 	table.insert(self.queue, { key = key, file = file, beingProcessed = false })
 
-	if #self.queue == 1 then
+	if self.processing == false then
 		task.spawn(function()
 			self:_processQueueItems()
 		end)
@@ -38,6 +39,11 @@ function OrphanedFileQueue:_processQueueItems()
 	if self.processQueueItem == nil then
 		error("processQueueItem not assigned")
 	end
+
+	if self.processing then
+		return
+	end
+	self.processing = true
 
 	while #self.queue > 0 do
 		local unprocessedEntry
@@ -58,6 +64,8 @@ function OrphanedFileQueue:_processQueueItems()
 
 		task.wait(0.1)
 	end
+
+	self.processing = false
 end
 
 return OrphanedFileQueue

@@ -57,6 +57,7 @@ export type OrphanedFileQueueImpl = {
 type OrphanedFileQueueProps = {
 	queue: { OrphanedFileQueueItem },
 	processQueueItem: ((item: OrphanedFileQueueItem) -> boolean)?,
+	processing: boolean,
 }
 
 export type OrphanedFileQueue = typeof(setmetatable({} :: OrphanedFileQueueProps, {} :: OrphanedFileQueueImpl))
