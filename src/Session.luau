@@ -356,6 +356,7 @@ function Session:writeRecord(txInfo: Types.TxInfo): Promise.TPromise<any>
 
 	local function orphanFile(file: Types.File?)
 		if file ~= nil and Files.isLargeFile(file) then
+			logger:log("trace", "orphaning file", { file = file })
 			table.insert(self.orphanedFiles, file)
 			self.ctx.orphanedFileQueue:markFile(self.key, file)
 		end
