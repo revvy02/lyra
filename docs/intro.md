@@ -123,7 +123,7 @@ local store = Lyra.createPlayerStore({
 
 Add to your `wally.toml`:
 ```toml
-Lyra = "paradoxum-games/lyra@0.4.0"
+Lyra = "paradoxum-games/lyra@0.4.1"
 ```
 
 ## Next Steps
