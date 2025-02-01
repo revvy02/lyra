@@ -40,28 +40,6 @@ export type DataStoreRecord = {
 	orphanedFiles: {},
 }
 
-export type OrphanedFileQueueItem = {
-	key: string,
-	file: File,
-	beingProcessed: boolean,
-}
-
-export type OrphanedFileQueueImpl = {
-	__index: OrphanedFileQueueImpl,
-	new: () -> OrphanedFileQueue,
-	markFile: (self: OrphanedFileQueue, key: string, file: File) -> (),
-	markFiles: (self: OrphanedFileQueue, key: string, files: { File }) -> (),
-	_processQueueItems: (self: OrphanedFileQueue) -> (),
-}
-
-type OrphanedFileQueueProps = {
-	queue: { OrphanedFileQueueItem },
-	processQueueItem: ((item: OrphanedFileQueueItem) -> boolean)?,
-	processing: boolean,
-}
-
-export type OrphanedFileQueue = typeof(setmetatable({} :: OrphanedFileQueueProps, {} :: OrphanedFileQueueImpl))
-
 --[=[
 	A migration step
 
@@ -87,7 +65,6 @@ export type StoreContext<T> = {
 	dataStoreService: DataStoreService,
 	memoryStoreService: MemoryStoreService,
 
-	orphanedFileQueue: OrphanedFileQueue,
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () },
 	logger: Logger,
 	onLockLost: ((key: string) -> ())?,

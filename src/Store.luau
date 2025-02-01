@@ -48,7 +48,6 @@ local Session = require(script.Parent.Session)
 local Log = require(script.Parent.Log)
 local MockDataStoreService = require(script.Parent.MockDataStoreService)
 local MockMemoryStoreService = require(script.Parent.MockMemoryStoreService)
-local OrphanedFileQueue = require(script.Parent.OrphanedFileQueue)
 local PromiseQueue = require(script.Parent.PromiseQueue)
 local Transactions = require(script.Parent.Transactions)
 local Promise = require(script.Parent.Promise)
@@ -132,7 +131,6 @@ type ListVersionParams = {
 type StoreImpl<T> = {
 	__index: StoreImpl<T>,
 
-	_processOrphanedFile: (self: Store<T>, item: Types.OrphanedFileQueueItem) -> boolean,
 	_withSession: (self: Store<T>, key: string, callback: (session: Session.Session<any>) -> ()) -> Promise.Promise,
 	_getKeyInfo: (self: Store<T>, key: string) -> Promise.TPromise<DataStoreKeyInfo?>,
 
@@ -250,8 +248,6 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 	end
 	assert(memoryStoreService, "luau")
 
-	local orphanedFileQueue = OrphanedFileQueue.new()
-
 	local migrationSteps = config.migrationSteps or {}
 
 	local storeContext: Types.StoreContext<T> = {
@@ -265,7 +261,6 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		dataStoreService = dataStoreService,
 		memoryStoreService = memoryStoreService,
 
-		orphanedFileQueue = orphanedFileQueue,
 		changedCallbacks = config.changedCallbacks or {},
 		logger = logger,
 		onLockLost = config.onLockLost,
@@ -292,70 +287,8 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		_unloadPromises = {},
 	}, Store)
 
-	orphanedFileQueue.processQueueItem = function(item)
-		return self:_processOrphanedFile(item)
-	end
-
 	logger:log("trace", `created store`)
 	return self
-end
-
---[=[
-	Processes an orphaned file in the store's queue.
-
-	@within Store
-	@private
-]=]
-function Store:_processOrphanedFile(item: Types.OrphanedFileQueueItem): boolean
-	local logger = self._ctx.logger:extend({ method = "_processOrphanedFile", key = item.key, shard = item.file.shard })
-
-	local minBudget = 100
-	local curBudget =
-		self._ctx.dataStoreService:GetRequestBudgetForRequestType(Enum.DataStoreRequestType.SetIncrementAsync)
-	if curBudget < minBudget then
-		logger:log("debug", "insufficient budget", {
-			curBudget = curBudget,
-			minBudget = minBudget,
-		})
-		return false
-	end
-
-	logger:log("debug", "processing orphaned file")
-	item.beingProcessed = true
-
-	local promises = {}
-	for i = 1, item.file.count do
-		logger:log("trace", `Removing shard {i} of {item.file.count}`)
-		table.insert(
-			promises,
-			dataStoreRetry(function()
-				return self._ctx.shardStore:RemoveAsync(`{item.file.shard}-{i}`)
-			end)
-		)
-	end
-
-	Promise.all(promises)
-		:andThen(function()
-			logger:log("trace", "successfully removed shards")
-			local session = self._sessions[item.key]
-			if session then
-				for i, file in session.orphanedFiles do
-					if Tables.equalsDeep(file, item.file) then
-						table.remove(session.orphanedFiles, i)
-						break
-					end
-				end
-			end
-		end)
-		:catch(function(err)
-			logger:log("error", `failed to remove shards: {err}`)
-		end)
-		:finally(function()
-			logger:log("trace", "finished processing orphaned file")
-			item.beingProcessed = false
-		end)
-
-	return true
 end
 
 --[=[

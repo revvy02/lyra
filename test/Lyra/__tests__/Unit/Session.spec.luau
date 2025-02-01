@@ -4,7 +4,6 @@ local JestGlobals = require(ReplicatedStorage.DevPackages.JestGlobals)
 local Log = require(ReplicatedStorage.Packages.Lyra.Log)
 local MockDataStoreService = require(ReplicatedStorage.Packages.Lyra.MockDataStoreService)
 local MockMemoryStoreService = require(ReplicatedStorage.Packages.Lyra.MockMemoryStoreService)
-local OrphanedFileQueue = require(ReplicatedStorage.Packages.Lyra.OrphanedFileQueue)
 local Session = require(ReplicatedStorage.Packages.Lyra.Session)
 local Types = require(ReplicatedStorage.Packages.Lyra.Types)
 
@@ -50,7 +49,6 @@ describe("Session", function()
 			dataStoreService = mockData,
 			memoryStoreService = mockMemory,
 
-			orphanedFileQueue = OrphanedFileQueue.new(),
 			logger = Log.createLogger(function() end),
 			changedCallbacks = {},
 
