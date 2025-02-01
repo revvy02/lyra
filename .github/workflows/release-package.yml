@@ -14,6 +14,12 @@ jobs:
         steps:
             - uses: actions/checkout@v4
 
+            - name: Install Rokit
+              uses: CompeyDev/setup-rokit@v0.1.2
+
+            - name: Install Tools
+              run: rokit install
+
             - uses: actions/setup-node@v4
               with:
                   node-version: '18'
@@ -24,11 +30,16 @@ jobs:
             - name: Install dependencies
               run: npm ci
 
-            - name: Run tests
-              run: npm test
+            - name: Build Package
+              run: rojo build --output Lyra.rbxm build.project.json
 
             - name: Create Release
               run: gh release create $GITHUB_REF_NAME --generate-notes
+              env:
+                  GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+
+            - name: Upload Release Asset
+              run: gh release upload $GITHUB_REF_NAME Lyra.rbxm
               env:
                   GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
