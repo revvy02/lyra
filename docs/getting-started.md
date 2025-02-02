@@ -170,7 +170,7 @@ local function processReceipt(receiptInfo)
             if table.find(data.purchaseHistory, receiptInfo.PurchaseId) then
                return false -- Prevent duplicate purchases
             end
-            table.insert(data.purchaseHistory, receiptInfo.PurchaseId, 1)
+            table.insert(data.purchaseHistory, 1, receiptInfo.PurchaseId)
             for i = 1000, #data.purchaseHistory do
                 data.purchaseHistory[i] = nil -- Remove old purchases
             end
