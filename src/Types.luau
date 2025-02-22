@@ -65,7 +65,7 @@ export type StoreContext<T> = {
 	dataStoreService: DataStoreService,
 	memoryStoreService: MemoryStoreService,
 
-	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () },
+	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () },
 	logger: Logger,
 	onLockLost: ((key: string) -> ())?,
 
