@@ -130,4 +130,4 @@ Lyra = "paradoxum-games/lyra@0.4.1"
 
 - Check out [Getting Started](./getting-started.md) for a complete setup guide
 - Read [Core Concepts](./core-concepts.md) to understand how Lyra works
-- See the Advanced Features section for [migration guides](./advanced/migrations.md) and [debugging](./advanced/debugging.md) tips
+- See the Advanced Features section for [migration guides](./advanced/migrations.md) and [state management](./advanced/state-management.md) tips
