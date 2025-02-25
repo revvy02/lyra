@@ -68,7 +68,7 @@ local noYield = require(script.Parent.noYield)
 	.importLegacyData? (key: string) -> any? -- Function to import legacy data
 	.dataStoreService? DataStoreService -- Custom DataStore implementation
 	.useMock? boolean -- Use mock DataStore (Studio only)
-	.changedCallbacks? { (key: string, newData: T, oldData: T?) -> () -> () } -- Run when data changes
+	.changedCallbacks? { (key: string, newData: T, oldData: T?) -> () } -- Run when data changes
 	.logCallback? (logMessage: LogMessage) -> () -- Custom logging function
 	.onLockLost? (key: string) -> () -- Called if DataStore lock is lost
 
@@ -96,7 +96,7 @@ export type StoreConfig<T> = {
 	importLegacyData: ((key: string) -> any?)?,
 	dataStoreService: DataStoreService?,
 	memoryStoreService: MemoryStoreService?,
-	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () }?,
+	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () }?,
 	logCallback: ((logMessage: Types.LogMessage) -> ())?,
 	onLockLost: ((key: string) -> ())?,
 	useMock: boolean?,
