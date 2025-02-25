@@ -367,6 +367,16 @@ function Store:load(key: string, userIds: { number }?): Promise.Promise
 	end)
 
 	self._loadPromises[key] = loadPromise
+
+	-- This chain does two things:
+	-- 1. finally: If loadPromise is already settled, its finally block might
+	--    run before the assignment above, leaving the promise in the table - so
+	--    we run finally here to ensure it's removed.
+	-- 2. catch: Some users might call load without handling rejections,
+	--    triggering unhandled rejection warnings. Since Lyra logs the root
+	--    error, we immediately mark the rejection as caught to silence the
+	--    warning. This *doesn't* consume the rejection; it still propagates to
+	--    the user.
 	loadPromise
 		:finally(function()
 			self._loadPromises[key] = nil
