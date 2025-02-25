@@ -55,6 +55,20 @@ When Lyra isn't the primary source of truth, several key features become comprom
 
 4. **Schema Validation**: Lyra validates data against your schema during updates, catching issues early. When changes happen outside Lyra, these validations are bypassed, leading to potential data corruption.
 
+### The Technical Reason
+
+Behind the scenes, Lyra maintains data integrity through a carefully orchestrated system:
+
+- Updates and transactions are queued and processed in sequence
+- Transactions require waiting for some DataStore calls to guarantee atomicity
+- During a transaction, updates to affected keys are paused until the transaction completes
+- This is necessary because changes from transactions are only considered valid if all DataStore operations succeed
+- If any operation fails, Lyra discards all pending changes to maintain consistency
+
+If external systems modify data at the same time Lyra is processing a transaction, this careful balance breaks down. The only way to handle such conflicts would require complex rollback mechanisms that impose significant constraints on your code structure.
+
+By making Lyra the source of truth, you get robust data integrity without these complications.
+
 ## Practical Integration Strategies
 
 If you're using a state management library alongside Lyra, consider these approaches:
