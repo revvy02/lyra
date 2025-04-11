@@ -173,8 +173,6 @@ type StoreProps<T> = {
 	_ctx: Types.StoreContext<T>, -- Shared context containing config and dependencies.
 	_closed: boolean, -- Flag indicating if the store has been closed.
 	_sessions: { [string]: Session.Session<T> }, -- Map of active sessions, keyed by data key.
-	-- TODO: Remove this field
-	_lastTxId: string?, -- Stores the ID of the last transaction for debugging. Current unused.
 	_loadPromises: { [string]: Promise.Promise }, -- Tracks ongoing load operations to prevent duplicates.
 	_unloadPromises: { [string]: Promise.Promise }, -- Tracks ongoing unload operations.
 }
@@ -269,7 +267,6 @@ local function createStore<T>(config: StoreConfig<T>): Store<T>
 		_ctx = storeContext,
 		_closed = false,
 		_sessions = {},
-		_lastTxId = nil,
 		_loadPromises = {},
 		_unloadPromises = {},
 	}, Store)
