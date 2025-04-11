@@ -148,7 +148,7 @@ type StoreImpl<T> = {
 	close: (self: Store<T>) -> Promise.Promise,
 
 	-- Utility/Inspection API (Promise-based)
-	peek: (self: Store<T>, key: string) -> Promise.TPromise<T>,
+	peek: (self: Store<T>, key: string) -> Promise.TPromise<T?>,
 	probeLockActive: (self: Store<T>, key: string) -> Promise.TPromise<boolean>,
 	listVersions: (self: Store<T>, params: ListVersionParams) -> Promise.TPromise<DataStoreVersionPages>,
 	readVersion: (self: Store<T>, key: string, version: string) -> Promise.TPromise<T, DataStoreKeyInfo>,
@@ -163,7 +163,7 @@ type StoreImpl<T> = {
 	closeAsync: (self: Store<T>) -> (),
 
 	-- Utility/Inspection API (Async/Await syntactic sugar)
-	peekAsync: (self: Store<T>, key: string) -> T,
+	peekAsync: (self: Store<T>, key: string) -> T?,
 	probeLockActiveAsync: (self: Store<T>, key: string) -> boolean,
 	listVersionsAsync: (self: Store<T>, params: ListVersionParams) -> DataStoreVersionPages,
 	readVersionAsync: (self: Store<T>, key: string, version: string) -> (T, DataStoreKeyInfo),
@@ -1087,9 +1087,9 @@ end
 	
 	@within Store
 	@param key string -- The key whose data to peek at.
-	@return Promise<T> -- Resolves with the data object, or `nil` if the key doesn't exist. Rejects on DataStore errors.
+	@return Promise<T?> -- Resolves with the data object, or `nil` if the key doesn't exist. Rejects on DataStore errors.
 ]=]
-function Store:peek<T>(key: string): Promise.TPromise<T>
+function Store:peek<T>(key: string): Promise.TPromise<T?>
 	-- 1. Get the main record from the recordStore.
 	return dataStoreRetry(function()
 			return self._ctx.recordStore:GetAsync(key)
@@ -1133,10 +1133,10 @@ end
 
 	@within Store
 	@param key string -- The key whose data to peek at.
-	@return T -- The data object or the store's template value.
+	@return T? -- The data object, or `nil` if the key doesn't exist.
 	@error any -- May throw errors from underlying DataStore operations.
 ]=]
-function Store:peekAsync<T>(key: string): T
+function Store:peekAsync<T>(key: string): T?
 	return self:peek(key):expect()
 end
 
