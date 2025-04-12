@@ -419,9 +419,8 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 	-- Chain the acquisition and refresh setup.
 	return waitForLock() -- Attempt initial acquisition.
 		:andThen(function()
-			-- If acquisition succeeded, set up the refresh loop.
+			-- If acquisition succeeded, set up the refresh loop and return the handle.
 			setupLockRefresh()
-			-- Return the handle.
 			return lockHandle
 		end)
 		:catch(function(err)
