@@ -1,4 +1,4 @@
---[[
+--[=[
 	@class PromiseQueue
 	@private
 
@@ -12,49 +12,72 @@
 	**Core Logic:**
 	- Operations are added to the queue via the `add` method.
 	- Each operation is wrapped in a `Promise`.
-	- A single processing loop (`_processQueue`) runs as long as the queue is not empty.
+	- A single processing loop ([PromiseQueue:_processQueue]) runs as long as the queue is not empty.
 	- The loop takes the next item, executes its associated function, and waits for
 	  its Promise to resolve or reject before moving to the next item.
 	- Includes timeout and deadlock detection for individual items.
-	- Supports adding an operation atomically across multiple queues (`multiQueueAdd`).
-]]
+	- Supports adding an operation atomically across multiple queues ([PromiseQueue:multiQueueAdd]).
+]=]
 
 local Log = require(script.Parent.Log)
 local Promise = require(script.Parent.Promise)
 local Tables = require(script.Parent.Tables)
 
--- Internal implementation details and methods for the PromiseQueue class.
+--[=[
+	Internal implementation details and methods for the PromiseQueue class.
+	@interface PromiseQueueImpl
+	@within PromiseQueue
+	@private
+	.__index PromiseQueueImpl
+	.new (params: CreatePromiseQueueParams) -> PromiseQueue
+	._processQueue (self: PromiseQueue) -> ()
+	._addResumableBlock (queue: PromiseQueue) -> Promise<() -> ()>
+	._getLogContext (self: PromiseQueue, item: QueueItem?) -> { [string]: any }
+	.add (self: PromiseQueue, callback: () -> ()) -> Promise
+	.multiQueueAdd (queues: { PromiseQueue }, callback: () -> ()) -> Promise -- Public static method
+]=]
 type PromiseQueueImpl = {
 	__index: PromiseQueueImpl,
-
-	-- Constructor
 	new: (params: CreatePromiseQueueParams) -> PromiseQueue,
-
-	-- Internal methods
 	_processQueue: (self: PromiseQueue) -> (),
 	_addResumableBlock: (queue: PromiseQueue) -> Promise.TPromise<() -> ()>,
 	_getLogContext: (self: PromiseQueue, item: QueueItem?) -> { [string]: any },
-
-	-- Public static method
 	multiQueueAdd: (queues: { PromiseQueue }, callback: () -> ()) -> Promise.Promise,
-	-- Public instance method
 	add: (self: PromiseQueue, callback: () -> ()) -> Promise.Promise,
 }
 
--- Internal properties stored within a PromiseQueue instance.
+--[=[
+	Internal properties stored within a PromiseQueue instance.
+	@interface PromiseQueueProps
+	@within PromiseQueue
+	@private
+	._queue { QueueItem } -- The actual queue holding items to be processed.
+	._logger Log.Logger -- Logger instance for internal logging.
+	._totalItemCount number -- Counter for assigning unique IDs to queue items.
+]=]
 type PromiseQueueProps = {
-	_queue: { QueueItem }, -- The actual queue holding items to be processed.
-	_logger: Log.Logger, -- Logger instance for internal logging.
-	_totalItemCount: number, -- Counter for assigning unique IDs to queue items.
+	_queue: { QueueItem },
+	_logger: Log.Logger,
+	_totalItemCount: number,
 }
 
--- Represents a single item within the queue.
+--[=[
+	Represents a single item within the queue.
+	@interface QueueItem
+	@within PromiseQueue
+	@private
+	.id number -- Unique identifier for the item within this queue instance.
+	.fn () -> () -- The function to execute for this item. Can be sync or return a Promise.
+	.resolve (value: any) -> () -- The resolve function of the Promise returned by `add`.
+	.reject (error: any) -> () -- The reject function of the Promise returned by `add`.
+	.trace string -- Debug traceback captured when the item was added.
+]=]
 type QueueItem = {
-	id: number, -- Unique identifier for the item within this queue instance.
-	fn: () -> (), -- The function to execute for this item. Can be sync or return a Promise.
-	resolve: (value: any) -> (), -- The resolve function of the Promise returned by `add`.
-	reject: (error: any) -> (), -- The reject function of the Promise returned by `add`.
-	trace: string, -- Debug traceback captured when the item was added.
+	id: number,
+	fn: () -> (),
+	resolve: (value: any) -> (),
+	reject: (error: any) -> (),
+	trace: string,
 }
 
 export type PromiseQueue = typeof(setmetatable({} :: PromiseQueueProps, {} :: PromiseQueueImpl))
@@ -62,16 +85,22 @@ export type PromiseQueue = typeof(setmetatable({} :: PromiseQueueProps, {} :: Pr
 local PromiseQueue = {} :: PromiseQueueImpl
 PromiseQueue.__index = PromiseQueue
 
--- Parameters for creating a new PromiseQueue instance.
+--[=[
+	Parameters for creating a new PromiseQueue instance.
+	@interface CreatePromiseQueueParams
+	@within PromiseQueue
+	.logger Log.Logger
+]=]
 type CreatePromiseQueueParams = {
-	logger: Log.Logger, -- A logger conforming to the Log.Logger interface.
+	logger: Log.Logger,
 }
 
---[[
+--[=[
 	Creates a new PromiseQueue instance.
-	@param params CreatePromiseQueueParams Configuration parameters.
-	@return A new PromiseQueue object.
-]]
+	@param params -- Configuration parameters.
+	@return PromiseQueue -- A new PromiseQueue object.
+	@within PromiseQueue
+]=]
 function PromiseQueue.new(params: CreatePromiseQueueParams): PromiseQueue
 	return setmetatable({
 		_queue = {},
@@ -80,18 +109,16 @@ function PromiseQueue.new(params: CreatePromiseQueueParams): PromiseQueue
 	}, PromiseQueue) :: PromiseQueue
 end
 
---[[
+--[=[
 	Adds a new operation (callback function) to the end of the queue.
 
 	The callback will be executed only after all preceding items in the queue
 	have completed.
 
-	@param callback The function to execute. This function can be synchronous or
-		return a Promise. Its result or error will resolve/reject the Promise
-		returned by this `add` call.
-	@return A Promise that resolves or rejects with the result or error of the
-		provided `callback` function once it's processed by the queue.
-]]
+	@param callback () -> T -- The function to execute. This function can be synchronous or return a Promise. Its result or error will resolve/reject the Promise returned by this `add` call.
+	@return Promise<T> -- A Promise that resolves or rejects with the result or error of the provided `callback` function once it's processed by the queue.
+	@within PromiseQueue
+]=]
 function PromiseQueue:add(callback: () -> ()): Promise.Promise
 	local trace = debug.traceback(nil, 2) -- Capture stack trace for debugging slow/failed items.
 	return Promise.new(function(resolve, reject, onCancel)
@@ -128,10 +155,12 @@ function PromiseQueue:add(callback: () -> ()): Promise.Promise
 	end)
 end
 
---[[
+--[=[
 	Internal function that processes items from the queue sequentially.
 	It runs as long as there are items in the queue.
-]]
+	@within PromiseQueue
+	@private
+]=]
 function PromiseQueue:_processQueue()
 	self._logger:log("trace", "processing queue", self:_getLogContext())
 	-- Loop continues as long as items exist in the queue.
@@ -189,16 +218,17 @@ function PromiseQueue:_processQueue()
 	self._logger:log("trace", "finished processing queue", self:_getLogContext())
 end
 
---[[
+--[=[
 	Internal helper function used by `multiQueueAdd`.
 	Adds a special "blocking" item to a single queue. This item's function
 	returns a Promise that only resolves when an external `resume` function is called.
 	`resume` is just a Promise resolver function - calling it unblocks the queue item.
 
-	@param queue The PromiseQueue instance to add the block to.
-	@return A Promise that resolves with the `resume` function once the block
-		becomes the active item in the queue.
-]]
+	@param queue -- The PromiseQueue instance to add the block to.
+	@return Promise<() -> ()> -- A Promise that resolves with the `resume` function once the block becomes the active item in the queue.
+	@within PromiseQueue
+	@private
+]=]
 local function addResumableBlock(queue: PromiseQueue): Promise.TPromise<() -> ()>
 	return Promise.new(function(outerResolve)
 		-- Add an item whose function returns a promise...
@@ -213,7 +243,7 @@ local function addResumableBlock(queue: PromiseQueue): Promise.TPromise<() -> ()
 end
 PromiseQueue._addResumableBlock = addResumableBlock -- Assign to the metatable for internal use.
 
---[[
+--[=[
 	Atomically adds a callback function to be executed across multiple queues.
 
 	Ensures that the callback only runs when it has effectively acquired the "lock"
@@ -229,10 +259,11 @@ PromiseQueue._addResumableBlock = addResumableBlock -- Assign to the metatable f
 	4. After the `callback` finishes (successfully or with an error), calls all the
 	   `resume` functions to unblock all the queues.
 
-	@param queues A table array of PromiseQueue instances to coordinate.
-	@param callback The function to execute once all queues are ready.
-	@return A Promise that resolves/rejects with the result/error of the `callback`.
-]]
+	@param queues -- A table array of PromiseQueue instances to coordinate.
+	@param callback -- The function to execute once all queues are ready.
+	@return Promise -- A Promise that resolves/rejects with the result/error of the `callback`.
+	@within PromiseQueue
+]=]
 function PromiseQueue.multiQueueAdd(queues: { PromiseQueue }, callback: () -> ()): Promise.Promise
 	local trace = debug.traceback(nil, 2)
 	return Promise.new(function(resolve, reject)
@@ -256,11 +287,13 @@ function PromiseQueue.multiQueueAdd(queues: { PromiseQueue }, callback: () -> ()
 	end)
 end
 
---[[
+--[=[
 	Internal helper to generate a context table for logging.
-	@param item (Optional) The QueueItem currently being processed.
-	@return A table containing common context fields like queue length and item ID.
-]]
+	@param item -- (Optional) The QueueItem currently being processed.
+	@return { [string]: any } -- A table containing common context fields like queue length and item ID.
+	@within PromiseQueue
+	@private
+]=]
 function PromiseQueue:_getLogContext(item: QueueItem?): { [string]: any }
 	return {
 		queueLength = #self._queue,
