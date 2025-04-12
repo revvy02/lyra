@@ -274,7 +274,7 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 					currentRetryHandle.cancel()
 					-- The retry may have an in-flight request. To prevent race
 					-- conditions, we only release after it settles.
-					cleanupPromise = (currentRetryHandle :: any).promise:catch(function() end) -- Ignore errors from cancelled promise
+					cleanupPromise = (currentRetryHandle :: any).promise
 				end
 
 				-- After potential retry settles, attempt release.
