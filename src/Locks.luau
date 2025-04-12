@@ -1,4 +1,4 @@
---[[
+--[=[
 	Implements a distributed locking mechanism using Roblox's MemoryStoreService.
 	This allows coordinating access to shared resources (like DataStore keys)
 	across different game servers or instances.
@@ -14,7 +14,7 @@
 
 	@class Locks
 	@private
-]]
+]=]
 
 local HttpService = game:GetService("HttpService")
 
@@ -28,73 +28,61 @@ local Types = require(script.Parent.Types)
 local Promise = require(script.Parent.Promise)
 local hashMapRetry = require(script.Parent.hashMapRetry)
 
--- Possible states of the lock acquisition and holding process.
+--[=[
+	Possible states of the lock acquisition and holding process.
+	@type LockStatus "acquiring" | "held" | "released"
+	@within Locks
+	@tag enum
+	@private
+]=]
 type LockStatus = "acquiring" | "held" | "released"
 
---[[
+--[=[
 	Represents an acquired lock handle, providing methods to interact with the lock.
 
 	@interface LockHandle
 	@within Locks
-]]
+	.release () -> Promise -- Releases the lock immediately. Stops the refresh loop and attempts to clear the lock key in MemoryStore (by setting TTL to 0). Resolves when the release attempt is complete.
+	.isLocked () -> boolean -- Checks if the lock is currently considered held locally. This checks both the internal status and compares the last confirmed expiry time (from MemoryStore) against the current local time. True if the lock is believed to be held.
+	.onLockLost (() -> ()) -> (() -> ()) -- Registers a callback function to be invoked if the lock is lost unexpectedly (e.g., refresh fails, TTL expires). Returns a function to disconnect/unregister the callback.
+]=]
 export type LockHandle = {
-	--[[
-		Releases the lock immediately. Stops the refresh loop and attempts to clear
-		the lock key in MemoryStore (by setting TTL to 0).
-
-		@return Promise - Resolves when the release attempt is complete.
-	]]
 	release: () -> Promise.Promise,
-	--[[
-		Checks if the lock is currently considered held locally.
-		This checks both the internal status and compares the last confirmed
-		expiry time (from MemoryStore) against the current local time.
-
-		@return boolean - True if the lock is believed to be held.
-	]]
 	isLocked: () -> boolean,
-	--[[
-		Registers a callback function to be invoked if the lock is lost
-		unexpectedly (e.g., refresh fails, TTL expires).
-
-		@param callback () -> () - The function to call when the lock is lost.
-		@return () -> () - A function to disconnect/unregister the callback.
-	]]
 	onLockLost: (callback: () -> ()) -> () -> (),
 }
 
---[[
+--[=[
 	Parameters for acquiring a lock.
 
 	@interface AcquireLockParams
 	@within Locks
-]]
+	.storeContext Types.StoreContext<any> -- Shared store context containing logger and MemoryStoreHashMap instance.
+	.key string -- The unique key identifying the resource to be locked.
+	.acquireAttempts number -- Maximum number of attempts to acquire the lock initially. Currently unused in implementation, relies on duration.
+	.duration number -- The duration (TTL) in seconds for which the lock should be held/refreshed.
+	.refreshInterval number -- The interval in seconds at which the lock refresh should be attempted.
+]=]
 export type AcquireLockParams = {
-	-- Shared store context containing logger and MemoryStoreHashMap instance.
 	storeContext: Types.StoreContext<any>,
-	-- The unique key identifying the resource to be locked.
 	key: string,
-	-- Maximum number of attempts to acquire the lock initially.
-	acquireAttempts: number, -- Currently unused in implementation, relies on duration.
-	-- The duration (TTL) in seconds for which the lock should be held/refreshed.
+	acquireAttempts: number,
 	duration: number,
-	-- The interval in seconds at which the lock refresh should be attempted.
 	refreshInterval: number,
 }
 
---[[
+--[=[
 	Attempts to acquire a distributed lock for the specified key.
 
 	Manages the lock acquisition process, including retries with exponential
 	backoff, setting up the background refresh loop, and providing a LockHandle
 	on success.
 
-	@param params AcquireLockParams - Configuration for the lock acquisition.
-	@return Promise<LockHandle> - Resolves with a LockHandle if the lock is acquired successfully.
-	@error Rejects if the lock cannot be acquired within the specified duration/attempts,
-	       or if other MemoryStore errors occur.
+	@param params -- Configuration for the lock acquisition.
+	@return Promise<LockHandle> -- Resolves with a LockHandle if the lock is acquired successfully.
+	@error Rejects if the lock cannot be acquired within the specified duration/attempts, or if other MemoryStore errors occur.
 	@within Locks
-]]
+]=]
 local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHandle>
 	-- Unique identifier for this specific lock attempt/instance.
 	local lockId = HttpService:GenerateGUID(false)
@@ -115,21 +103,23 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 	local key = params.key
 	local logger = ctx.logger:extend({ method = "acquireLock", key = key, lockId = lockId })
 
-	--[[
+	--[=[
 		Helper function to update the internal lock status and log the transition.
-		@param newStatus LockStatus - The new status to set.
+		@param newStatus -- The new status to set.
+		@within Locks
 		@private
-	]]
+	]=]
 	local function transitionTo(newStatus: LockStatus)
 		logger:log("trace", `lock transition: {status or "nil"} -> {newStatus}`)
 		status = newStatus
 	end
 
-	--[[
+	--[=[
 		Invokes all registered `onLockLost` callbacks.
 		Called when the local expiry timer (`expiryThread`) fires or when refresh fails.
+		@within Locks
 		@private
-	]]
+	]=]
 	local function spawnExpiryCallbacks()
 		-- Only spawn if still considered 'held' locally to avoid duplicate calls after release.
 		if status == "held" then
@@ -141,7 +131,7 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 		end
 	end
 
-	--[[
+	--[=[
 		Attempts to update the lock key in MemoryStore using UpdateAsync.
 		This is used for initial acquisition, refresh, and release (with ttl=0).
 
@@ -152,10 +142,11 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 
 		Also manages the local expiry timer (`expiryThread`) based on successful updates.
 
-		@param ttl number - The Time-To-Live in seconds for the UpdateAsync call.
-		@return Types.RetryHandle - Handle containing the promise and cancel function from `hashMapRetry`.
+		@param ttl -- The Time-To-Live in seconds for the UpdateAsync call.
+		@return Types.RetryHandle<Promise<any>> -- Handle containing the promise and cancel function from `hashMapRetry`.
+		@within Locks
 		@private
-	]]
+	]=]
 	local function tryUpdate(ttl: number): Types.RetryHandle<Promise.TPromise<any>>
 		logger:log("trace", `attempting UpdateAsync on key '{key}' with ttl {ttl}`)
 
@@ -201,13 +192,14 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 		return retryHandle
 	end
 
-	--[[
+	--[=[
 		Releases the lock. Stops refresh/expiry timers and attempts to clear the
 		lock in MemoryStore by setting TTL to 0.
 
-		@return Promise - Resolves when the release process is complete.
+		@return Promise -- Resolves when the release process is complete.
+		@within Locks
 		@private
-	]]
+	]=]
 	local function release(): Promise.Promise
 		logger:log("trace", "release function called")
 
@@ -248,13 +240,14 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 		end
 	end
 
-	--[[
+	--[=[
 		Main loop for attempting to acquire the lock initially.
 		Uses `tryUpdate` with exponential backoff.
 
-		@return Promise - Resolves when the lock is acquired, rejects if timeout occurs.
+		@return Promise -- Resolves when the lock is acquired, rejects if timeout occurs.
+		@within Locks
 		@private
-	]]
+	]=]
 	local function waitForLock(): Promise.Promise
 		logger:log("trace", "entering waitForLock loop")
 		transitionTo("acquiring")
@@ -339,10 +332,11 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 		end)
 	end
 
-	--[[
+	--[=[
 		Starts the background loop responsible for periodically refreshing the lock TTL.
+		@within Locks
 		@private
-	]]
+	]=]
 	local function setupLockRefresh(): ()
 		logger:log("trace", "setting up background lock refresh loop")
 
@@ -443,28 +437,30 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 		end)
 end
 
---[[
+--[=[
 	Parameters for probing if a lock is active.
 
 	@interface ProbeLockActiveParams
 	@within Locks
-]]
+	.storeContext Types.StoreContext<any> -- Shared store context containing logger and MemoryStoreHashMap instance.
+	.key string -- The unique key identifying the resource to be locked.
+]=]
 export type ProbeLockActiveParams = {
 	storeContext: Types.StoreContext<any>,
 	key: string,
 }
 
---[[
+--[=[
 	Checks if a lock key currently exists in MemoryStore without attempting to acquire it.
 	Useful for determining if another process likely holds the lock.
 
 	Note: This is a point-in-time check and doesn't guarantee the lock state won't
 	change immediately after the check completes.
 
-	@param params ProbeLockActiveParams
-	@return Promise<boolean> - Resolves with true if the lock key exists, false otherwise.
+	@param params -- Parameters for probing the lock.
+	@return Promise<boolean> -- Resolves with true if the lock key exists, false otherwise.
 	@within Locks
-]]
+]=]
 local function probeLockActive(params: ProbeLockActiveParams): Promise.TPromise<boolean>
 	local ctx = params.storeContext
 	local key = params.key
