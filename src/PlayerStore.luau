@@ -85,7 +85,7 @@ type PlayerStoreProps<T> = {
 	.schema (value: any) -> (boolean, string?) -- A function to validate data
 	.migrationSteps { MigrationStep }? -- Optional migration steps
 	.importLegacyData ((key: string) -> any?)? -- Optional function to import legacy data
-	.changedCallbacks { (key: string, newData: T, oldData: T?) -> () -> () }? -- Optional callbacks for data changes
+	.changedCallbacks { (key: string, newData: T, oldData: T?) -> () }? -- Optional callbacks for data changes
 	.logCallback ((logMessage: LogMessage) -> ())? -- Optional callback for log messages
 	.memoryStoreService MemoryStoreService? -- Optional MemoryStoreService instance for mocking
 	.dataStoreService DataStoreService? -- Optional DataStoreService instance for mocking
@@ -98,7 +98,7 @@ type PlayerStoreConfig<T> = {
 	schema: (value: any) -> (boolean, string?),
 	migrationSteps: { Types.MigrationStep }?,
 	importLegacyData: ((key: string) -> any?)?,
-	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () -> () }?,
+	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () }?,
 	logCallback: ((logMessage: Types.LogMessage) -> ())?,
 	disableReferenceProtection: boolean?,
 	memoryStoreService: MemoryStoreService?,
