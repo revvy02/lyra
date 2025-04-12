@@ -41,7 +41,6 @@ describe("Locks", function()
 		local params = {
 			storeContext = storeContext,
 			key = key or "testKey",
-			acquireAttempts = 3,
 			duration = 30,
 			refreshInterval = 5,
 		}

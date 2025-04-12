@@ -28,8 +28,6 @@ local INTERNAL_SPACE_RESERVE_BYTES = 10_000
 
 	.LOCK_DURATION_SECONDS number -- The initial time-to-live (TTL) duration (in seconds) for a lock acquired in MemoryStore. If the lock isn't refreshed within this time, it will automatically expire. Must be longer than LOCK_REFRESH_INTERVAL_SECONDS to allow time for refreshes.
 
-	.LOCK_ACQUIRE_ATTEMPTS number -- The maximum number of times to attempt acquiring a lock before giving up. Currently unused in implementation.
-
 	.AUTOSAVE_INTERVAL_SECONDS number -- How often (in seconds) the automatic saving mechanism should attempt to save dirty session data.
 ]=]
 local Constants = {
@@ -43,8 +41,6 @@ local Constants = {
 	LOCK_REFRESH_INTERVAL_SECONDS = 60,
 
 	LOCK_DURATION_SECONDS = 90,
-
-	LOCK_ACQUIRE_ATTEMPTS = 8,
 
 	AUTOSAVE_INTERVAL_SECONDS = 5 * 60, -- 5 minutes
 }

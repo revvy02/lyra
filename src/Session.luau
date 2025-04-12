@@ -480,7 +480,6 @@ function Session.load<T>(params: LoadSessionParams<T>): Promise.TPromise<Session
 	local acquireLockParams: Locks.AcquireLockParams = {
 		storeContext = ctx,
 		key = params.key,
-		acquireAttempts = Constants.LOCK_ACQUIRE_ATTEMPTS,
 		duration = Constants.LOCK_DURATION_SECONDS,
 		refreshInterval = Constants.LOCK_REFRESH_INTERVAL_SECONDS,
 	}

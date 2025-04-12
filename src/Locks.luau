@@ -59,14 +59,12 @@ export type LockHandle = {
 	@within Locks
 	.storeContext Types.StoreContext<any> -- Shared store context containing logger and MemoryStoreHashMap instance.
 	.key string -- The unique key identifying the resource to be locked.
-	.acquireAttempts number -- Maximum number of attempts to acquire the lock initially. Currently unused in implementation, relies on duration.
 	.duration number -- The duration (TTL) in seconds for which the lock should be held/refreshed.
 	.refreshInterval number -- The interval in seconds at which the lock refresh should be attempted.
 ]=]
 export type AcquireLockParams = {
 	storeContext: Types.StoreContext<any>,
 	key: string,
-	acquireAttempts: number,
 	duration: number,
 	refreshInterval: number,
 }
