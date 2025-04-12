@@ -16,8 +16,8 @@ local PlayerStore = require(script.PlayerStore)
 	Provides helper functions for creating common migration steps.
 	
 	@interface MigrationStep
-	.field addFields (name: string, fields: { [string]: any }) -> Types.MigrationStep -- Creates a step to add new fields with default values.
-	.field transform (name: string, transformFunc: (currentValue: { [string]: any }) -> { [string]: any }) -> Types.MigrationStep -- Creates a step with a custom data transformation function.
+	.field addFields (name: string, fields: { [string]: any }) -> MigrationStep -- Creates a step to add new fields with default values.
+	.field transform (name: string, transformFunc: (currentValue: { [string]: any }) -> { [string]: any }) -> MigrationStep -- Creates a step with a custom data transformation function.
 
 	@within Lyra
 ]=]
@@ -30,7 +30,7 @@ local MigrationStep = {
 	Factory function to create a new PlayerStore instance.
 	
 	@function createPlayerStore<T>
-	@param context PlayerStoreContext<T> -- The configuration and context for the PlayerStore.
+	@param context PlayerStoreConfig<T> -- The configuration for the PlayerStore.
 	@return PlayerStore<T> -- A new PlayerStore instance.
 	@within Lyra
 ]=]
@@ -40,7 +40,7 @@ local createPlayerStore = PlayerStore.createPlayerStore
 	Sets the global minimum log level for all Lyra loggers.
 
 	@function setLogLevel
-	@param level Log.LogLevel -- The minimum log level ("fatal", "error", "warn", "info", "debug", "trace").
+	@param level LogLevel -- The minimum log level ("fatal", "error", "warn", "info", "debug", "trace").
 	@within Lyra
 ]=]
 local setLogLevel = Log.setLevel

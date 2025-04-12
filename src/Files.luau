@@ -37,7 +37,7 @@ local dataStoreRetry = require(script.Parent.dataStoreRetry)
 	Checks if a file object represents a sharded file (i.e., data stored across multiple keys).
 
 	@within Files
-	@param file Types.File -- The file object to check.
+	@param file File -- The file object to check.
 	@return boolean -- True if the file is sharded, false otherwise.
 ]=]
 local function isLargeFile(file: Types.File): boolean
@@ -69,7 +69,7 @@ export type WriteParams = {
 	Structure representing an error encountered during the `write` operation.
 
 	.error string -- A string describing the error.
-	.file Types.File -- The file metadata (`Types.File`) that was being processed when the error occurred. This is used for cleanup operations if shards were partially written.
+	.file File -- The file metadata that was being processed when the error occurred. This is used for cleanup operations if shards were partially written.
 ]=]
 export type WriteError = {
 	error: string,
@@ -80,15 +80,15 @@ export type WriteError = {
 	Writes data to the DataStore, automatically handling sharding and compression if necessary.
 
 	If the JSON-encoded data is smaller than `maxShardSize`, it's stored directly within the
-	returned `Types.File` object (in the `data` field).
+	returned [File] object (in the `data` field).
 
 	If the data is larger, it's compressed, sharded, and stored across multiple DataStore keys.
-	The returned `Types.File` object will contain `shard` (the unique ID for the shards) and
+	The returned [File] object will contain `shard` (the unique ID for the shards) and
 	`count` (the number of shards) instead of the `data` field.
 
 	@within Files
 	@param params WriteParams -- The parameters for the write operation.
-	@return Promise<Types.File> -- A Promise that resolves with a `Types.File` object representing the stored data (either directly containing the data or shard metadata).
+	@return Promise<File> -- A Promise that resolves with a [File] object representing the stored data (either directly containing the data or shard metadata).
 	@error WriteError -- Rejects with a `WriteError` if any shard fails to write.
 	@error string -- Propagates errors from `DataStore:SetAsync` via `dataStoreRetry`.
 ]=]
@@ -141,7 +141,7 @@ end
 	Parameters required for the `read` function.
 
 	.store DataStore -- The DataStore instance to read from.
-	.file Types.File -- The `Types.File` object obtained from a previous `write` operation or retrieved from the primary DataStore key. This object determines whether to read directly or reconstruct from shards.
+	.file File -- The [File] object obtained from a previous `write` operation or retrieved from the primary DataStore key. This object determines whether to read directly or reconstruct from shards.
 ]=]
 export type ReadParams = {
 	store: DataStore,
