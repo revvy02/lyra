@@ -15,6 +15,7 @@ classes = [
 	"Constants",
 	"Files",
 	"Log",
+	"PromiseQueue",
 	"Types",
 	"Transactions",
 	"Migrations",
