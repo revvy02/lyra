@@ -10,6 +10,8 @@ classes = ["PlayerStore", "Lyra"]
 section = "Internal"
 classes = [
 	"Store",
+	"Session",
+	"Locks",
 	"Constants",
 	"Files",
 	"Log",
