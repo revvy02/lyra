@@ -31,6 +31,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Constants = require(script.Parent.Constants)
 local Files = require(script.Parent.Files)
 local Locks = require(script.Parent.Locks)
+local Log = require(script.Parent.Log)
 local Migrations = require(script.Parent.Migrations)
 local PromiseQueue = require(script.Parent.PromiseQueue)
 local Promise = require(script.Parent.Promise)
@@ -116,7 +117,7 @@ type SessionProps<T> = {
 	keyInfo: DataStoreKeyInfo?,
 
 	-- Logger instance specific to this session (includes key).
-	logger: Types.Logger,
+	logger: Log.Logger,
 }
 
 export type Session<T> = typeof(setmetatable({} :: SessionProps<T>, {} :: SessionImpl<T>))

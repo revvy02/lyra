@@ -41,7 +41,43 @@
 	```
 ]=]
 
-local Types = require(script.Parent.Types)
+--[=[
+	Represents the different log levels available for logging messages.
+
+	@type LogLevel "fatal" | "error" | "warn" | "info" | "debug" | "trace"
+	@tag enum
+	@within Log
+]=]
+export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "trace"
+
+--[=[
+	Represents a log message sent to the logger's callback function.
+
+	@interface LogMessage
+	@within Log
+	.message string -- The main content of the log message.
+	.level LogLevel -- The severity level of the message.
+	.context { [string]: any }? -- Optional table containing additional structured context.
+]=]
+export type LogMessage = {
+	message: string,
+	level: LogLevel,
+	context: { [string]: any }?,
+}
+
+export type LoggerImpl = {
+	__index: LoggerImpl,
+
+	log: (self: Logger, level: LogLevel, message: string, context: { [string]: any }?) -> (),
+	extend: (self: Logger, context: { [string]: any }) -> Logger,
+}
+
+export type LoggerProps = {
+	_logCallback: (logMessage: LogMessage) -> (),
+	_context: { [string]: any },
+}
+
+export type Logger = typeof(setmetatable({} :: LoggerProps, {} :: LoggerImpl))
 
 -- Ordered list of log levels from most severe to least severe.
 local levels = {
@@ -63,10 +99,10 @@ local Log = {
 	Messages with a severity lower than this level will be ignored by all loggers.
 
 	@within Log
-	@param level Types.LogLevel -- The minimum log level to allow.
+	@param level LogLevel -- The minimum log level to allow.
 	@error string -- Throws an error if the provided level is invalid.
 ]=]
-function Log.setLevel(level: Types.LogLevel)
+function Log.setLevel(level: LogLevel)
 	if table.find(levels, level) == nil then
 		error(`Invalid log level: '{level}'`)
 	end
@@ -74,7 +110,7 @@ function Log.setLevel(level: Types.LogLevel)
 end
 
 -- Metatable implementing the Logger methods. (Internal)
-local Logger: Types.LoggerImpl = {} :: Types.LoggerImpl
+local Logger: LoggerImpl = {} :: LoggerImpl
 Logger.__index = Logger
 
 --[=[
@@ -84,11 +120,11 @@ Logger.__index = Logger
 	before calling the configured `_logCallback`.
 
 	@within Log
-	@param level Types.LogLevel -- The severity level of the message.
+	@param level LogLevel -- The severity level of the message.
 	@param message string -- The log message content.
 	@param context { [string]: any }? -- Optional additional context specific to this log call.
 ]=]
-function Logger:log(level: Types.LogLevel, message: string, context: { [string]: any }?)
+function Logger:log(level: LogLevel, message: string, context: { [string]: any }?)
 	-- Filter messages based on the global log level.
 	if table.find(levels, level) > table.find(levels, Log.level) then
 		return
@@ -126,9 +162,9 @@ end
 
 	@within Log
 	@param context { [string]: any } -- The additional context fields to add.
-	@return Types.Logger -- A new Logger instance with the extended context.
+	@return Logger -- A new Logger instance with the extended context.
 ]=]
-function Logger:extend(context: { [string]: any }): Types.Logger
+function Logger:extend(context: { [string]: any }): Logger
 	-- Merge existing context with the new context.
 	local finalContext = table.clone(self._context)
 	for key, value in context do
@@ -146,11 +182,11 @@ end
 	Factory function to create a new root Logger instance.
 
 	@within Log
-	@param logCallback (logMessage: Types.LogMessage) -> () -- The function that will be called for each log message that passes the level filter. This function receives the complete `LogMessage` object including merged context.
+	@param logCallback (logMessage: LogMessage) -> () -- The function that will be called for each log message that passes the level filter. This function receives the complete `LogMessage` object including merged context.
 	@param context { [string]: any }? -- Optional initial context for this logger.
-	@return Types.Logger -- A new Logger instance.
+	@return Logger -- A new Logger instance.
 ]=]
-function Log.createLogger(logCallback: (logMessage: Types.LogMessage) -> (), context: { [string]: any }?): Types.Logger
+function Log.createLogger(logCallback: (logMessage: LogMessage) -> (), context: { [string]: any }?): Logger
 	return setmetatable({
 		_logCallback = logCallback,
 		_context = context or {}, -- Initialize with provided context or an empty table.

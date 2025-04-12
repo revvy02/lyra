@@ -31,6 +31,7 @@
 
 local Players = game:GetService("Players")
 
+local Log = require(script.Parent.Log)
 local Promise = require(script.Parent.Promise)
 local Store = require(script.Parent.Store)
 local Types = require(script.Parent.Types)
@@ -97,7 +98,7 @@ type PlayerStoreConfig<T> = {
 	migrationSteps: { Types.MigrationStep }?,
 	importLegacyData: ((key: string) -> any?)?,
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () }?,
-	logCallback: ((logMessage: Types.LogMessage) -> ())?,
+	logCallback: ((logMessage: Log.LogMessage) -> ())?,
 	disableReferenceProtection: boolean?,
 	memoryStoreService: MemoryStoreService?,
 	dataStoreService: DataStoreService?,

@@ -30,6 +30,7 @@
 	errors. If a step fails, the migration process stops, and the error is propagated.
 ]=]
 
+local Log = require(script.Parent.Log)
 local Promise = require(script.Parent.Promise)
 local Tables = require(script.Parent.Tables)
 local Types = require(script.Parent.Types)
@@ -101,13 +102,13 @@ end
 
 	@interface ApplyParams
 	@within Migrations
-	.logger Types.Logger -- Logger instance for logging migration progress and errors.
+	.logger Log.Logger -- Logger instance for logging migration progress and errors.
 	.data Data -- The current data loaded from the DataStore record's File.
 	.steps {Types.MigrationStep} -- The list of all defined migration steps for the store.
 	.appliedMigrations {string} -- The list of names of migration steps already applied to this specific data record, loaded from the DataStoreRecord.
 ]=]
 export type ApplyParams = {
-	logger: Types.Logger,
+	logger: Log.Logger,
 	data: Data,
 	steps: { Types.MigrationStep },
 	appliedMigrations: { string },

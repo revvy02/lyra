@@ -19,7 +19,7 @@
 	- Supports adding an operation atomically across multiple queues (`multiQueueAdd`).
 ]]
 
-local Types = require(script.Parent.Types)
+local Log = require(script.Parent.Log)
 local Promise = require(script.Parent.Promise)
 local Tables = require(script.Parent.Tables)
 
@@ -44,7 +44,7 @@ type PromiseQueueImpl = {
 -- Internal properties stored within a PromiseQueue instance.
 type PromiseQueueProps = {
 	_queue: { QueueItem }, -- The actual queue holding items to be processed.
-	_logger: Types.Logger, -- Logger instance for internal logging.
+	_logger: Log.Logger, -- Logger instance for internal logging.
 	_totalItemCount: number, -- Counter for assigning unique IDs to queue items.
 }
 
@@ -64,7 +64,7 @@ PromiseQueue.__index = PromiseQueue
 
 -- Parameters for creating a new PromiseQueue instance.
 type CreatePromiseQueueParams = {
-	logger: Types.Logger, -- A logger conforming to the Types.Logger interface.
+	logger: Log.Logger, -- A logger conforming to the Log.Logger interface.
 }
 
 --[[

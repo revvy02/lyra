@@ -7,6 +7,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Log = require(script.Parent.Log)
 local t = require(ReplicatedStorage.Packages.t)
 
 --[=[
@@ -139,7 +140,7 @@ export type StoreContext<T> = {
 	memoryStoreService: MemoryStoreService,
 
 	changedCallbacks: { (key: string, newData: T, oldData: T?) -> () },
-	logger: Logger,
+	logger: Log.Logger,
 	onLockLost: ((key: string) -> ())?,
 
 	recordStore: DataStore,
@@ -157,74 +158,6 @@ local txInfoCheck = t.some(
 )
 -- Validation check for File structure using 't' library.
 local fileCheck = t.some(t.strictInterface({ data = t.any }), t.strictInterface({ shard = t.string, count = t.number }))
-
---[=[
-	Represents the different log levels available for logging messages.
-
-	@type LogLevel "fatal" | "error" | "warn" | "info" | "debug" | "trace"
-	@tag enum
-	@within Types
-]=]
-export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "trace"
-
---[=[
-	Represents a log message sent to the logger's callback function.
-
-	@interface LogMessage
-	@within Types
-	.message string -- The main content of the log message.
-	.level LogLevel -- The severity level of the message.
-	.context { [string]: any }? -- Optional table containing additional structured context.
-]=]
-export type LogMessage = {
-	message: string,
-	level: LogLevel,
-	context: { [string]: any }?,
-}
-
---[=[
-	Defines the methods available on a Logger instance. (Internal Implementation Detail)
-
-	@within Types
-	@private
-	@interface LoggerImpl
-	.__index LoggerImpl -- Metatable self-reference.
-	.log (self: Logger, level: LogLevel, message: string, context: { [string]: any }?) -> () -- Sends a log message to the configured callback.
-	.extend (self: Logger, context: { [string]: any }) -> Logger -- Creates a new Logger instance with additional context merged into the existing context.
-]=]
-export type LoggerImpl = {
-	__index: LoggerImpl,
-
-	log: (self: Logger, level: LogLevel, message: string, context: { [string]: any }?) -> (),
-	extend: (self: Logger, context: { [string]: any }) -> Logger,
-}
-
---[=[
-	Defines the internal properties stored within a Logger instance. (Internal Implementation Detail)
-
-	@interface LoggerProps
-	@within Types
-	@private
-	._logCallback (logMessage: LogMessage) -> () -- The function called when `log` is invoked.
-	._context { [string]: any } -- The persistent context associated with this logger instance.
-]=]
-export type LoggerProps = {
-	_logCallback: (logMessage: LogMessage) -> (),
-	_context: { [string]: any },
-}
-
---[=[
-	A structured logger object.
-
-	Provides methods to log messages at different levels (`fatal`, `error`, `warn`, `info`, `debug`, `trace`)
-	and allows extending the logger with additional context fields that will be included
-	in subsequent log messages. The actual logging is delegated to a callback function
-	provided during instantiation (see [Log]).
-
-	@type Logger typeof(setmetatable({} :: LoggerProps, {} :: LoggerImpl))
-	@within Types
-]=]
-export type Logger = typeof(setmetatable({} :: LoggerProps, {} :: LoggerImpl))
 
 --[=[
 	A handle returned by retry utility functions like `hashMapRetry`.

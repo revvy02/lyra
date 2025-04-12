@@ -40,7 +40,7 @@ local createPlayerStore = PlayerStore.createPlayerStore
 	Sets the global minimum log level for all Lyra loggers.
 
 	@function setLogLevel
-	@param level [Types.LogLevel] -- The minimum log level ("fatal", "error", "warn", "info", "debug", "trace").
+	@param level [Log.LogLevel] -- The minimum log level ("fatal", "error", "warn", "info", "debug", "trace").
 	@within Lyra
 ]=]
 local setLogLevel = Log.setLevel
