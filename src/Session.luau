@@ -22,7 +22,7 @@
 	the Session becomes 'closed' and unusable, triggering cleanup.
 
 	@class Session
-	@private -- Not intended for direct use outside of Store/PlayerStore.
+	@private
 ]]
 
 local HttpService = game:GetService("HttpService")

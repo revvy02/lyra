@@ -1,9 +1,10 @@
---[[
-	@module Migrations
+--[=[
+	@class Migrations
+	@private
 
 	Provides functionality for managing and applying data migrations.
 
-	**Concept:** As application data schemas evolve over time, older data stored
+	**Concept:** As data schemas evolve over time, older data stored
 	in DataStores needs to be updated to match the new structure. This module
 	allows defining a series of migration steps (`Types.MigrationStep`) that
 	transform data from one version of the schema to the next.
@@ -27,20 +28,28 @@
 
 	**Error Handling:** Each step's `apply` function is executed within a `pcall` to catch
 	errors. If a step fails, the migration process stops, and the error is propagated.
-]]
+]=]
 
 local Promise = require(script.Parent.Promise)
 local Tables = require(script.Parent.Tables)
 local Types = require(script.Parent.Types)
 
--- Alias for generic data table type used in migrations.
+--[=[
+	Alias for a generic data table type used in migrations.
+
+	@type Data { [string]: any }
+	@within Migrations
+	@private
+]=]
 type Data = { [string]: any }
 
---[[
+--[=[
 	Validates that the provided migration steps adhere to the expected structure.
-	@param steps {Types.MigrationStep} The list of migration steps to validate.
-	@error Throws an error if any step is malformed.
-]]
+
+	@within Migrations
+	@param steps {Types.MigrationStep} -- The list of migration steps to validate.
+	@error string -- Throws an error if any step is malformed.
+]=]
 local function validate(steps: { Types.MigrationStep })
 	assert(typeof(steps) == "table", "steps must be a table")
 	for _, step in steps do
@@ -50,14 +59,15 @@ local function validate(steps: { Types.MigrationStep })
 	end
 end
 
---[[
+--[=[
 	Helper function to create a common type of migration step: adding new fields
 	with default values to existing data. Uses a deep merge strategy.
 
-	@param name string The unique name for this migration step.
-	@param fields Data A table containing the new fields and their default values.
-	@return Types.MigrationStep A migration step object.
-]]
+	@within Migrations
+	@param name string -- The unique name for this migration step.
+	@param fields Data -- A table containing the new fields and their default values.
+	@return Types.MigrationStep -- A migration step object.
+]=]
 local function makeAddFieldsStep(name: string, fields: Data): Types.MigrationStep
 	return {
 		name = name,
@@ -70,15 +80,15 @@ local function makeAddFieldsStep(name: string, fields: Data): Types.MigrationSte
 	}
 end
 
---[[
+--[=[
 	Helper function to create a migration step that applies a custom transformation
 	function to the data.
 
-	@param name string The unique name for this migration step.
-	@param transformFunc (currentValue: Data) -> Data The function that takes the
-		current data and returns the transformed data.
-	@return Types.MigrationStep A migration step object.
-]]
+	@within Migrations
+	@param name string -- The unique name for this migration step.
+	@param transformFunc (currentValue: Data) -> Data -- The function that takes the current data and returns the transformed data.
+	@return Types.MigrationStep -- A migration step object.
+]=]
 local function makeTransformStep(name: string, transformFunc: (currentValue: Data) -> Data): Types.MigrationStep
 	return {
 		name = name,
@@ -86,16 +96,16 @@ local function makeTransformStep(name: string, transformFunc: (currentValue: Dat
 	}
 end
 
---[[
+--[=[
 	Parameters for the `apply` function.
 
-	@interface ApplyParams (Internal)
-	@field logger Types.Logger Logger instance for logging migration progress and errors.
-	@field data Data The current data loaded from the DataStore record's File.
-	@field steps {Types.MigrationStep} The list of all defined migration steps for the store.
-	@field appliedMigrations {string} The list of names of migration steps already applied
-		to this specific data record, loaded from the DataStoreRecord.
-]]
+	@interface ApplyParams
+	@within Migrations
+	.logger Types.Logger -- Logger instance for logging migration progress and errors.
+	.data Data -- The current data loaded from the DataStore record's File.
+	.steps {Types.MigrationStep} -- The list of all defined migration steps for the store.
+	.appliedMigrations {string} -- The list of names of migration steps already applied to this specific data record, loaded from the DataStoreRecord.
+]=]
 export type ApplyParams = {
 	logger: Types.Logger,
 	data: Data,
@@ -103,30 +113,31 @@ export type ApplyParams = {
 	appliedMigrations: { string },
 }
 
---[[
+--[=[
 	Result returned by the `apply` function upon successful completion.
 
-	@interface ApplyResult (Internal)
-	@field data Data The potentially modified data after applying necessary migration steps.
-	@field appliedMigrations {string} The updated list of applied migration names, including
-		any newly applied steps. This should be saved back to the DataStoreRecord.
-]]
+	@interface ApplyResult
+	@within Migrations
+	.data Data -- The potentially modified data after applying necessary migration steps.
+	.appliedMigrations {string} -- The updated list of applied migration names, including any newly applied steps. This should be saved back to the DataStoreRecord.
+]=]
 export type ApplyResult = {
 	data: Data,
 	appliedMigrations: { string },
 }
 
---[[
+--[=[
 	Applies pending migration steps to the data.
 
 	Iterates through the defined `steps` and applies any step whose name is not
 	present in the `appliedMigrations` list. Ensures idempotency and uses `pcall`
 	for safe execution of each step's `apply` function.
 
-	@param params ApplyParams The parameters for applying migrations.
-	@return Promise.TPromise<ApplyResult> A Promise that resolves with the updated data
-		and the new list of applied migration names, or rejects if any step fails.
-]]
+	@within Migrations
+	@param params ApplyParams -- The parameters for applying migrations.
+	@return Promise.TPromise<ApplyResult> -- A Promise that resolves with the updated data and the new list of applied migration names.
+	@error string -- Rejects if any migration step fails during `pcall`.
+]=]
 local function apply(params: ApplyParams): Promise.TPromise<ApplyResult>
 	local logger = params.logger
 	local currentData = params.data
@@ -147,6 +158,7 @@ local function apply(params: ApplyParams): Promise.TPromise<ApplyResult>
 
 				-- Deep copy the data before applying the step to avoid modifying the original
 				-- `currentData` reference in case of an error within `step.apply`.
+				-- TODO: Do we actually care about atomicity here? This might be a performance hit.
 				local staged = Tables.copyDeep(currentData)
 				-- Safely execute the migration step's apply function.
 				local ok, result = pcall(step.apply, staged)
@@ -159,6 +171,7 @@ local function apply(params: ApplyParams): Promise.TPromise<ApplyResult>
 
 				-- If pcall succeeded, update currentData with the result.
 				-- Deep copy again to ensure `currentData` holds a distinct copy for the next step.
+				-- TODO: We should probably just warn about not modifying the data after returning - this is expensive.
 				currentData = Tables.copyDeep(result)
 				-- Add the step name to the list of applied migrations for this record.
 				table.insert(appliedMigrations, step.name)
@@ -175,11 +188,13 @@ local function apply(params: ApplyParams): Promise.TPromise<ApplyResult>
 	end)
 end
 
---[[
+--[=[
 	Utility function to extract just the names from a list of migration steps.
-	@param migrations {Types.MigrationStep} The list of migration steps.
-	@return {string} A list containing only the names of the migration steps.
-]]
+
+	@within Migrations
+	@param migrations {Types.MigrationStep} -- The list of migration steps.
+	@return {string} -- A list containing only the names of the migration steps.
+]=]
 local function getStepNames(migrations: { Types.MigrationStep }): { string }
 	local names = {}
 	for _, step in migrations do

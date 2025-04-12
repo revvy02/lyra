@@ -1,5 +1,6 @@
 --[[
 	@class PromiseQueue
+	@private
 
 	Implements a queue that processes asynchronous operations (represented by functions
 	returning Promises or synchronous functions) one at a time, ensuring serial execution.

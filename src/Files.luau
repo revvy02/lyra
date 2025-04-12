@@ -1,5 +1,6 @@
---[[
-	@module Files
+--[=[
+	@class Files
+	@private
 
 	Handles the storage and retrieval of potentially large data blobs within Roblox DataStores,
 	working around the size limitations imposed by DataStore `SetAsync`/`GetAsync` calls.
@@ -22,7 +23,7 @@
 	**Shard Key Naming:** Shard data is stored using keys formatted as `{shardId}-{shardIndex}`,
 	where `shardId` is a unique GUID generated for the file and `shardIndex` is the 1-based
 	index of the shard.
-]]
+]=]
 
 local HttpService = game:GetService("HttpService")
 
@@ -32,27 +33,28 @@ local Promise = require(script.Parent.Promise)
 local Tables = require(script.Parent.Tables)
 local dataStoreRetry = require(script.Parent.dataStoreRetry)
 
---[[
+--[=[
 	Checks if a file object represents a sharded file (i.e., data stored across multiple keys).
-	@param file The file object to check.
-	@return True if the file is sharded, false otherwise.
-]]
+
+	@within Files
+	@param file Types.File -- The file object to check.
+	@return boolean -- True if the file is sharded, false otherwise.
+]=]
 local function isLargeFile(file: Types.File): boolean
 	return file.shard ~= nil
 end
 
---[[
-	@interface WriteParams
+--[=[
+	@within Files
 	Parameters required for the `write` function.
-
-	@field store The DataStore instance to write to.
-	@field data The Luau data to be stored. Must be JSON-encodable.
-	@field maxShardSize The maximum size (in bytes) allowed for a single shard. Data exceeding
-		this size after initial JSON encoding will trigger the sharding process.
-	@field key The primary key under which the file metadata (or the full data if not sharded)
-		will be conceptually associated. This key is *not* directly used for storing shards.
-	@field userIds An optional array of UserIDs for DataStore tagging.
-]]
+		
+	@interface WriteParams
+	.store DataStore -- The DataStore instance to write to.
+	.data any -- The Luau data to be stored. Must be JSON-encodable.
+	.maxShardSize number -- The maximum size (in bytes) allowed for a single shard. Data exceeding this size after initial JSON encoding will trigger the sharding process.
+	.key string -- The primary key under which the file metadata (or the full data if not sharded) will be conceptually associated. This key is *not* directly used for storing shards.
+	.userIds { number }? -- An optional array of UserIDs for DataStore tagging.
+]=]
 export type WriteParams = {
 	store: DataStore,
 	data: any,
@@ -61,20 +63,20 @@ export type WriteParams = {
 	userIds: { number }?,
 }
 
---[[
+--[=[
 	@interface WriteError
+	@within Files
 	Structure representing an error encountered during the `write` operation.
 
-	@field error A string describing the error.
-	@field file The file metadata (`Types.File`) that was being processed when the error occurred.
-		This is used for cleanup operations if shards were partially written.
-]]
+	.error string -- A string describing the error.
+	.file Types.File -- The file metadata (`Types.File`) that was being processed when the error occurred. This is used for cleanup operations if shards were partially written.
+]=]
 export type WriteError = {
 	error: string,
 	file: Types.File,
 }
 
---[[
+--[=[
 	Writes data to the DataStore, automatically handling sharding and compression if necessary.
 
 	If the JSON-encoded data is smaller than `maxShardSize`, it's stored directly within the
@@ -84,13 +86,12 @@ export type WriteError = {
 	The returned `Types.File` object will contain `shard` (the unique ID for the shards) and
 	`count` (the number of shards) instead of the `data` field.
 
-	@param params WriteParams The parameters for the write operation.
-	@return A Promise that resolves with a `Types.File` object representing the stored data
-		(either directly containing the data or shard metadata). Rejects with a `WriteError`
-		if any shard fails to write.
-	@error Propagates errors from `DataStore:SetAsync` via `dataStoreRetry`. Rejects with
-		`WriteError` if shard writing fails.
-]]
+	@within Files
+	@param params WriteParams -- The parameters for the write operation.
+	@return Promise.TPromise<Types.File> -- A Promise that resolves with a `Types.File` object representing the stored data (either directly containing the data or shard metadata).
+	@error WriteError -- Rejects with a `WriteError` if any shard fails to write.
+	@error string -- Propagates errors from `DataStore:SetAsync` via `dataStoreRetry`.
+]=]
 local function write(params: WriteParams): Promise.TPromise<Types.File>
 	-- Step 1: Initial JSON encode to check size against the limit.
 	local dataEncoded = HttpService:JSONEncode(params.data)
@@ -134,33 +135,31 @@ local function write(params: WriteParams): Promise.TPromise<Types.File>
 		end)
 end
 
---[[
+--[=[
 	@interface ReadParams
+	@within Files
 	Parameters required for the `read` function.
 
-	@field store The DataStore instance to read from.
-	@field file The `Types.File` object obtained from a previous `write` operation or
-		retrieved from the primary DataStore key. This object determines whether to
-		read directly or reconstruct from shards.
-]]
+	.store DataStore -- The DataStore instance to read from.
+	.file Types.File -- The `Types.File` object obtained from a previous `write` operation or retrieved from the primary DataStore key. This object determines whether to read directly or reconstruct from shards.
+]=]
 export type ReadParams = {
 	store: DataStore,
 	file: Types.File,
 }
 
---[[
+--[=[
 	Reads data from the DataStore, automatically handling reconstruction from shards if necessary.
 
 	If the provided `file` object contains the `data` field directly, it returns that data.
 	If the `file` object contains `shard` and `count` fields, it reads all corresponding shards
 	from the DataStore, concatenates them, decompresses the result, and returns the original data.
 
-	@param params ReadParams The parameters for the read operation.
-	@return A Promise that resolves with the original data. Rejects with an error message string
-		if any shard is missing or if decoding/decompression fails.
-	@error Propagates errors from `DataStore:GetAsync` via `dataStoreRetry`. Rejects with
-		a string message if shards are missing or decoding fails.
-]]
+	@within Files
+	@param params ReadParams -- The parameters for the read operation.
+	@return Promise.TPromise<any> -- A Promise that resolves with the original data.
+	@error string -- Rejects with an error message string if any shard is missing or if decoding/decompression fails. Propagates errors from `DataStore:GetAsync` via `dataStoreRetry`.
+]=]
 local function read(params: ReadParams): Promise.TPromise<any>
 	-- Step 1: Check if the file is sharded.
 	if not isLargeFile(params.file) then

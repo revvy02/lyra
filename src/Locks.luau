@@ -13,7 +13,7 @@
 	This ensures that typically only one process holds the lock for a given key at a time.
 
 	@class Locks
-	@private -- Internal module used by Session.
+	@private
 ]]
 
 local HttpService = game:GetService("HttpService")

@@ -1,8 +1,13 @@
---[[
-	@module Transactions
+--[=[
+	@class Transactions
+	@private
 
 	Provides functionality for reading data that might be involved in an ongoing,
 	uncommitted transaction initiated by `Store:tx()`.
+
+	:::note
+	This module only contains the implementation for [Transactions.readTx]. Writing transactions is handled in [Store:tx]
+	:::
 
 	**Purpose:** When a `Store:tx()` operation begins, it might involve multiple steps
 	(e.g., reading current data, applying changes, writing back). If a server crashes
@@ -10,37 +15,34 @@
 	determine the correct state to return.
 
 	It checks the status of the transaction ID (`txId`) stored separately in the DataStore.
-	If the transaction is still pending (`false`) or has failed, it returns the last known
-	*committed* data. If the transaction has successfully committed (`nil`), it applies the
+	If the transaction is still pending (represented as `false`) or has failed, it returns the last known
+	*committed* data. If the transaction has successfully committed (represented as `nil`), it applies the
 	transaction's patch (`txPatch`) to the previously committed data (`committedData`)
 	to return the *newly* committed state.
 
 	This ensures that readers either get the stable state before the transaction or the
 	final state after a successful transaction, avoiding inconsistent intermediate states.
-]]
+]=]
 
 local JsonPatch = require(script.Parent.JsonPatch)
 local Types = require(script.Parent.Types)
 local Promise = require(script.Parent.Promise)
 local dataStoreRetry = require(script.Parent.dataStoreRetry)
 
---[[
-	@interface ReadTxParams
+--[=[
 	Parameters required for the `readTx` function.
 
-	@field store The DataStore instance where transaction status markers are stored.
-		Note: This is typically the *same* DataStore instance used by the `Store`
-		that initiated the transaction.
-	@field txInfo Types.TxInfo The transaction information associated with the data being read.
-		This structure contains the last known committed data, the patch applied by the
-		transaction (if any), and the transaction ID.
-]]
+	@interface ReadTxParams
+	@within Transactions
+	.store DataStore -- The DataStore instance where transaction status markers are stored.
+	.txInfo Types.TxInfo -- The transaction information associated with the data being read.
+]=]
 export type ReadTxParams = {
 	store: DataStore,
 	txInfo: Types.TxInfo,
 }
 
---[[
+--[=[
 	Reads data, considering the status of an associated transaction.
 
 	Checks the status of the transaction ID (`txInfo.txId`) in the DataStore.
@@ -61,13 +63,11 @@ export type ReadTxParams = {
 	and only removing it after the `txId` is no longer needed, we can simply delete
 	the marker immediately after a successful transaction.
 
-	@param params ReadTxParams The parameters for the read operation.
-	@return A Promise that resolves with the appropriate data (either committed or patched).
-		Rejects if the transaction status indicates commitment (`nil`) but the `txPatch`
-		is missing, or if DataStore operations fail (via `dataStoreRetry`).
-	@error Propagates errors from `DataStore:GetAsync` via `dataStoreRetry`. Rejects with
-		a string message if the transaction is marked committed but lacks a patch.
-]]
+	@within Transactions
+	@param params ReadTxParams -- The parameters for the read operation.
+	@return Promise.TPromise<any> -- A Promise that resolves with the appropriate data (either committed or patched).
+	@error string -- Rejects if the transaction status indicates commitment (`nil`) but the `txPatch` is missing, or if DataStore operations fail (via `dataStoreRetry`). Propagates errors from `DataStore:GetAsync` via `dataStoreRetry`.
+]=]
 local function readTx(params: ReadTxParams): Promise.TPromise<any>
 	local txInfo = params.txInfo
 

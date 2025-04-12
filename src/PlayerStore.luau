@@ -1,9 +1,3 @@
-local Players = game:GetService("Players")
-
-local Promise = require(script.Parent.Promise)
-local Store = require(script.Parent.Store)
-local Types = require(script.Parent.Types)
-
 --[=[
 	A PlayerStore wraps a regular Store to provide a more convenient API for working with Player data.
 	It automatically converts Players to UserId keys and handles player kicks on data errors.
@@ -17,25 +11,29 @@ local Types = require(script.Parent.Types)
 		},
 		schema = function(data)
 			return typeof(data.coins) == "number" and typeof(data.items) == "table",
-				"Invalid data format"
+			"Invalid data format"
 		end,
 	})
 
 	-- Load data when player joins
 	Players.PlayerAdded:Connect(function(player)
-		playerStore:load(player):andThen(function()
-			print("Data loaded for", player.Name)
-		end)
+		playerStore:loadAsync(player)
 	end)
 
 	-- Unload data when player leaves
 	Players.PlayerRemoving:Connect(function(player)
-		playerStore:unload(player)
+		playerStore:unloadAsync(player)
 	end)
 	```
 
 	@class PlayerStore
 ]=]
+
+local Players = game:GetService("Players")
+
+local Promise = require(script.Parent.Promise)
+local Store = require(script.Parent.Store)
+local Types = require(script.Parent.Types)
 
 type PlayerStoreImpl<T> = {
 	__index: PlayerStoreImpl<T>,
@@ -207,6 +205,7 @@ end
 	Syntactic sugar for `playerStore:get(player):expect()`.
 
 	See [PlayerStore:get]
+	@yields
 ]=]
 function PlayerStore:getAsync(player: Player)
 	return self:get(player):expect()
@@ -242,6 +241,7 @@ end
 	Syntactic sugar for `playerStore:load(player):expect()`.
 
 	See [PlayerStore:load]
+	@yields
 ]=]
 function PlayerStore:loadAsync(player: Player)
 	return self:load(player):expect()
@@ -269,6 +269,7 @@ end
 	Syntactic sugar for `playerStore:unload(player):expect()`.
 
 	See [PlayerStore:unload]
+	@yields
 ]=]
 function PlayerStore:unloadAsync(player: Player)
 	return self:unload(player):expect()
@@ -303,6 +304,7 @@ end
 	Syntactic sugar for `playerStore:update(player, transformFunction):expect()`.
 
 	See [PlayerStore:update]
+	@yields
 ]=]
 function PlayerStore:updateAsync<T>(player: Player, transformFunction: (data: T) -> boolean)
 	return self:update(player, transformFunction):expect()
@@ -370,6 +372,7 @@ end
 	Syntactic sugar for `playerStore:tx(players, transformFunction):expect()`.
 
 	See [PlayerStore:tx]
+	@yields
 ]=]
 function PlayerStore:txAsync<T>(players: { Player }, transformFunction: (state: { [Player]: T }) -> boolean)
 	return self:tx(players, transformFunction):expect()
@@ -396,6 +399,7 @@ end
 	Syntactic sugar for `playerStore:save(player):expect()`.
 
 	See [PlayerStore:save]
+	@yields
 ]=]
 function PlayerStore:saveAsync(player: Player)
 	return self:save(player):expect()
@@ -416,6 +420,7 @@ end
 	Syntactic sugar for `playerStore:close():expect()`.
 
 	See [PlayerStore:close]
+	@yields
 ]=]
 function PlayerStore:closeAsync()
 	return self:close():expect()
@@ -442,6 +447,7 @@ end
 	Syntactic sugar for `playerStore:peek(userId):expect()`.
 
 	See [PlayerStore:peek]
+	@yields
 ]=]
 function PlayerStore:peekAsync(userId: number)
 	return self:peek(userId):expect()

@@ -1,5 +1,6 @@
---[[
-	@module dataStoreRetry
+--[=[
+	@class dataStoreRetry
+	@private
 
 	Provides a utility function to wrap Roblox DataStore API calls with automatic
 	retries for specific, commonly transient error codes.
@@ -24,7 +25,7 @@
 		warn("Failed to get data after retries:", err)
 	end)
 	```
-]]
+]=]
 
 local Promise = require(script.Parent.Promise)
 
@@ -59,19 +60,17 @@ local RETRY_ERROR_CODES = {
 	-- and are not retried by default.
 }
 
---[[
+--[=[
 	Wraps a function that performs a DataStore operation, automatically retrying it
 	if it fails with specific transient error codes.
 
 	Implements an exponential backoff strategy: waits 1s, 2s, 4s, 8s between retries.
 
-	@param func The function to execute and potentially retry. This function should
-		perform the desired DataStore operation (e.g., `GetAsync`, `SetAsync`, `UpdateAsync`).
-		It should return the result of the operation on success or throw an error on failure.
-	@return A Promise that resolves with the return value of `func` if it succeeds within
-		`MAX_RETRIES` attempts. Rejects with the error message if `func` fails with a
-		non-retriable error code, or if it fails with a retriable error code `MAX_RETRIES` times.
-]]
+	@within dataStoreRetry
+	@param func () -> T -- The function to execute and potentially retry. This function should perform the desired DataStore operation (e.g., `GetAsync`, `SetAsync`, `UpdateAsync`). It should return the result of the operation on success or throw an error on failure.
+	@return Promise.TPromise<T> -- A Promise that resolves with the return value of `func` if it succeeds within `MAX_RETRIES` attempts.
+	@error string -- Rejects with the error message if `func` fails with a non-retriable error code, or if it fails with a retriable error code `MAX_RETRIES` times.
+]=]
 local function dataStoreRetry<T>(func: () -> T): Promise.TPromise<T>
 	return Promise.new(function(resolve, reject)
 		local lastError -- Store the last retriable error encountered
