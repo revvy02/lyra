@@ -129,7 +129,7 @@ local function write(params: WriteParams): Promise.TPromise<Types.File>
 		:catch(function(err)
 			-- If any shard write fails, reject the promise with detailed error info.
 			return Promise.reject({
-				error = `Failed to write file '{params.key}' (shardId: {shardId}): {err}`,
+				error = `Failed to write file: {err}`,
 				file = file, -- Include file metadata for cleanup.
 			} :: WriteError)
 		end)
