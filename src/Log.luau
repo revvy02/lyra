@@ -189,7 +189,7 @@ end
 function Log.createLogger(logCallback: (logMessage: LogMessage) -> (), context: { [string]: any }?): Logger
 	return setmetatable({
 		_logCallback = logCallback,
-		_context = context or {}, -- Initialize with provided context or an empty table.
+		_context = context or {},
 	}, Logger)
 end
 
