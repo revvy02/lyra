@@ -1,4 +1,3 @@
---!strict
 --[=[
 	Common types shared among different modules.
 

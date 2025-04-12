@@ -1,4 +1,3 @@
---!strict
 --[[
 	Manages the in-memory state and persistence lifecycle for a single data key
 	within a Store. A Session represents an active, locked instance of a key's

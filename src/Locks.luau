@@ -1,4 +1,3 @@
---!strict
 --[[
 	Implements a distributed locking mechanism using Roblox's MemoryStoreService.
 	This allows coordinating access to shared resources (like DataStore keys)

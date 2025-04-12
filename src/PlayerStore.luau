@@ -1,5 +1,3 @@
---!strict
-
 local Players = game:GetService("Players")
 
 local Promise = require(script.Parent.Promise)

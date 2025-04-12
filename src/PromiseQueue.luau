@@ -1,4 +1,3 @@
---!strict
 --[[
 	@class PromiseQueue
 

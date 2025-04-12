@@ -1,4 +1,3 @@
---!strict
 --[[
 	@module Transactions
 
