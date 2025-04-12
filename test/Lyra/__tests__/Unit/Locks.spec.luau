@@ -75,7 +75,7 @@ describe("Locks", function()
 				for _ = 1, 35 do
 					jest.advanceTimersByTime(1000)
 				end
-				return expect(lock2Promise).rejects.toMatch("lock remained")
+				return expect(lock2Promise).rejects.toMatch("Failed to acquire lock")
 			end)
 
 			it("should allow acquiring the lock after it expires", function()
@@ -223,7 +223,7 @@ describe("Locks", function()
 					jest.advanceTimersByTime(50000)
 				end
 
-				return expect(promise).rejects.toMatch("lock remained")
+				return expect(promise).rejects.toMatch("Failed to acquire lock")
 			end)
 
 			it("should clean up resources if cancelled during acquisition", function()
