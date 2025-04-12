@@ -65,7 +65,7 @@ export type ReadTxParams = {
 
 	@within Transactions
 	@param params ReadTxParams -- The parameters for the read operation.
-	@return Promise.TPromise<any> -- A Promise that resolves with the appropriate data (either committed or patched).
+	@return Promise<any> -- A Promise that resolves with the appropriate data (either committed or patched).
 	@error string -- Rejects if the transaction status indicates commitment (`nil`) but the `txPatch` is missing, or if DataStore operations fail (via `dataStoreRetry`). Propagates errors from `DataStore:GetAsync` via `dataStoreRetry`.
 ]=]
 local function readTx(params: ReadTxParams): Promise.TPromise<any>

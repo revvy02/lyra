@@ -136,7 +136,7 @@ export type ApplyResult = {
 
 	@within Migrations
 	@param params ApplyParams -- The parameters for applying migrations.
-	@return Promise.TPromise<ApplyResult> -- A Promise that resolves with the updated data and the new list of applied migration names.
+	@return Promise<ApplyResult> -- A Promise that resolves with the updated data and the new list of applied migration names.
 	@error string -- Rejects if any migration step fails during `pcall`.
 ]=]
 local function apply(params: ApplyParams): Promise.TPromise<ApplyResult>

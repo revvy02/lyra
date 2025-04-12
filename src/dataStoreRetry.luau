@@ -68,7 +68,7 @@ local RETRY_ERROR_CODES = {
 
 	@within dataStoreRetry
 	@param func () -> T -- The function to execute and potentially retry. This function should perform the desired DataStore operation (e.g., `GetAsync`, `SetAsync`, `UpdateAsync`). It should return the result of the operation on success or throw an error on failure.
-	@return Promise.TPromise<T> -- A Promise that resolves with the return value of `func` if it succeeds within `MAX_RETRIES` attempts.
+	@return Promise<T> -- A Promise that resolves with the return value of `func` if it succeeds within `MAX_RETRIES` attempts.
 	@error string -- Rejects with the error message if `func` fails with a non-retriable error code, or if it fails with a retriable error code `MAX_RETRIES` times.
 ]=]
 local function dataStoreRetry<T>(func: () -> T): Promise.TPromise<T>

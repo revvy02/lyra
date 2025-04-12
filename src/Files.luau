@@ -88,7 +88,7 @@ export type WriteError = {
 
 	@within Files
 	@param params WriteParams -- The parameters for the write operation.
-	@return Promise.TPromise<Types.File> -- A Promise that resolves with a `Types.File` object representing the stored data (either directly containing the data or shard metadata).
+	@return Promise<Types.File> -- A Promise that resolves with a `Types.File` object representing the stored data (either directly containing the data or shard metadata).
 	@error WriteError -- Rejects with a `WriteError` if any shard fails to write.
 	@error string -- Propagates errors from `DataStore:SetAsync` via `dataStoreRetry`.
 ]=]
@@ -157,7 +157,7 @@ export type ReadParams = {
 
 	@within Files
 	@param params ReadParams -- The parameters for the read operation.
-	@return Promise.TPromise<any> -- A Promise that resolves with the original data.
+	@return Promise<any> -- A Promise that resolves with the original data.
 	@error string -- Rejects with an error message string if any shard is missing or if decoding/decompression fails. Propagates errors from `DataStore:GetAsync` via `dataStoreRetry`.
 ]=]
 local function read(params: ReadParams): Promise.TPromise<any>

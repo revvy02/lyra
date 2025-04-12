@@ -68,7 +68,7 @@ local RETRY_ERROR_CODES = {
 
 	@within hashMapRetry
 	@param func () -> any -- The function to execute and potentially retry. This function should perform the desired MemoryStore HashMap operation (e.g., `GetAsync`, `SetAsync`, `UpdateAsync`). It should return the result on success or throw an error on failure.
-	@return Types.RetryHandle<Promise.TPromise<any>> -- A handle containing: `promise` (A Promise that resolves with the return value of `func` if it succeeds within `MAX_RETRIES` attempts) and `cancel` (A function that, when called, attempts to stop further retries and rejects the promise).
+	@return Types.RetryHandle<Promise<any>> -- A handle containing: `promise` (A Promise that resolves with the return value of `func` if it succeeds within `MAX_RETRIES` attempts) and `cancel` (A function that, when called, attempts to stop further retries and rejects the promise).
 	@error string -- Rejects if `func` fails with a non-retriable error, if it fails with a retriable error `MAX_RETRIES` times, or if `cancel()` is called.
 ]=]
 local function hashMapRetry(func: () -> any): Types.RetryHandle<Promise.TPromise<any>>

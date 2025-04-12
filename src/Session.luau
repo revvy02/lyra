@@ -51,12 +51,12 @@ local noYield = require(script.Parent.noYield)
 	.__index SessionImpl<T> -- Metatable self-reference.
 
 	-- Static method to load data and create a session
-	.load (params: LoadSessionParams<T>) -> Promise.TPromise<Session<T>>
+	.load (params: LoadSessionParams<T>) -> Promise<Session<T>>
 
 	-- Internal methods for saving data
-	.updateRecord (self: Session<T>) -> Promise.TPromise<any>
+	.updateRecord (self: Session<T>) -> Promise<any>
 	.orphanFile (self: Session<T>, file: Types.File) -> ()
-	.writeRecord (self: Session<T>, txInfo: Types.TxInfo) -> Promise.TPromise<any>
+	.writeRecord (self: Session<T>, txInfo: Types.TxInfo) -> Promise<any>
 
 	-- State checking
 	.isSaved (self: Session<T>) -> boolean
@@ -70,10 +70,10 @@ local noYield = require(script.Parent.noYield)
 	.stopAutosaving (self: Session<T>) -> ()
 
 	-- Public API methods (called via Store)
-	.unload (self: Session<T>) -> Promise.Promise
-	.get (self: Session<T>) -> Promise.TPromise<T>
-	.update (self: Session<T>, transformFunction: (data: T) -> boolean) -> Promise.TPromise<boolean>
-	.save (self: Session<T>) -> Promise.Promise
+	.unload (self: Session<T>) -> Promise
+	.get (self: Session<T>) -> Promise<T>
+	.update (self: Session<T>, transformFunction: (data: T) -> boolean) -> Promise<boolean>
+	.save (self: Session<T>) -> Promise
 ]=]
 type SessionImpl<T> = {
 	__index: SessionImpl<T>,
@@ -115,10 +115,10 @@ type SessionImpl<T> = {
 	.orphanedFiles { Types.File } -- List of file shards (from previous saves) marked for deletion.
 	.currentFile Types.File? -- Reference to the current file structure (potentially sharded) representing the saved state.
 	.queue PromiseQueue.PromiseQueue -- PromiseQueue to serialize save/unload/tx operations for this key.
-	.txLockPromise Promise.Promise? -- A promise used during multi-key transactions (`Store:tx`) to block concurrent `Session:update` calls on this key until the transaction completes.
+	.txLockPromise Promise? -- A promise used during multi-key transactions (`Store:tx`) to block concurrent `Session:update` calls on this key until the transaction completes.
 
 	.closed boolean -- Flag indicating if the session is closed (e.g., lock lost, unloaded).
-	.unloadPromise Promise.Promise? -- Promise tracking an ongoing unload operation.
+	.unloadPromise Promise? -- Promise tracking an ongoing unload operation.
 
 	.keyInfo DataStoreKeyInfo? -- DataStoreKeyInfo obtained during the initial load.
 
@@ -225,7 +225,7 @@ export type LoadResult = {
 	@within Session
 	@private
 	@param params LoadParams -- Parameters for loading.
-	@return Promise.TPromise<LoadResult> -- Promise resolving with the loaded data and metadata.
+	@return Promise<LoadResult> -- Promise resolving with the loaded data and metadata.
 ]=]
 local function load(params: LoadParams): Promise.TPromise<LoadResult>
 	local ctx = params.storeContext
@@ -466,7 +466,7 @@ end
 
 	@within Session
 	@param params LoadSessionParams<T> -- Parameters for loading the session.
-	@return Promise.TPromise<Session<T>> -- Resolves with the new Session instance.
+	@return Promise<Session<T>> -- Resolves with the new Session instance.
 	@error "Lock was lost while loading key"
 	@error string -- Propagates errors from `Locks.acquireLock` or internal `load`.
 ]=]
@@ -558,7 +558,7 @@ end
 
 	@within Session
 	@private
-	@return Promise.Promise -- Resolves when the save is complete (or immediately if no changes).
+	@return Promise -- Resolves when the save is complete (or immediately if no changes).
 ]=]
 function Session:updateRecord(): Promise.TPromise<any>
 	local logger = self.logger:extend({ method = "updateRecord" })
@@ -676,7 +676,7 @@ end
 	@within Session
 	@private
 	@param txInfo Types.TxInfo -- The data payload to write (contains `committedData`).
-	@return Promise.TPromise<Types.DataStoreRecord> -- Resolves with the written record on success.
+	@return Promise<Types.DataStoreRecord> -- Resolves with the written record on success.
 	@error "lock was lost while writing file"
 	@error string -- Propagates errors from `Files.write` or `SetAsync`.
 ]=]
@@ -880,7 +880,7 @@ end
 	Stops autosaving, queues a final save operation, and releases the lock.
 
 	@within Session
-	@return Promise.Promise -- Resolves when the unload process is complete.
+	@return Promise -- Resolves when the unload process is complete.
 ]=]
 function Session:unload(): Promise.Promise
 	local logger = self.logger:extend({ method = "unload" })
@@ -923,7 +923,7 @@ end
 	Gets the current, immutable (frozen) data for the session.
 
 	@within Session
-	@return Promise.TPromise<T> -- Resolves immediately with the frozen data.
+	@return Promise<T> -- Resolves immediately with the frozen data.
 ]=]
 function Session:get<T>(): Promise.TPromise<T>
 	return Promise.resolve(self.frozenData) :: any
@@ -935,7 +935,7 @@ end
 
 	@within Session
 	@param transformFunction (data: T) -> boolean -- Function to modify data. Must return `true` to commit, `false` to abort.
-	@return Promise.TPromise<boolean> -- Resolves with `true` if changes were committed, `false` if aborted by the transform.
+	@return Promise<boolean> -- Resolves with `true` if changes were committed, `false` if aborted by the transform.
 	@error "Session is closed"
 	@error "transformFunction failed: ..." -- If the transform function errors.
 	@error "transformFunction must return a boolean"
@@ -1025,7 +1025,7 @@ end
 	Uses the session's PromiseQueue to serialize saves.
 
 	@within Session
-	@return Promise.Promise -- Resolves when the save operation completes (or immediately if no changes).
+	@return Promise -- Resolves when the save operation completes (or immediately if no changes).
 	@error "Session is closed"
 ]=]
 function Session:save(): Promise.Promise
