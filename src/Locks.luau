@@ -122,9 +122,9 @@ local function acquireLock(params: AcquireLockParams): Promise.TPromise<LockHand
 		-- Only spawn if still considered 'held' locally to avoid duplicate calls after release.
 		if status == "held" then
 			logger:log("warn", "lock expiry timer fired or refresh failed, invoking onLockLost callbacks")
-			transitionTo("released") -- Mark as released internally
+			transitionTo("released")
 			for _, callback in expiredCallbacks do
-				task.spawn(callback) -- Spawn each callback in a separate thread
+				task.spawn(callback)
 			end
 		end
 	end
