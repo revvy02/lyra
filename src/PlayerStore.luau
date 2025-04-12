@@ -142,7 +142,6 @@ PlayerStore.__index = PlayerStore
 	@param config PlayerStoreConfig<T> -- Configuration for the store
 	@return PlayerStore<T>
 	@within PlayerStore
-	@function create
 ]=]
 local function createPlayerStore<T>(config: PlayerStoreConfig<T>): PlayerStore<T>
 	local self: PlayerStore<T>
