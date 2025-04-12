@@ -56,6 +56,7 @@ local RETRY_ERROR_CODES = {
 	"InternalError", -- Generic internal server error.
 	"RequestThrottled", -- Recent MemoryStores requests hit one or more limits.
 	"PartitionRequestsOverLimit", -- Exceeds partition request unit limit.
+	"Throttled", -- Undocumented, included for completeness.
 	"Timeout", -- Undocumented, included for completeness.
 }
 
