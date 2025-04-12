@@ -4,21 +4,21 @@
 	data, coordinating data loading, saving, updates, transactions, migrations,
 	and cleanup.
 
-	Sessions are created internally by `Store:load` after acquiring a distributed
+	Sessions are created internally by [Store:load] after acquiring a distributed
 	lock via the Locks module. They handle:
 	- Loading initial data by reading the main record, file shards, and pending
 	  transactions, applying migrations, or importing legacy data.
-	- Providing access to the current data (`get`).
-	- Applying mutations (`update`) safely within a `noYield` context and
+	- Providing access to the current data ([Session:get]).
+	- Applying mutations ([Session:update]) safely within a `noYield` context and
 	  tracking changes.
-	- Saving changes back to DataStores (`save`, `updateRecord`, `writeRecord`),
+	- Saving changes back to DataStores ([Session:save], [Session:updateRecord], [Session:writeRecord]),
 	  potentially sharding large data via the Files module.
-	- Coordinating multi-key transactions (`Store:tx` interacts with Session state).
-	- Automatically saving data periodically (`startAutosaving`).
-	- Cleaning up orphaned file shards in the background (`orphanFile`).
-	- Gracefully unloading data (`unload`), ensuring final saves and lock release.
+	- Coordinating multi-key transactions ([Store:tx] interacts with Session state).
+	- Automatically saving data periodically ([Session:startAutosaving]).
+	- Cleaning up orphaned file shards in the background ([Session:orphanFile]).
+	- Gracefully unloading data ([Session:unload]), ensuring final saves and lock release.
 
-	A Session is intrinsically tied to a `Locks.LockHandle`. If the lock is lost,
+	A Session is intrinsically tied to a [Locks.LockHandle]. If the lock is lost,
 	the Session becomes 'closed' and unusable, triggering cleanup.
 
 	@class Session
