@@ -154,7 +154,7 @@ type StoreImpl<T> = {
 		self: Store<T>,
 		keys: { string },
 		transformFunction: (state: { [string]: T }) -> boolean
-	) -> Promise.Promise,
+	) -> Promise.TPromise<boolean>,
 	save: (self: Store<T>, key: string) -> Promise.Promise,
 	close: (self: Store<T>) -> Promise.Promise,
 
@@ -699,7 +699,7 @@ end
 	@within Store
 	@param keys {string} -- An array of keys involved in the transaction.
 	@param transformFunction (state: { [string]: T }) -> boolean -- A function that receives the current state of all keys and returns `true` to commit or `false` to abort.
-	@return Promise -- Resolves if the transaction commits successfully, rejects if aborted (by returning `false` or due to errors like key not loaded, schema validation failure, DataStore errors during commit/revert).
+	@return Promise -- Resolves with `true` if the transaction was successful, or `false` if it was aborted. Rejects on error.
 	@error "Key not loaded" -- If any key in the `keys` array has not been loaded.
 	@error "Key is already locked by another transaction" -- If any key is already involved in an ongoing `tx`.
 	@error "Key is closed" -- If any involved session has been closed (e.g., due to lock loss).
@@ -707,8 +707,7 @@ end
 	@error "Schema validation failed" -- If the data for any key after transformation fails the schema check.
 	@error "Keys changed in transaction" -- If the `transformFunction` attempts to add or remove keys from the state table it receives.
 ]=]
--- TODO: If aborted by returning `false`, `Store:tx` should resolve with false instead of rejecting.
-function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T }) -> boolean): Promise.Promise
+function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T }) -> boolean): Promise.TPromise<boolean>
 	assert(t.array(t.string)(keys))
 	assert(t.callback(transformFunction))
 
@@ -814,8 +813,7 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			-- If transform returned false, abort the transaction.
 			if result == false then
 				logger:log("trace", "tx transformFunction returned false, aborting")
-				-- TODO: We should resolve this to maintain consistency with `Session:update`
-				return Promise.reject("Transaction aborted by transform function")
+				return Promise.resolve(false)
 			end
 
 			-- If reference protection is enabled, deep copy the result *again*
@@ -865,14 +863,14 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 			-- Handle cases where no keys or only one key changed.
 			if #changedKeys == 0 then
 				logger:log("trace", "tx had no mutations, skipping update")
-				return Promise.resolve() -- No changes, resolve successfully.
+				return Promise.resolve(true) -- No changes, resolve successfully.
 			elseif #changedKeys == 1 then
 				-- If only one key changed, treat it as a standard single-key update for efficiency.
 				logger:log("trace", `tx only changed one key ('{changedKeys[1]}'), treating as Session:update`)
 				local key = changedKeys[1]
 				-- Directly mutate the session state and let its normal save mechanism handle it.
 				self._sessions[key]:mutateKey(nextState[key])
-				return Promise.resolve()
+				return Promise.resolve(true)
 			end
 
 			-- 6. Multi-key change: Proceed with the two-phase commit.
@@ -961,6 +959,8 @@ function Store:tx<T>(keys: { string }, transformFunction: (state: { [string]: T 
 							session.changeSet = {} -- Reset changeset as data is now saved.
 						end
 					end
+
+					return true
 				end)
 				:finally(function()
 					-- Runs after commit or revert finishes.

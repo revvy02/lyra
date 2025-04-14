@@ -52,7 +52,7 @@ type PlayerStoreImpl<T> = {
 		self: PlayerStore<T>,
 		players: { Player },
 		transformFunction: (state: { [Player]: T }) -> boolean
-	) -> Promise.Promise,
+	) -> Promise.TPromise<boolean>,
 	save: (self: PlayerStore<T>, player: Player) -> Promise.Promise,
 	close: (self: PlayerStore<T>) -> Promise.Promise,
 	peek: (self: PlayerStore<T>, userId: number) -> T,
@@ -330,10 +330,13 @@ end
 	@error "Key not loaded" -- One or more players' data hasn't been loaded
 	@error "Store is closed" -- The store has been closed
 	@error "Schema validation failed" -- The transformed data failed schema validation
-	@return Promise -- Resolves when the transaction is complete
+	@return Promise -- Resolves with `true` if the transaction was successful, or `false` if it was aborted. Rejects on error.
 	@within PlayerStore
 ]=]
-function PlayerStore:tx<T>(players: { Player }, transformFunction: (state: { [Player]: T }) -> boolean)
+function PlayerStore:tx<T>(
+	players: { Player },
+	transformFunction: (state: { [Player]: T }) -> boolean
+): Promise.TPromise<boolean>
 	local userIdKeys = table.create(#players)
 	local userIdKeyToPlayer = {}
 	for i, player in players do
