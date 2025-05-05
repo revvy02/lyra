@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+* Removed `splitUtf8String` implementation in favor of a simpler implementation
+
 ## 0.5.0-rc.0
 * Commented (almost) the entire codebase
 * Expanded Moonwave generated API docs
