@@ -16,9 +16,9 @@
 	    the shard ID.
 	2.  **Compression:** Before sharding, the JSON-encoded data is converted to binary using
 	    `buffer.fromstring`. This binary representation is then JSON-encoded *again* before
-	    being split into UTF-8 safe shards using `splitUtf8String`. Roblox automatically
-		compresses buffers when encoding them using `JSONEncode`. This helps reduce the
-	    number of shards required, minimizing DataStore requests.
+	    being split into shards. Roblox automatically compresses buffers when encoding them
+		using `JSONEncode`. This helps reduce the number of shards required, minimizing
+		DataStore requests.
 
 	**Shard Key Naming:** Shard data is stored using keys formatted as `{shardId}-{shardIndex}`,
 	where `shardId` is a unique GUID generated for the file and `shardIndex` is the 1-based
