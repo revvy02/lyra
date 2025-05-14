@@ -66,7 +66,7 @@ local Tables = require(script.Parent.Tables)
 local Types = require(script.Parent.Types)
 local dataStoreRetry = require(script.Parent.dataStoreRetry)
 local noYield = require(script.Parent.noYield)
-local t = require(ReplicatedStorage.Packages.t)
+local t = require(script.Parent.Parent.t)
 
 --[=[
 	Configuration options for creating a new Store instance using `createStore`.
